@@ -19,7 +19,7 @@ export function validateIpCameraUrl(url: string): { ok: boolean; message: string
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return {
         ok: false,
-        message: 'Use http(s) WHEP, HLS (.m3u8), MJPEG, or MP4/WebM URLs. RTSP requires a relay.',
+        message: 'Use http(s) WebRTC pull, HLS (.m3u8), MJPEG, or MP4/WebM URLs. RTSP requires a relay.',
         kind: 'unsupported',
       };
     }
@@ -31,7 +31,7 @@ export function validateIpCameraUrl(url: string): { ok: boolean; message: string
   if (kind === 'unsupported') {
     return {
       ok: false,
-      message: 'RTSP is not supported in the browser. Use an HLS, WHEP, or MJPEG URL from your camera or relay.',
+      message: 'RTSP is not supported in the browser. Use an HLS, WebRTC pull, or MJPEG URL from your camera or relay.',
       kind,
     };
   }

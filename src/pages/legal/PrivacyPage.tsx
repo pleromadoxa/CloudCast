@@ -16,7 +16,7 @@ export function PrivacyPage() {
 
       <LegalSection title="2. Data we collect">
         <LegalList items={[
-          'Account data: name, email, password hash (via Supabase Auth), plan tier, profile settings.',
+          'Account data: name, email, password hash (CloudCast authentication), plan tier, profile settings.',
           'Usage data: mixer sessions, paired devices, access codes, stream destinations (RTMP URLs/keys encrypted at rest), activity logs.',
           'Content data: cloud recordings you upload, metadata (file name, size, duration).',
           'Technical data: IP address, browser type, device identifiers, error logs, heartbeat pings.',
@@ -47,7 +47,7 @@ export function PrivacyPage() {
         <p>
           We share data with infrastructure providers listed in our{' '}
           <Link to="/legal/subprocessors" className="text-mixer-red hover:underline">Subprocessor list</Link>,
-          including Supabase (database, auth, storage), email delivery (Resend), and streaming/CDN partners for Regal Cloud plans.
+          including the CloudCast platform (database, auth, storage), CloudCast Notifications email, and the Regal Cloud network for Pro and Pro Master plans.
           We require subprocessors to protect data under contract.
         </p>
       </LegalSection>

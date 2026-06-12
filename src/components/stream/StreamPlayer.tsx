@@ -194,9 +194,13 @@ export function StreamPlayer({
         </div>
       ) : showOffline ? (
         <SignalPlaceholder variant="offline" compact={compact} />
-      ) : waitingForMeshStream || (!useMesh && connectionState === 'connecting') ? (
-        <div className="flex h-full items-center justify-center text-mixer-muted">
+      ) : waitingForMeshStream ||
+        (!useMesh && (connectionState === 'connecting' || connectionState === 'reconnecting')) ? (
+        <div className="flex h-full flex-col items-center justify-center gap-1 text-mixer-muted">
           <Loader2 className={cn('animate-spin', compact ? 'h-4 w-4' : 'h-8 w-8')} />
+          {!compact && connectionState === 'reconnecting' && (
+            <span className="text-[10px] text-mixer-green">Reconnecting Regal Cloud…</span>
+          )}
         </div>
       ) : error ? (
         <div className="flex h-full flex-col items-center justify-center gap-1 p-2 text-center">

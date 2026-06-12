@@ -14,3 +14,9 @@ export function planAllowsChromaKey(planId: PlanTier): boolean {
 export function planAllowsAdvancedGraphics(planId: PlanTier): boolean {
   return planId === 'pro' || planId === 'pro_master';
 }
+
+export function planAllowsCloudRecording(planId: PlanTier): boolean {
+  return planId === 'pro' || planId === 'pro_master';
+}
+
+export { planUsesRegalCloud, regalQualityTierForPlan } from './planStreamQuality';

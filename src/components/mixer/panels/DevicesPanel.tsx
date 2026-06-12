@@ -313,7 +313,7 @@ export function DevicesPanel({
               ))}
             </div>
             <p className="mt-1.5 text-[8px] text-mixer-muted">
-              Applies to all WHEP / relay streams. Mesh P2P uses device bitrate.
+              Applies to Regal Cloud streams. Regal Mesh uses device bitrate.
             </p>
           </div>
 

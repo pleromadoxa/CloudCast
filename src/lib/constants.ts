@@ -19,10 +19,7 @@ export const SIGNALING_EVENTS = {
 /** Dashboard presence key — distinguishes dashboard observers from mobile publishers. */
 export const DASHBOARD_PRESENCE_KEY = 'dashboard';
 
-export const ICE_SERVERS: RTCIceServer[] = [
-  { urls: 'stun:stun.cloudflare.com:3478' },
-  { urls: 'stun:stun.l.google.com:19302' },
-];
+export { REGAL_ICE_SERVERS as ICE_SERVERS } from './meshConfig';
 
 export const GRID_LAYOUTS = {
   1: 'grid-cols-1',

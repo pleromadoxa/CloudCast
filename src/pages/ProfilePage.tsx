@@ -628,7 +628,7 @@ export function ProfilePage() {
               <div>
                 <h2 className="text-lg font-bold">Cloud storage</h2>
                 <p className="text-xs text-mixer-muted">
-                  PGM recordings from your mixer are saved here on Pro and Pro Master plans.
+                  PGM recordings from your mixer are stored in Regal Cloud on Pro and Pro Master plans.
                 </p>
               </div>
             </div>

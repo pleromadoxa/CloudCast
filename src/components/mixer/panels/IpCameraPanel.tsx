@@ -55,7 +55,7 @@ export function IpCameraPanel({ allowed, config, slotNumber, onSave, onRemove }:
         <span className="ml-auto text-[8px] font-normal text-mixer-muted">Input {slotNumber}</span>
       </div>
       <p className="mt-1 text-[9px] leading-relaxed text-mixer-muted">
-        Add one network camera via HLS (.m3u8), WHEP, MJPEG, or direct HTTP video. RTSP requires an on-prem relay.
+        Add one network camera via HLS (.m3u8), Regal Cloud WebRTC, MJPEG, or direct HTTP video. RTSP requires an on-prem relay.
       </p>
 
       <div className="mt-2 grid gap-1.5">

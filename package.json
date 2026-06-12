@@ -10,7 +10,12 @@
     "preview": "vite preview",
     "broadcast-relay": "node tools/broadcast-relay/server.mjs",
     "heartbeat": "node tools/supabase-heartbeat.mjs",
-    "heartbeat:loop": "node tools/supabase-heartbeat.mjs --loop"
+    "heartbeat:loop": "node tools/supabase-heartbeat.mjs --loop",
+    "setup:r2": "node tools/setup-cloudcast-r2.mjs",
+    "secrets:r2": "node tools/sync-r2-secrets.mjs",
+    "deploy:r2": "npm run secrets:r2 && supabase functions deploy cloudcast-r2",
+    "deploy:stream": "supabase functions deploy cloudcast-stream",
+    "deploy:cloudflare": "npm run deploy:r2 && supabase functions deploy cloudcast-stream"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.0",
@@ -24,6 +29,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.726.1",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.0",
     "@types/node": "^24.12.3",

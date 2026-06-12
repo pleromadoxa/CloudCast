@@ -38,8 +38,10 @@ import { updateDeviceAudioSettings } from '../../lib/streamingService';
 import type { AudioInputSource } from '../../types/audio';
 import { isRealDevice } from '../../types/device';
 import { unlockDashboardAudio } from '../../lib/audioOutput';
-import { PLAN_RECORDING_STORAGE_GB } from '../../lib/planLimits';
 import { uploadMixerRecording } from '../../lib/recordingService';
+import { planAllowsCloudRecording } from '../../lib/planFeatures';
+import { defaultStreamQualityForSession } from '../../lib/planStreamQuality';
+import { USER_MSG } from '../../lib/userMessaging';
 import { cn } from '../../lib/utils';
 import { buildLayerStack } from '../mixer/panels/layers/buildLayerStack';
 import type { LayerStackId } from '../mixer/panels/layers/layerStackTypes';
@@ -72,16 +74,21 @@ export function DashboardLayout() {
 
   const handleRecordingComplete = useCallback(
     async (blob: Blob, mimeType: string, fileName: string) => {
-      const quota = PLAN_RECORDING_STORAGE_GB[profile?.plan_id ?? 'free'];
-      if (quota <= 0 || !isSupabaseConfigured()) {
-        setDeckNotice({ type: 'success', message: 'Recording saved locally.' });
+      const plan = profile?.plan_id ?? 'free';
+      if (!planAllowsCloudRecording(plan) || !isSupabaseConfigured()) {
+        setDeckNotice({
+          type: 'success',
+          message: planAllowsCloudRecording(plan)
+            ? USER_MSG.recordingSavedLocal
+            : `${USER_MSG.recordingSavedLocal} ${USER_MSG.recordingUpgradeHint}`,
+        });
         return;
       }
       try {
         await uploadMixerRecording(blob, fileName, mimeType, session?.sessionId ?? null);
         setDeckNotice({
           type: 'success',
-          message: 'Recording saved locally and uploaded to cloud storage.',
+          message: USER_MSG.recordingSavedCloud,
         });
       } catch (err) {
         setDeckNotice({
@@ -113,6 +120,11 @@ export function DashboardLayout() {
 
   const mixer = useDashboardState(mergedDevices);
   const { controls, pstDevice, pgmDevice, subDevice, transitionFromDevice, liveDevices, sourceDevices } = mixer;
+
+  useEffect(() => {
+    if (!session) return;
+    mixer.setDefaultQuality(defaultStreamQualityForSession(planId, session.connectionMode));
+  }, [session?.connectionMode, session?.sessionId, planId, mixer.setDefaultQuality]);
 
   const {
     goLive,
@@ -447,8 +459,8 @@ export function DashboardLayout() {
       <div className="flex h-full items-center justify-center bg-mixer-bg p-8">
         <div className="max-w-md border border-mixer-border bg-mixer-panel p-6 text-center">
           <AlertTriangle className="mx-auto h-10 w-10 text-mixer-red" />
-          <h2 className="mt-4 text-lg font-semibold">Supabase Not Configured</h2>
-          <p className="mt-2 text-sm text-mixer-muted">Copy .env.example to .env and set credentials.</p>
+          <h2 className="mt-4 text-lg font-semibold">CloudCast Not Configured</h2>
+          <p className="mt-2 text-sm text-mixer-muted">{USER_MSG.backendNotConfigured}</p>
         </div>
       </div>
     );

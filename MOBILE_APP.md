@@ -231,21 +231,54 @@ The dashboard sends this when:
 
 ### Regal Cloud — HD / UHD (pro / pro_master)
 
-1. Provision stream through your Regal Cloud ingest API (quality tier matches plan)
-2. Update device record:
+Pro and Pro Master use **Cloudflare Stream WebRTC** (WHIP ingest → WHEP playback) instead of mesh P2P. This is more stable across NATs and scales to many dashboard viewers with sub-second latency.
+
+1. **Provision** a live input (creates WHIP + WHEP URLs and stores them on the paired device):
+
+```typescript
+const res = await fetch(`${SUPABASE_URL}/functions/v1/cloudcast-stream`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+  },
+  body: JSON.stringify({
+    action: 'provision',
+    access_code: accessCode,
+    device_id: deviceId,
+  }),
+});
+const { whip_url, whep_url, stream_id, quality_tier } = await res.json();
+// quality_tier: 'hd' (pro) | 'uhd' (pro_master)
+```
+
+2. **Publish** camera/audio to `whip_url` using a WHIP client (e.g. Larix Broadcaster, `@eyevinn/whip-web-client`, or native WebRTC).
+
+3. Confirm device is live:
 
 ```typescript
 await supabase.rpc('update_paired_device', {
   p_access_code: accessCode,
   p_device_id: deviceId,
   p_status: 'live',
-  p_whep_url: playbackEndpoint,   // internal field — Regal Cloud playback
-  p_whip_url: ingestEndpoint,     // internal field — Regal Cloud ingest
-  p_stream_id: streamUid,
+  p_whep_url: whep_url,
+  p_whip_url: whip_url,
+  p_stream_id: stream_id,
 });
 ```
 
-3. Optionally broadcast `stream-ready` with playback endpoint reference
+4. Optionally broadcast `stream-ready` — dashboard auto-plays WHEP from `paired_devices.whep_url`.
+
+5. On unpair, release the live input:
+
+```typescript
+await fetch(`${SUPABASE_URL}/functions/v1/cloudcast-stream`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+  body: JSON.stringify({ action: 'delete', access_code: accessCode, device_id: deviceId }),
+});
+```
 
 **Do not** surface vendor or protocol names in the mobile UI. Display:
 - Free → **Regal Mesh**

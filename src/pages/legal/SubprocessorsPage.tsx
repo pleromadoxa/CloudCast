@@ -1,9 +1,9 @@
 import { LegalDocument, LegalSection } from '../../components/legal/LegalDocument';
 
 const SUBPROCESSORS = [
-  { name: 'Supabase, Inc.', purpose: 'Database, authentication, file storage, edge functions', location: 'USA' },
-  { name: 'Resend, Inc.', purpose: 'Transactional email delivery', location: 'USA' },
-  { name: 'Cloudflare, Inc.', purpose: 'CDN, WebRTC/stream delivery (Regal Cloud plans)', location: 'Global' },
+  { name: 'CloudCast Platform', purpose: 'Account database, authentication, session signaling, cloud APIs', location: 'USA' },
+  { name: 'CloudCast Notifications', purpose: 'Transactional email (plan changes, security alerts)', location: 'USA' },
+  { name: 'Regal Cloud Network', purpose: 'Low-latency video ingest and playback (Pro / Pro Master)', location: 'Global' },
 ];
 
 export function SubprocessorsPage() {

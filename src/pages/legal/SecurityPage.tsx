@@ -10,7 +10,7 @@ export function SecurityPage() {
       <LegalSection title="Technical controls">
         <LegalList items={[
           'TLS encryption in transit for all web and API traffic.',
-          'Row Level Security (RLS) on Supabase tables — users access only their data.',
+          'Row Level Security (RLS) on CloudCast platform tables — users access only their data.',
           'Stream keys stored encrypted; admin views show masked keys only.',
           'Role-based admin access with audit logging for privileged actions.',
           'Separate Regal Mesh (peer) vs Regal Cloud (relay) isolation per plan.',

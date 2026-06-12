@@ -1,7 +1,7 @@
-import { ICE_SERVERS } from './constants';
+import { REGAL_WHEP_PC_CONFIG } from './meshConfig';
 import { waitForIceGathering } from './utils';
 
-export type WhepConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
+export type WhepConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed' | 'reconnecting';
 
 export interface WhepClientOptions {
   whepUrl: string;
@@ -9,16 +9,14 @@ export interface WhepClientOptions {
   onStateChange?: (state: WhepConnectionState) => void;
 }
 
-/**
- * Regal Cloud stream playback client.
- * Negotiates a secure playback session and attaches incoming tracks to a MediaStream.
- */
+/** Regal Cloud playback client — stable relayed WebRTC for Pro / Pro Master plans. */
 export class WhepClient {
   private pc: RTCPeerConnection | null = null;
   private resourceUrl: string | null = null;
   private mediaStream: MediaStream | null = null;
   private state: WhepConnectionState = 'idle';
   private options: WhepClientOptions;
+  private aborted = false;
 
   constructor(options: WhepClientOptions) {
     this.options = options;
@@ -38,15 +36,13 @@ export class WhepClient {
   }
 
   async connect(): Promise<MediaStream> {
-    await this.disconnect();
+    this.aborted = false;
+    await this.disconnect(false);
 
     this.setState('connecting');
     this.mediaStream = new MediaStream();
 
-    this.pc = new RTCPeerConnection({
-      iceServers: ICE_SERVERS,
-      bundlePolicy: 'max-bundle',
-    });
+    this.pc = new RTCPeerConnection(REGAL_WHEP_PC_CONFIG);
 
     this.pc.addTransceiver('video', { direction: 'recvonly' });
     this.pc.addTransceiver('audio', { direction: 'recvonly' });
@@ -65,6 +61,13 @@ export class WhepClient {
       else if (cs === 'failed') this.setState('failed');
     });
 
+    this.pc.addEventListener('iceconnectionstatechange', () => {
+      const ice = this.pc?.iceConnectionState;
+      if (ice === 'failed' || ice === 'disconnected') {
+        this.setState(ice === 'failed' ? 'failed' : 'disconnected');
+      }
+    });
+
     const offer = await this.pc.createOffer();
     await this.pc.setLocalDescription(offer);
     await waitForIceGathering(this.pc);
@@ -74,6 +77,10 @@ export class WhepClient {
       headers: { 'Content-Type': 'application/sdp' },
       body: this.pc.localDescription!.sdp,
     });
+
+    if (this.aborted) {
+      throw new Error('Connection aborted');
+    }
 
     if (response.status !== 201) {
       const errorText = await response.text();
@@ -89,7 +96,9 @@ export class WhepClient {
     return this.mediaStream;
   }
 
-  async disconnect(): Promise<void> {
+  async disconnect(markIdle = true): Promise<void> {
+    this.aborted = true;
+
     if (this.resourceUrl) {
       try {
         await fetch(this.resourceUrl, { method: 'DELETE' });
@@ -103,6 +112,6 @@ export class WhepClient {
     this.pc = null;
     this.mediaStream?.getTracks().forEach((t) => t.stop());
     this.mediaStream = null;
-    this.setState('idle');
+    if (markIdle) this.setState('idle');
   }
 }

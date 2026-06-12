@@ -1,0 +1,15 @@
+[
+  {
+    "AllowedOrigins": [
+      "http://localhost:5173",
+      "http://localhost:4173",
+      "https://cloudcast.pages.dev",
+      "https://cloudcast.pro",
+      "https://www.cloudcast.pro"
+    ],
+    "AllowedMethods": ["GET", "PUT", "HEAD"],
+    "AllowedHeaders": ["Content-Type", "Content-Length", "Content-MD5", "x-amz-*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]

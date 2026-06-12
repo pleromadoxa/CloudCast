@@ -21,10 +21,16 @@ interface Entry {
   refCount: number;
   listeners: Set<Listener>;
   disconnectTimer: ReturnType<typeof setTimeout> | null;
+  retryTimer: ReturnType<typeof setTimeout> | null;
   connecting: boolean;
+  retryCount: number;
 }
 
 const DISCONNECT_GRACE_MS = 1500;
+const MAX_RETRIES = 10;
+const BASE_RETRY_MS = 1200;
+const MAX_RETRY_MS = 30_000;
+
 const pool = new Map<string, Entry>();
 
 function poolKey(deviceId: string, quality: StreamQuality) {
@@ -44,6 +50,26 @@ function notify(entry: Entry) {
   entry.listeners.forEach((fn) => fn(snap));
 }
 
+function clearRetry(entry: Entry) {
+  if (entry.retryTimer) {
+    clearTimeout(entry.retryTimer);
+    entry.retryTimer = null;
+  }
+}
+
+function scheduleRetry(entry: Entry) {
+  if (entry.refCount <= 0 || entry.retryCount >= MAX_RETRIES) return;
+  clearRetry(entry);
+  const delay = Math.min(BASE_RETRY_MS * 2 ** entry.retryCount, MAX_RETRY_MS);
+  entry.retryCount += 1;
+  entry.connectionState = 'reconnecting';
+  notify(entry);
+  entry.retryTimer = setTimeout(() => {
+    entry.retryTimer = null;
+    void connectEntry(entry);
+  }, delay);
+}
+
 async function connectEntry(entry: Entry) {
   if (entry.connecting) return;
   entry.connecting = true;
@@ -55,6 +81,9 @@ async function connectEntry(entry: Entry) {
       onStateChange: (state) => {
         entry.connectionState = state;
         notify(entry);
+        if ((state === 'disconnected' || state === 'failed') && entry.refCount > 0) {
+          scheduleRetry(entry);
+        }
       },
       onTrack: (stream) => {
         entry.stream = stream;
@@ -63,11 +92,14 @@ async function connectEntry(entry: Entry) {
     });
     const mediaStream = await entry.client.connect();
     entry.stream = mediaStream;
+    entry.retryCount = 0;
+    clearRetry(entry);
     notify(entry);
   } catch (err) {
     entry.error = err instanceof Error ? err.message : 'Stream connection failed';
     entry.connectionState = 'failed';
     notify(entry);
+    scheduleRetry(entry);
   } finally {
     entry.connecting = false;
   }
@@ -94,12 +126,16 @@ export function acquireWhepStream(
       refCount: 0,
       listeners: new Set(),
       disconnectTimer: null,
+      retryTimer: null,
       connecting: false,
+      retryCount: 0,
     };
     pool.set(key, entry);
     void connectEntry(entry);
   } else if (entry.whepUrl !== whepUrl) {
     entry.whepUrl = whepUrl;
+    entry.retryCount = 0;
+    clearRetry(entry);
     void connectEntry(entry);
   }
 
@@ -118,6 +154,7 @@ export function acquireWhepStream(
     e.refCount -= 1;
     e.listeners.delete(listener);
     if (e.refCount <= 0) {
+      clearRetry(e);
       e.disconnectTimer = setTimeout(() => {
         const current = pool.get(key);
         if (!current || current.refCount > 0) return;
@@ -129,7 +166,10 @@ export function acquireWhepStream(
 
   const reconnect = () => {
     const e = pool.get(key);
-    if (e) void connectEntry(e);
+    if (!e) return;
+    e.retryCount = 0;
+    clearRetry(e);
+    void connectEntry(e);
   };
 
   return { release, reconnect };
@@ -137,13 +177,18 @@ export function acquireWhepStream(
 
 export function reconnectWhepPoolDevice(deviceId: string) {
   for (const entry of pool.values()) {
-    if (entry.deviceId === deviceId) void connectEntry(entry);
+    if (entry.deviceId === deviceId) {
+      entry.retryCount = 0;
+      clearRetry(entry);
+      void connectEntry(entry);
+    }
   }
 }
 
 export function releaseAllWhepPool() {
   for (const [key, entry] of pool) {
     if (entry.disconnectTimer) clearTimeout(entry.disconnectTimer);
+    clearRetry(entry);
     void entry.client.disconnect();
     pool.delete(key);
   }

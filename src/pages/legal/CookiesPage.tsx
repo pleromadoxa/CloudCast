@@ -8,7 +8,7 @@ export function CookiesPage() {
       </LegalSection>
       <LegalSection title="Cookies we use">
         <LegalList items={[
-          'Essential: authentication session (Supabase), security tokens — required for the service.',
+          'Essential: CloudCast authentication session, security tokens — required for the service.',
           'Functional: mixer UI state, dismissed broadcast banners, audio unlock flags.',
           'Analytics: we may use privacy-focused analytics in the future; non-essential cookies will require consent where required by law.',
         ]} />

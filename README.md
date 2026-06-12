@@ -12,6 +12,15 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+### Cloudflare R2 (Pro / Pro Master recordings)
+
+Add `CLOUDFLARE_API_TOKEN`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` to `.env`, then:
+
+```bash
+npm run setup:r2      # create bucket + browser CORS
+npm run deploy:r2     # sync secrets + deploy cloudcast-r2 edge function
+```
+
 | Route | Description |
 |-------|-------------|
 | `/` | Landing page — product info, broadcast firms, about Regal |
@@ -55,7 +64,9 @@ Mobile connects directly to the dashboard over a secure peer link. Signaling run
 
 ### Pro / Pro Master — Regal Cloud
 
-Mobile ingests high-quality video through Regal's global delivery network. Pro delivers **HD**; Pro Master delivers **UHD**. Playback URLs are stored in `paired_devices` (internal fields — not exposed in user-facing UI).
+Mobile ingests via **Cloudflare Stream WHIP**; the dashboard plays back via **WHEP** (stable relayed WebRTC — not mesh P2P). Pro delivers **HD**; Pro Master delivers **UHD**.
+
+Mobile calls the `cloudcast-stream` edge function to provision a live input; WHIP/WHEP URLs are stored on `paired_devices`. Deploy with `npm run deploy:cloudflare`.
 
 ## Dashboard features
 
@@ -69,7 +80,7 @@ Mobile ingests high-quality video through Regal's global delivery network. Pro d
 - **Audio source routing** — per input: phone/camera mic, USB capture card audio, or linked USB audio device (lapel mic)
 - **USB audio devices** — pair audio-only USB inputs and link them to camera slots
 - **Stream panel** — save YouTube, Twitch, Facebook Live, or Custom RTMP destinations to your account; plan-aware simultaneous stream limits
-- **Multiview**, fullscreen PGM, record indicator (UI)
+- **Multiview**, fullscreen PGM, **PGM recording** (local WebM + Cloudflare R2 cloud upload on Pro / Pro Master)
 - **Keyboard shortcuts** — `1–9` PST preview, `0` = Input 10, **Enter** / **Space** TAKE, `Ctrl+1–0` CUT, `C` CUT, `B` FTB, `O` ON AIR, `M` multiview, `S` swap
 
 ### Control deck panels
@@ -127,7 +138,7 @@ Migrations live in `supabase/migrations/`. Applied to project `ixjydnkpnyxnckhkq
 | Column | Description |
 |--------|-------------|
 | `user_id` | FK to auth user |
-| `storage_path` | Path in `mixer-recordings` storage bucket |
+| `storage_path` | R2 object path (`{userId}/{uuid}.webm` under `cloudcast/recordings/`) |
 | `file_name` | Original download filename |
 | `size_bytes` | File size for quota tracking |
 | `created_at` | Upload timestamp |

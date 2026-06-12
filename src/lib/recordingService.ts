@@ -1,7 +1,44 @@
-import { getSupabase } from './supabase';
+import { getSupabase, isSupabaseConfigured } from './supabase';
+import { USER_MSG } from './userMessaging';
 import type { MixerRecording, RecordingStorageUsage } from '../types/recording';
 
-const BUCKET = 'mixer-recordings';
+const LEGACY_BUCKET = 'mixer-recordings';
+
+type R2Action = 'presign-upload' | 'presign-download' | 'delete';
+
+interface R2PresignUploadResult {
+  uploadUrl: string;
+  storagePath: string;
+}
+
+async function invokeCloudcastR2<T>(action: R2Action, body: Record<string, unknown>): Promise<T> {
+  if (!isSupabaseConfigured()) {
+    throw new Error(USER_MSG.cloudStorageUnavailable);
+  }
+
+  const supabase = getSupabase();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new Error('You must be signed in to use cloud recordings.');
+  }
+
+  const base = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, '');
+  const res = await fetch(`${base}/functions/v1/cloudcast-r2`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      'Content-Type': 'application/json',
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY ?? '',
+    },
+    body: JSON.stringify({ action, ...body }),
+  });
+
+  const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    throw new Error(String(payload.error ?? `${USER_MSG.cloudStorageRequestFailed} (${res.status})`));
+  }
+  return payload as T;
+}
 
 function mapRecording(row: Record<string, unknown>): MixerRecording {
   return {
@@ -47,16 +84,22 @@ export async function uploadMixerRecording(
   } = await supabase.auth.getUser();
   if (userError || !user) throw new Error('You must be signed in to save recordings.');
 
-  const recordingId = crypto.randomUUID();
-  const storagePath = `${user.id}/${recordingId}.webm`;
+  const presigned = await invokeCloudcastR2<R2PresignUploadResult>('presign-upload', {
+    mime_type: mimeType,
+    size_bytes: blob.size,
+  });
 
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET)
-    .upload(storagePath, blob, { contentType: mimeType, upsert: false });
-  if (uploadError) throw new Error(uploadError.message);
+  const uploadRes = await fetch(presigned.uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': mimeType },
+    body: blob,
+  });
+  if (!uploadRes.ok) {
+    throw new Error(`${USER_MSG.cloudStorageUploadFailed} (${uploadRes.status})`);
+  }
 
   const { data, error } = await supabase.rpc('register_mixer_recording', {
-    p_storage_path: storagePath,
+    p_storage_path: presigned.storagePath,
     p_file_name: fileName,
     p_mime_type: mimeType,
     p_size_bytes: blob.size,
@@ -64,7 +107,7 @@ export async function uploadMixerRecording(
     p_session_id: sessionId ?? null,
   });
   if (error) {
-    await supabase.storage.from(BUCKET).remove([storagePath]).catch(() => undefined);
+    await invokeCloudcastR2('delete', { storage_path: presigned.storagePath }).catch(() => undefined);
     throw new Error(error.message);
   }
 
@@ -75,15 +118,30 @@ export async function deleteMixerRecording(id: string): Promise<void> {
   const supabase = getSupabase();
   const { data: storagePath, error } = await supabase.rpc('delete_mixer_recording', { p_id: id });
   if (error) throw new Error(error.message);
-  if (storagePath) {
-    await supabase.storage.from(BUCKET).remove([String(storagePath)]);
+  if (!storagePath) return;
+
+  const path = String(storagePath);
+  try {
+    await invokeCloudcastR2('delete', { storage_path: path });
+  } catch {
+    await supabase.storage.from(LEGACY_BUCKET).remove([path]).catch(() => undefined);
   }
 }
 
 export async function getRecordingDownloadUrl(storagePath: string, expiresInSec = 3600): Promise<string> {
+  try {
+    const { url } = await invokeCloudcastR2<{ url: string }>('presign-download', {
+      storage_path: storagePath,
+      file_name: storagePath.split('/').pop() ?? 'recording.webm',
+    });
+    if (url) return url;
+  } catch {
+    // Fall back to legacy Supabase Storage recordings
+  }
+
   const { data, error } = await getSupabase()
     .storage
-    .from(BUCKET)
+    .from(LEGACY_BUCKET)
     .createSignedUrl(storagePath, expiresInSec);
   if (error || !data?.signedUrl) throw new Error(error?.message ?? 'Could not create download link');
   return data.signedUrl;

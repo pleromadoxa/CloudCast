@@ -1,2 +1,8 @@
 [functions.send-transactional-email]
 verify_jwt = false
+
+[functions.cloudcast-r2]
+verify_jwt = true
+
+[functions.cloudcast-stream]
+verify_jwt = false
