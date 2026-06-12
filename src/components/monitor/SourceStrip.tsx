@@ -89,7 +89,7 @@ export function SourceStrip({
                   audioMuted={monitorVol === 0}
                   volume={monitorVol}
                   audioDeviceId={monitorAudioId}
-                  enableSpeakerPlayback={Boolean(isPst)}
+                  enableSpeakerPlayback={Boolean(isPst && device.deviceId !== pgmDeviceId)}
                   compact
                   showLabel={false}
                   className="h-full"

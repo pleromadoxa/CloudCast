@@ -25,7 +25,7 @@ export function AuthPage() {
 
   const { signIn, signUp, user } = useAuth();
   const navigate = useNavigate();
-  const from = (location.state as { from?: string })?.from ?? '/dashboard';
+  const from = (location.state as { from?: string })?.from ?? '/hub';
   const legalReturnState = authReturnState(mode);
 
   useEffect(() => {

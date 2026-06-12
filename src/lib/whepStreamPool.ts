@@ -185,6 +185,15 @@ export function reconnectWhepPoolDevice(deviceId: string) {
   }
 }
 
+/** Read-only WHEP pool state for diagnostics (does not acquire a listener). */
+export function peekWhepPoolSnapshot(
+  deviceId: string,
+  quality: StreamQuality = 'auto',
+): WhepPoolSnapshot | null {
+  const entry = pool.get(poolKey(deviceId, quality));
+  return entry ? snapshot(entry) : null;
+}
+
 export function releaseAllWhepPool() {
   for (const [key, entry] of pool) {
     if (entry.disconnectTimer) clearTimeout(entry.disconnectTimer);

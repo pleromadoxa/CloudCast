@@ -1,4 +1,4 @@
-import { Mic, MicOff, Radio, X } from 'lucide-react';
+import { Mic, MicOff, Radio } from 'lucide-react';
 import { MIXER_PANELS } from '../../config/mixerPanels';
 import type { DashboardControls } from '../../types/controls';
 import type { MixerPanel } from '../../types/mixer';
@@ -19,6 +19,7 @@ import { TransitionPanel } from './panels/TransitionPanel';
 import { DevicesPanel } from './panels/DevicesPanel';
 import { SettingsPanel } from './panels/SettingsPanel';
 import { StreamSettingsPanel } from './panels/StreamSettingsPanel';
+import { MixerPanelHeader } from './MixerPanelHeader';
 
 interface MixerControlDeckProps {
   controls: DashboardControls;
@@ -255,30 +256,40 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
         isMultiPanel && 'atem-chassis--multi',
       )}
     >
-      <div className="atem-sidebar relative z-10 flex w-12 shrink-0 flex-col border-r border-mixer-border bg-[#111] py-1 sm:w-14">
+      <nav className="atem-sidebar" aria-label="Mixer panels">
         {MIXER_PANELS.map(({ id, icon: Icon, label }) => {
           const open = visiblePanels.includes(id);
           const active = controls.activePanel === id;
           return (
-          <button
-            key={id}
-            type="button"
-            title={`${label} — click to open/close`}
-            onClick={() => onToggleOpenPanel(id)}
-            onDoubleClick={() => onSetPanel(id)}
-            className={cn(
-              'relative flex h-10 items-center justify-center transition-colors sm:h-11',
-              active ? 'bg-mixer-red/25 text-mixer-red' : open ? 'text-mixer-text' : 'text-mixer-muted hover:text-mixer-text',
-            )}
-          >
-            <Icon className="h-5 w-5" />
-            {open && <span className="absolute bottom-1 h-1 w-1 rounded-full bg-mixer-green" />}
-          </button>
+            <button
+              key={id}
+              type="button"
+              title={`${label} — click to open/close`}
+              onClick={() => onToggleOpenPanel(id)}
+              onDoubleClick={() => onSetPanel(id)}
+              className={cn(
+                'atem-sidebar-btn',
+                active && 'atem-sidebar-btn--active',
+                open && !active && 'atem-sidebar-btn--open',
+              )}
+            >
+              <Icon className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
+              <span className="atem-sidebar-label">{label}</span>
+              {open && <span className="atem-sidebar-dot" aria-hidden />}
+            </button>
           );
         })}
-      </div>
+      </nav>
 
-      <div className="atem-chassis-panel-body relative z-0 flex min-h-0 min-w-0 flex-1 flex-col p-1.5 sm:p-2">
+      <div className="atem-chassis-panel-body relative z-0 flex min-h-0 min-w-0 flex-1 flex-col">
+        {!isMultiPanel && panelMeta(controls.activePanel) && (
+          <MixerPanelHeader
+            icon={panelMeta(controls.activePanel)!.icon}
+            title={panelMeta(controls.activePanel)!.label}
+            description={panelMeta(controls.activePanel)!.description}
+            onClose={() => onToggleOpenPanel(controls.activePanel)}
+          />
+        )}
         <div
           className={cn(
             'atem-chassis-panel-scroll min-h-0',
@@ -286,69 +297,46 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
           )}
           style={isMultiPanel ? { gridTemplateColumns: `repeat(${visiblePanels.length}, minmax(0, 1fr))` } : undefined}
         >
-        {visiblePanels.map((panel) => (
-          <div
-            key={panel}
-            className={cn(
-              'atem-multi-panel-column min-h-0 min-w-0',
-              panel === controls.activePanel && isMultiPanel && 'atem-multi-panel-column-active',
-            )}
-          >
-            {isMultiPanel && (
-              <div className="atem-multi-panel-label mb-1.5 flex items-start justify-between gap-2 border-b border-white/10 pb-1.5">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    {panelMeta(panel)?.icon && (
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-white/10 bg-black/40 text-mixer-red">
-                        {(() => {
-                          const Icon = panelMeta(panel)!.icon;
-                          return <Icon className="h-3 w-3" />;
-                        })()}
-                      </span>
-                    )}
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-white">
-                      {panelMeta(panel)?.label ?? panel}
-                    </span>
-                  </div>
-                  {panelMeta(panel)?.description && (
-                    <p className="mt-0.5 line-clamp-2 text-[7px] leading-snug text-mixer-muted">
-                      {panelMeta(panel)!.description}
-                    </p>
-                  )}
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => onSetPanel(panel)}
-                    className={cn(
-                      'rounded px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-wider',
-                      panel === controls.activePanel
-                        ? 'bg-mixer-red/20 text-mixer-red'
-                        : 'text-mixer-muted hover:bg-white/10 hover:text-white',
-                    )}
-                  >
-                    Focus
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onToggleOpenPanel(panel)}
-                    className="rounded p-0.5 text-mixer-muted hover:bg-white/10 hover:text-white"
-                    title="Close panel"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
+          {visiblePanels.map((panel) => {
+            const meta = panelMeta(panel);
+            return (
+              <div
+                key={panel}
+                className={cn(
+                  'atem-multi-panel-column min-h-0 min-w-0',
+                  panel === controls.activePanel && isMultiPanel && 'atem-multi-panel-column-active',
+                )}
+              >
+                {isMultiPanel && meta && (
+                  <MixerPanelHeader
+                    icon={meta.icon}
+                    title={meta.label}
+                    description={meta.description}
+                    className="mixer-panel-header--compact"
+                    onClose={() => onToggleOpenPanel(panel)}
+                    actions={
+                      panel !== controls.activePanel ? (
+                        <button
+                          type="button"
+                          onClick={() => onSetPanel(panel)}
+                          className="mixer-panel-focus-btn"
+                        >
+                          Focus
+                        </button>
+                      ) : undefined
+                    }
+                  />
+                )}
+                <div className="atem-multi-panel-content min-h-0">
+                  {renderPanel(panel, isMultiPanel)}
                 </div>
               </div>
-            )}
-            <div className="atem-multi-panel-content min-h-0">
-              {renderPanel(panel, isMultiPanel)}
-            </div>
-          </div>
-        ))}
+            );
+          })}
         </div>
 
         {showGlobalTransport && (
-          <div className="mt-auto flex items-center justify-between border-t border-mixer-border pt-2">
+          <div className="mt-auto flex items-center justify-between border-t border-mixer-border px-2.5 py-2">
             <div className="flex gap-1.5">
               {slots.map((device, i) => (
                 <button

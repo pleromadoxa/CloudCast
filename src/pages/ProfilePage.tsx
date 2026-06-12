@@ -4,6 +4,7 @@ import { AdminNavLink } from '../components/admin/AdminNavLink';
 import { StatCard, StatCardGrid } from '../components/admin/AdminShared';
 import {
   Activity,
+  Clapperboard,
   Check,
   Cloud,
   Download,
@@ -41,6 +42,12 @@ import {
   updateUserProfile,
 } from '../lib/profileService';
 import {
+  deleteReplayClip,
+  fetchReplayStorageUsage,
+  fetchUserReplayClips,
+  getReplayClipDownloadUrl,
+} from '../lib/replayClipService';
+import {
   deleteMixerRecording,
   fetchRecordingStorageUsage,
   fetchUserRecordings,
@@ -49,11 +56,15 @@ import {
 import { fetchStreamDestinations } from '../lib/streamingService';
 import { resolveStreamLimits } from '../lib/streamingLimits';
 import { LEGAL_NAV, SITE_LEGAL } from '../config/siteLegal';
+import type { ReplayCloudClip } from '../types/replay';
 import type { MixerRecording, RecordingStorageUsage } from '../types/recording';
 import type { UserAccountDashboard } from '../types/profile';
 import type { StreamDestination } from '../types/streaming';
 import { STREAM_PLATFORM_LABELS } from '../types/streaming';
 import { PLAN_LABELS, formatPrice } from '../types/plans';
+import { MobileAppsSection } from '../components/products/MobileAppsSection';
+import { CLOUDCAST_PRODUCTS, UNIVERSAL_PLAN_PRICE_CENTS } from '../config/products';
+import { listProductSubscriptions } from '../lib/productEntitlements';
 import { cn } from '../lib/utils';
 
 export function ProfilePage() {
@@ -63,6 +74,8 @@ export function ProfilePage() {
   const [nameSaved, setNameSaved] = useState(false);
   const [usage, setUsage] = useState<RecordingStorageUsage | null>(null);
   const [recordings, setRecordings] = useState<MixerRecording[]>([]);
+  const [replayClips, setReplayClips] = useState<ReplayCloudClip[]>([]);
+  const [replayUsage, setReplayUsage] = useState<{ usedBytes: number; quotaBytes: number } | null>(null);
   const [dashboard, setDashboard] = useState<UserAccountDashboard | null>(null);
   const [destinations, setDestinations] = useState<StreamDestination[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +89,8 @@ export function ProfilePage() {
   const [sendingReset, setSendingReset] = useState(false);
   const [resetSent, setResetSent] = useState(false);
 
+  const subscriptions = listProductSubscriptions(profile);
+  const isUniversal = profile?.plan_id === 'universal' || profile?.entitlements?.universal;
   const planId = profile?.plan_id ?? 'free';
   const quotaGb = PLAN_RECORDING_STORAGE_GB[planId];
   const hasCloudStorage = quotaGb > 0;
@@ -85,14 +100,18 @@ export function ProfilePage() {
     setLoading(true);
     setError(null);
     try {
-      const [usageData, recordingRows, destinationRows, dashboardResult] = await Promise.all([
+      const [usageData, recordingRows, replayRows, replayUsageData, destinationRows, dashboardResult] = await Promise.all([
         fetchRecordingStorageUsage(),
         fetchUserRecordings(),
+        fetchUserReplayClips().catch(() => []),
+        fetchReplayStorageUsage().catch(() => null),
         fetchStreamDestinations(),
         fetchAccountDashboard().catch(() => null),
       ]);
       setUsage(usageData);
       setRecordings(recordingRows);
+      setReplayClips(replayRows);
+      setReplayUsage(replayUsageData ? { usedBytes: replayUsageData.usedBytes, quotaBytes: replayUsageData.quotaBytes } : null);
       setDestinations(destinationRows);
       setDashboard(dashboardResult);
     } catch (err) {
@@ -188,6 +207,35 @@ export function ProfilePage() {
     }
   };
 
+  const handleReplayDownload = async (clip: ReplayCloudClip) => {
+    setDownloadingId(clip.id);
+    try {
+      const url = await getReplayClipDownloadUrl(clip.storagePath, clip.fileName);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = clip.fileName;
+      anchor.rel = 'noopener';
+      anchor.click();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handleReplayDelete = async (clip: ReplayCloudClip) => {
+    if (!window.confirm(`Delete "${clip.label ?? clip.fileName}" from Regal Cloud Clips?`)) return;
+    setDeletingId(clip.id);
+    try {
+      await deleteReplayClip(clip.id);
+      await loadAccountData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const usagePercent =
     usage && usage.quotaBytes > 0
       ? Math.min(100, (usage.usedBytes / usage.quotaBytes) * 100)
@@ -211,10 +259,10 @@ export function ProfilePage() {
           <div className="flex flex-wrap items-center gap-2">
             <AdminNavLink className="rounded border border-white/10 px-4 py-2 text-xs font-bold tracking-wider" />
             <Link
-              to="/dashboard"
+              to="/hub"
               className="rounded border border-white/20 px-4 py-2 text-xs font-bold tracking-wider hover:border-white/40"
             >
-              OPEN MIXER
+              PRODUCT HUB
             </Link>
             <button
               type="button"
@@ -275,6 +323,66 @@ export function ProfilePage() {
             icon={Radio}
           />
         </StatCardGrid>
+
+        <section className="mb-6 rounded-xl border border-white/10 bg-mixer-panel p-6">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-mixer-muted">Your products</h2>
+          <p className="mt-1 text-xs text-mixer-muted">
+            Quick access to each broadcast console you subscribe to.
+          </p>
+          {isUniversal ? (
+            <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+              <p className="font-bold text-amber-200">CloudCast Universal</p>
+              <p className="mt-1 text-xs text-mixer-muted">
+                {formatPrice(UNIVERSAL_PLAN_PRICE_CENTS)} · all products included
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {CLOUDCAST_PRODUCTS.map((product) => (
+                  <Link
+                    key={product.id}
+                    to={product.dashboardPath}
+                    className="rounded bg-white/10 px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-white/15"
+                  >
+                    Open {product.shortName} →
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {subscriptions.map((sub) => {
+                const product = CLOUDCAST_PRODUCTS.find((p) => p.id === sub.product)!;
+                return (
+                  <div key={sub.product} className="rounded-lg border border-white/10 bg-black/30 p-4">
+                    <p className="font-bold">{product.name}</p>
+                    <p className="mt-1 text-xs text-mixer-muted">{sub.label}</p>
+                    <Link
+                      to={product.dashboardPath}
+                      className="mt-3 inline-block text-[10px] font-bold uppercase tracking-wider text-mixer-red hover:underline"
+                    >
+                      Open dashboard →
+                    </Link>
+                    <Link
+                      to={product.pricingPath}
+                      className="ml-3 inline-block text-[10px] font-bold uppercase tracking-wider text-mixer-muted hover:text-white"
+                    >
+                      Change plan
+                    </Link>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {!isUniversal && (
+            <Link
+              to="/pricing?product=universal"
+              className="mt-4 inline-block text-xs font-bold tracking-wider text-amber-400 hover:text-amber-300"
+            >
+              Upgrade to CloudCast Universal →
+            </Link>
+          )}
+        </section>
+
+        <MobileAppsSection className="mb-6" />
 
         {storageWarning && (
           <div
@@ -738,6 +846,106 @@ export function ProfilePage() {
                             className="inline-flex items-center gap-1 rounded border border-mixer-red/30 px-2.5 py-1.5 text-[10px] font-bold tracking-wider text-mixer-red hover:bg-mixer-red/10 disabled:opacity-50"
                           >
                             {deletingId === recording.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3 w-3" />
+                            )}
+                            DELETE
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section className="mt-6 rounded-xl border border-emerald-500/20 bg-[#0a0a0a] p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="flex items-center gap-2 text-lg font-bold">
+                <Clapperboard className="h-5 w-5 text-emerald-400" />
+                Replay clips
+              </h2>
+              <p className="text-xs text-mixer-muted">
+                Instant replay highlights saved to Regal Cloud Clips from CloudCast Replay.
+              </p>
+              {replayUsage && replayUsage.quotaBytes > 0 && (
+                <p className="mt-1 text-[10px] text-mixer-muted">
+                  {formatBytes(replayUsage.usedBytes)} / {formatBytes(replayUsage.quotaBytes)} replay storage
+                </p>
+              )}
+            </div>
+            <Link
+              to="/replay"
+              className="rounded border border-emerald-500/30 px-3 py-1.5 text-[10px] font-bold tracking-wider text-emerald-300 hover:border-emerald-500/50"
+            >
+              OPEN REPLAY
+            </Link>
+          </div>
+
+          {loading ? (
+            <div className="mt-10 flex justify-center">
+              <Loader2 className="h-7 w-7 animate-spin text-emerald-400" />
+            </div>
+          ) : replayClips.length === 0 ? (
+            <div className="mt-6 rounded-lg border border-dashed border-emerald-500/15 px-4 py-10 text-center text-sm text-mixer-muted">
+              {hasCloudStorage
+                ? 'No replay clips in the cloud yet. Mark highlights in CloudCast Replay and sync to Regal Cloud.'
+                : 'Cloud replay clips require Video Mixer Pro, Pro Master, or Universal.'}
+            </div>
+          ) : (
+            <div className="mt-6 overflow-x-auto">
+              <table className="w-full min-w-[640px] text-left text-xs">
+                <thead>
+                  <tr className="border-b border-white/10 text-[10px] tracking-wider text-mixer-muted">
+                    <th className="px-2 py-2 font-bold">CLIP</th>
+                    <th className="px-2 py-2 font-bold">DURATION</th>
+                    <th className="px-2 py-2 font-bold">SIZE</th>
+                    <th className="px-2 py-2 font-bold">SAVED</th>
+                    <th className="px-2 py-2 text-right font-bold">ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {replayClips.map((clip) => (
+                    <tr key={clip.id} className="border-b border-white/5">
+                      <td className="px-2 py-3">
+                        <p className="font-medium text-white">{clip.label ?? clip.fileName}</p>
+                        {clip.bankIndex != null && (
+                          <p className="text-[10px] text-mixer-muted">Bank {clip.bankIndex + 1}</p>
+                        )}
+                      </td>
+                      <td className="px-2 py-3 text-mixer-muted">
+                        {clip.durationSec != null ? `${clip.durationSec.toFixed(1)}s` : '—'}
+                      </td>
+                      <td className="px-2 py-3 text-mixer-muted">{formatBytes(clip.sizeBytes)}</td>
+                      <td className="px-2 py-3 text-mixer-muted">
+                        {new Date(clip.createdAt).toLocaleString()}
+                      </td>
+                      <td className="px-2 py-3">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            disabled={downloadingId === clip.id}
+                            onClick={() => { void handleReplayDownload(clip); }}
+                            className="inline-flex items-center gap-1 rounded border border-white/10 px-2.5 py-1.5 text-[10px] font-bold tracking-wider hover:border-white/30 disabled:opacity-50"
+                          >
+                            {downloadingId === clip.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Download className="h-3 w-3" />
+                            )}
+                            DOWNLOAD
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deletingId === clip.id}
+                            onClick={() => { void handleReplayDelete(clip); }}
+                            className="inline-flex items-center gap-1 rounded border border-mixer-red/30 px-2.5 py-1.5 text-[10px] font-bold tracking-wider text-mixer-red hover:bg-mixer-red/10 disabled:opacity-50"
+                          >
+                            {deletingId === clip.id ? (
                               <Loader2 className="h-3 w-3 animate-spin" />
                             ) : (
                               <Trash2 className="h-3 w-3" />

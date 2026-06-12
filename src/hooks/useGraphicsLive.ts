@@ -76,12 +76,35 @@ export function useGraphicsLive(setControls: SetControls) {
 
   const toggleLowerThirdLive = useCallback(
     (live: boolean) => {
-      setControls((prev) => ({
-        ...prev,
-        pgmLayers: live
-          ? syncLivePgmGraphics(prev.layers, cloneLayerSettings({ ...prev.pgmLayers, ...pickLowerThirdFields(prev.layers) }))
-          : { ...prev.pgmLayers, showLowerThird: false },
-      }));
+      setControls((prev) => {
+        if (!live) {
+          return {
+            ...prev,
+            pgmLayers: normalizeLayerSettings({ ...prev.pgmLayers, showLowerThird: false }),
+          };
+        }
+
+        let layers = prev.layers;
+        if (!layers.lowerThirdText.trim()) {
+          const sample = getLowerThirdSampleText(layers.lowerThirdTemplate);
+          layers = normalizeLayerSettings({
+            ...layers,
+            showLowerThird: true,
+            lowerThirdText: sample.title,
+            lowerThirdSubtext: layers.lowerThirdSubtext.trim() ? layers.lowerThirdSubtext : sample.sub,
+          });
+          persistLayers(layers);
+        }
+
+        return {
+          ...prev,
+          layers,
+          pgmLayers: syncLivePgmGraphics(
+            layers,
+            cloneLayerSettings({ ...prev.pgmLayers, ...pickLowerThirdFields(layers) }),
+          ),
+        };
+      });
     },
     [setControls],
   );

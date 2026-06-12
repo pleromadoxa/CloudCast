@@ -4,12 +4,19 @@ import { NetworkProvider } from './context/NetworkContext';
 import { ProductionProvider } from './context/ProductionContext';
 import { MarketingLayout } from './components/marketing/MarketingLayout';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
+import { ProductGate } from './components/auth/ProductGate';
 import { ProductionHost } from './components/production/ProductionHost';
 import { OnAirBanner } from './components/production/OnAirBanner';
 import { LandingPage } from './pages/LandingPage';
+import { ProductsPage } from './pages/ProductsPage';
+import { ProductGuidePage } from './pages/ProductGuidePage';
+import { ProductsHubPage } from './pages/ProductsHubPage';
 import { AuthPage } from './pages/AuthPage';
 import { PricingPage } from './pages/PricingPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { AudioMixerDashboardPage } from './pages/AudioMixerDashboardPage';
+import { ReplayDashboardPage } from './pages/ReplayDashboardPage';
+import { SymphonyDashboardPage } from './pages/SymphonyDashboardPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AdminPage } from './pages/AdminPage';
 import { AdminRoute } from './components/auth/AdminRoute';
@@ -36,7 +43,17 @@ export default function App() {
           <Routes>
             <Route element={<MarketingLayout />}>
               <Route index element={<LandingPage />} />
+              <Route path="products" element={<ProductsPage />} />
+              <Route path="products/guide" element={<ProductGuidePage />} />
               <Route path="pricing" element={<PricingPage />} />
+              <Route
+                path="hub"
+                element={
+                  <ProtectedRoute>
+                    <ProductsHubPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="profile"
                 element={
@@ -65,10 +82,42 @@ export default function App() {
             </Route>
             <Route path="login" element={<AuthPage />} />
             <Route
+              path="audio"
+              element={
+                <ProtectedRoute>
+                  <ProductGate product="audio_mixer">
+                    <AudioMixerDashboardPage />
+                  </ProductGate>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="replay"
+              element={
+                <ProtectedRoute>
+                  <ProductGate product="instant_replay">
+                    <ReplayDashboardPage />
+                  </ProductGate>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="symphony"
+              element={
+                <ProtectedRoute>
+                  <ProductGate product="symphony_studio">
+                    <SymphonyDashboardPage />
+                  </ProductGate>
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="dashboard"
               element={
                 <ProtectedRoute>
-                  <DashboardPage />
+                  <ProductGate product="video_mixer">
+                    <DashboardPage />
+                  </ProductGate>
                 </ProtectedRoute>
               }
             />

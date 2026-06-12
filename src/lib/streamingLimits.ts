@@ -12,6 +12,7 @@ export function resolveStreamLimits(planId: PlanTier | null | undefined): Stream
         allowsMultiplePlatforms: true,
       };
     case 'pro_master':
+    case 'universal':
       return {
         maxConcurrentStreams: 5,
         maxYouTubeDestinations: 5,

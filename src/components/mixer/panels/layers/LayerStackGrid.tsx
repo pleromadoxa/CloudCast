@@ -73,7 +73,7 @@ export function LayerStackGrid({
 
   return (
     <div className={cn('layer-stack-grid', !compact && 'flex min-h-0 flex-1 flex-col')}>
-      <div className={cn('layer-stack-header', GRID_COLS)}>
+      <div className={cn('layer-stack-header', GRID_COLS)} role="row">
         <span />
         <span>Z</span>
         <span>Layer</span>

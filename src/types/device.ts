@@ -48,6 +48,14 @@ export function createEmptySlot(slotNumber: number): Device {
   };
 }
 
+export function createEmptyAudioSlot(slotNumber: number): Device {
+  return {
+    ...createEmptySlot(slotNumber),
+    deviceRole: 'audio',
+    label: `CH ${slotNumber}`,
+  };
+}
+
 export function isRealDevice(device: Device): boolean {
   return !device.deviceId.startsWith('slot-');
 }

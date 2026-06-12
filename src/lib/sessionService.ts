@@ -36,6 +36,34 @@ export async function getOrCreateOwnerSession(): Promise<MixerSession> {
   return mapSession(data as Record<string, unknown>);
 }
 
+/** Separate audio mixer session (product_type = audio). */
+export async function getOrCreateAudioOwnerSession(): Promise<MixerSession> {
+  const { data, error } = await getSupabase().rpc('get_or_create_audio_owner_session');
+  if (error) {
+    throw new Error(
+      error.message.includes('does not exist')
+        ? 'Audio mixer session is not available yet. Apply the latest database migrations.'
+        : error.message,
+    );
+  }
+  if (!data) {
+    throw new Error('Failed to create audio mixer session.');
+  }
+  return mapSession(data as Record<string, unknown>);
+}
+
+export async function linkVideoToAudioBridge(
+  videoSessionId: string,
+  bridgeCode: string,
+): Promise<Record<string, unknown>> {
+  const { data, error } = await getSupabase().rpc('link_video_to_audio_bridge', {
+    p_video_session_id: videoSessionId,
+    p_bridge_code: bridgeCode.trim().toUpperCase(),
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? {}) as Record<string, unknown>;
+}
+
 export async function restoreMixerSession(
   sessionId: string,
   accessCode: string,

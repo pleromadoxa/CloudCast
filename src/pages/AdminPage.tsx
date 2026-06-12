@@ -26,6 +26,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { AdminBroadcastingPanel } from '../components/admin/AdminBroadcastingPanel';
+import { AdminMobileAppsPanel } from '../components/admin/AdminMobileAppsPanel';
 import { AdminCouponsPanel } from '../components/admin/AdminCouponsPanel';
 import { AdminEmailQueuePanel } from '../components/admin/AdminEmailQueuePanel';
 import { AdminUserDetailCards } from '../components/admin/AdminUserDetailCards';
@@ -54,6 +55,7 @@ import {
   fetchAdminCoupons,
   fetchAdminDevices,
   fetchAdminMembers,
+  fetchAdminMobileAppReleases,
   fetchAdminOverview,
   fetchAdminPlans,
   fetchAdminSessions,
@@ -68,6 +70,7 @@ import {
   fetchSystemHealth,
 } from '../lib/adminService';
 import { formatBytes } from '../lib/formatBytes';
+import type { MobileAppReleaseRow } from '../types/mobileApps';
 import type {
   ActivityLogRow,
   AdminDeviceRow,
@@ -101,6 +104,7 @@ const TABS: { id: AdminTab; label: string; icon: typeof Users }[] = [
   { id: 'plan_grants', label: 'Plan issuing', icon: Gift },
   { id: 'coupons', label: 'Coupons', icon: Ticket },
   { id: 'broadcasting', label: 'Broadcasting', icon: Megaphone },
+  { id: 'mobile_apps', label: 'Mobile apps', icon: MonitorSmartphone },
   { id: 'sessions', label: 'Mixer usage', icon: Radio },
   { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
   { id: 'recordings', label: 'Recordings', icon: Video },
@@ -155,6 +159,7 @@ export function AdminPage() {
   const [grantPage, setGrantPage] = useState(0);
   const [coupons, setCoupons] = useState<CouponRow[]>([]);
   const [broadcasts, setBroadcasts] = useState<PlatformBroadcastRow[]>([]);
+  const [mobileAppReleases, setMobileAppReleases] = useState<MobileAppReleaseRow[]>([]);
   const [streamDestinations, setStreamDestinations] = useState<AdminStreamDestinationRow[]>([]);
   const [streamDestinationsTotal, setStreamDestinationsTotal] = useState(0);
   const [destinationPage, setDestinationPage] = useState(0);
@@ -193,6 +198,8 @@ export function AdminPage() {
         setBroadcasts(broadcastRows);
         setStreamDestinations(destinationData.destinations);
         setStreamDestinationsTotal(destinationData.total);
+      } else if (tab === 'mobile_apps') {
+        setMobileAppReleases(await fetchAdminMobileAppReleases());
       } else if (tab === 'sessions') {
         const data = await fetchAdminSessions(PAGE_SIZE, sessionPage * PAGE_SIZE, activeSessionsOnly);
         setSessions(data.sessions);
@@ -640,6 +647,8 @@ export function AdminPage() {
             onDestinationSearch={() => { void loadTab(); }}
             onRefresh={loadTab}
           />
+        ) : tab === 'mobile_apps' ? (
+          <AdminMobileAppsPanel releases={mobileAppReleases} onRefresh={loadTab} />
         ) : tab === 'sessions' ? (
           <div className="space-y-6">
             <StatCardGrid>

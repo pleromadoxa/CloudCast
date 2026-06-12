@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { ensureAudioOutputReady } from '../lib/audioOutput';
+import { rampGainDown, rampGainUp } from '../lib/audioFade';
+import { ensureAudioOutputReady, isDashboardAudioUnlocked, registerDashboardAudioContext, unlockDashboardAudio } from '../lib/audioOutput';
 import {
   acquireStreamSource,
   hasUsableAudio,
@@ -11,6 +12,7 @@ let playbackContext: AudioContext | null = null;
 function getPlaybackContext(): AudioContext {
   if (!playbackContext || playbackContext.state === 'closed') {
     playbackContext = new AudioContext();
+    registerDashboardAudioContext(playbackContext);
     if (typeof window !== 'undefined') {
       (window as Window & { __cloudcastPlaybackCtx?: AudioContext }).__cloudcastPlaybackCtx =
         playbackContext;
@@ -26,7 +28,7 @@ function applyGain(gain: GainNode, volume: number) {
   const now = ctx.currentTime;
   try {
     gain.gain.cancelScheduledValues(now);
-    gain.gain.setTargetAtTime(next, now, 0.012);
+    gain.gain.setTargetAtTime(next, now, 0.02);
   } catch {
     gain.gain.value = next;
   }
@@ -41,16 +43,23 @@ export function useStreamSpeakerPlayback(
   const gainRef = useRef<GainNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const teardown = () => {
-    try {
-      gainRef.current?.disconnect();
-    } catch {
-      /* ignore */
-    }
+  const teardown = async () => {
+    const gain = gainRef.current;
+    const stream = streamRef.current;
     gainRef.current = null;
-    if (streamRef.current) {
-      releaseStreamSource(getPlaybackContext(), streamRef.current);
-      streamRef.current = null;
+    streamRef.current = null;
+
+    if (gain) {
+      await rampGainDown(gain);
+      try {
+        gain.disconnect();
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (stream) {
+      releaseStreamSource(getPlaybackContext(), stream);
     }
   };
 
@@ -60,10 +69,13 @@ export function useStreamSpeakerPlayback(
       return;
     }
 
-    teardown();
+    await teardown();
     if (vol <= 0 || !hasUsableAudio(targetStream)) return;
 
     await ensureAudioOutputReady();
+    if (isDashboardAudioUnlocked()) {
+      await unlockDashboardAudio();
+    }
     const ctx = getPlaybackContext();
     if (ctx.state === 'suspended') await ctx.resume();
 
@@ -76,7 +88,7 @@ export function useStreamSpeakerPlayback(
       gain.connect(ctx.destination);
       gainRef.current = gain;
       streamRef.current = targetStream;
-      applyGain(gain, vol);
+      rampGainUp(gain, vol);
     } catch (err) {
       console.warn('[CloudCast] Monitor speaker playback failed:', err);
       releaseStreamSource(ctx, targetStream);
@@ -89,7 +101,7 @@ export function useStreamSpeakerPlayback(
     const sync = () => {
       if (cancelled) return;
       if (!active || !stream || volume <= 0) {
-        teardown();
+        void teardown();
         return;
       }
       if (!hasUsableAudio(stream)) return;
@@ -106,7 +118,7 @@ export function useStreamSpeakerPlayback(
       cancelled = true;
       stream?.removeEventListener('addtrack', onTrackChange);
       stream?.removeEventListener('removetrack', onTrackChange);
-      teardown();
+      void teardown();
     };
   }, [stream, active, volume]);
 

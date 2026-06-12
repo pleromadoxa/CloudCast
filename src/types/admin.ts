@@ -345,6 +345,7 @@ export type AdminTab =
   | 'plan_grants'
   | 'coupons'
   | 'broadcasting'
+  | 'mobile_apps'
   | 'sessions'
   | 'devices'
   | 'recordings'

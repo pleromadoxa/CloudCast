@@ -7,7 +7,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { ensureAudioOutputReady } from '../lib/audioOutput';
+import { rampGainDown, rampGainUp } from '../lib/audioFade';
+import { ensureAudioOutputReady, registerDashboardAudioContext } from '../lib/audioOutput';
 import {
   acquireStreamSource,
   hasUsableAudio,
@@ -23,7 +24,14 @@ interface PgmAudioContextValue {
 
 const PgmAudioContext = createContext<PgmAudioContextValue | null>(null);
 
-export function PgmAudioProvider({ children }: { children: ReactNode }) {
+export function PgmAudioProvider({
+  children,
+  localPlayback = true,
+}: {
+  children: ReactNode;
+  /** When false, PGM bus is meter/broadcast only (mixer engine drives speakers). */
+  localPlayback?: boolean;
+}) {
   const streamRef = useRef<MediaStream | null>(null);
   const trackListenersRef = useRef<{
     stream: MediaStream;
@@ -34,7 +42,11 @@ export function PgmAudioProvider({ children }: { children: ReactNode }) {
   const gainRef = useRef<GainNode | null>(null);
   const broadcastDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const gainValueRef = useRef(1);
+  const trackChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [levels, setLevels] = useState({ l: 0, r: 0 });
+
+  const localPlaybackRef = useRef(localPlayback);
+  localPlaybackRef.current = localPlayback;
 
   const detachTrackListeners = useCallback(() => {
     const attached = trackListenersRef.current;
@@ -44,8 +56,19 @@ export function PgmAudioProvider({ children }: { children: ReactNode }) {
     trackListenersRef.current = null;
   }, []);
 
-  const teardownGraph = useCallback(() => {
+  const teardownGraph = useCallback(async () => {
+    if (trackChangeTimerRef.current) {
+      clearTimeout(trackChangeTimerRef.current);
+      trackChangeTimerRef.current = null;
+    }
+
     detachTrackListeners();
+
+    const gain = gainRef.current;
+    if (gain) {
+      await rampGainDown(gain);
+    }
+
     const ctx = ctxRef.current;
     const stream = streamRef.current;
     if (ctx && stream) {
@@ -68,10 +91,10 @@ export function PgmAudioProvider({ children }: { children: ReactNode }) {
 
   const wireStream = useCallback(
     async (stream: MediaStream | null) => {
-      teardownGraph();
+      await teardownGraph();
       streamRef.current = stream;
 
-      if (!stream || !hasUsableAudio(stream)) return;
+      if (!stream) return;
 
       await ensureAudioOutputReady();
       if (streamRef.current !== stream) return;
@@ -79,8 +102,12 @@ export function PgmAudioProvider({ children }: { children: ReactNode }) {
       try {
         if (!ctxRef.current || ctxRef.current.state === 'closed') {
           ctxRef.current = new AudioContext();
+          registerDashboardAudioContext(ctxRef.current);
         }
         const ctx = ctxRef.current;
+        if (typeof window !== 'undefined') {
+          (window as Window & { __cloudcastPgmCtx?: AudioContext }).__cloudcastPgmCtx = ctx;
+        }
         if (ctx.state === 'suspended') await ctx.resume();
 
         const analyser = ctx.createAnalyser();
@@ -89,23 +116,44 @@ export function PgmAudioProvider({ children }: { children: ReactNode }) {
         analyserRef.current = analyser;
 
         const gain = ctx.createGain();
-        gain.gain.value = gainValueRef.current;
         gainRef.current = gain;
 
         const broadcastDest = ctx.createMediaStreamDestination();
         broadcastDestRef.current = broadcastDest;
+
+        if (!hasUsableAudio(stream)) {
+          detachTrackListeners();
+          const onTrackChange = () => {
+            if (trackChangeTimerRef.current) clearTimeout(trackChangeTimerRef.current);
+            trackChangeTimerRef.current = setTimeout(() => {
+              trackChangeTimerRef.current = null;
+              void wireStream(streamRef.current);
+            }, 150);
+          };
+          stream.addEventListener('addtrack', onTrackChange);
+          stream.addEventListener('removetrack', onTrackChange);
+          trackListenersRef.current = { stream, onTrackChange };
+          return;
+        }
 
         const source = acquireStreamSource(ctx, stream);
         if (!source) return;
 
         source.connect(analyser);
         analyser.connect(gain);
-        gain.connect(ctx.destination);
+        if (localPlaybackRef.current) {
+          gain.connect(ctx.destination);
+        }
         gain.connect(broadcastDest);
+        rampGainUp(gain, gainValueRef.current);
 
         detachTrackListeners();
         const onTrackChange = () => {
-          void wireStream(streamRef.current);
+          if (trackChangeTimerRef.current) clearTimeout(trackChangeTimerRef.current);
+          trackChangeTimerRef.current = setTimeout(() => {
+            trackChangeTimerRef.current = null;
+            void wireStream(streamRef.current);
+          }, 150);
         };
         stream.addEventListener('addtrack', onTrackChange);
         stream.addEventListener('removetrack', onTrackChange);
@@ -119,7 +167,7 @@ export function PgmAudioProvider({ children }: { children: ReactNode }) {
 
   const registerPgmPlaybackStream = useCallback(
     (stream: MediaStream | null) => {
-      if (streamRef.current === stream) return;
+      streamRef.current = stream;
       void wireStream(stream);
     },
     [wireStream],
@@ -177,13 +225,30 @@ export function PgmAudioProvider({ children }: { children: ReactNode }) {
     };
 
     raf = requestAnimationFrame(tick);
+
+    const onUnlock = () => {
+      void (async () => {
+        const ctx = ctxRef.current;
+        if (ctx && ctx.state === 'suspended') {
+          try {
+            await ctx.resume();
+          } catch {
+            /* ignore */
+          }
+        }
+        await wireStream(streamRef.current);
+      })();
+    };
+    window.addEventListener('cloudcast-audio-unlocked', onUnlock);
+
     return () => {
       cancelAnimationFrame(raf);
+      window.removeEventListener('cloudcast-audio-unlocked', onUnlock);
       teardownGraph();
       void ctxRef.current?.close();
       ctxRef.current = null;
     };
-  }, [teardownGraph]);
+  }, [teardownGraph, wireStream]);
 
   return (
     <PgmAudioContext.Provider

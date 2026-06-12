@@ -1,6 +1,7 @@
 import { useCloudCast } from '../../context/CloudCastContext';
 import { resolveAudioStreamDeviceId } from '../../lib/audioSettings';
 import type { AudioInputSource } from '../../types/audio';
+import { useStreamAudioRevision } from '../../hooks/useStreamAudioRevision';
 import {
   InputAudioVisualizer,
   type VisualizerAccent,
@@ -31,12 +32,14 @@ export function InputLiveMeter({
   size,
   className,
 }: InputLiveMeterProps) {
-  const { getMeshStream } = useCloudCast();
+  const { getMeshStream, meshStreams } = useCloudCast();
   const streamId = resolveAudioStreamDeviceId(deviceId, getAudioSourceForDevice, linkedUsbAudio);
   const stream = getMeshStream(streamId);
+  const streamRevision = useStreamAudioRevision(stream);
 
   return (
     <InputAudioVisualizer
+      key={`${streamId}-${stream?.id ?? 'none'}-${meshStreams.size}-${streamRevision}`}
       stream={stream}
       enabled={enabled}
       accent={accent}

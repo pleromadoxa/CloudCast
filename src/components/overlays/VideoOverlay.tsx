@@ -57,16 +57,15 @@ function renderStackLayer(
   }
 
   if (id === 'lower-third') {
-    const show =
-      stagingPreview ? gfx.showLowerThird : gfx.showLowerThird && Boolean(gfx.lowerThirdText);
-    if (!show) return null;
+    if (!gfx.showLowerThird) return null;
+    const hasHeadline = Boolean(gfx.lowerThirdText.trim());
     return (
       <LowerThirdOverlay
         template={gfx.lowerThirdTemplate}
         customization={gfx.lowerThirdCustomization}
         headline={gfx.lowerThirdText || (stagingPreview ? 'Your Headline' : '')}
         subline={gfx.lowerThirdSubtext || (stagingPreview ? 'Subtitle line' : '')}
-        preview={stagingPreview && !gfx.lowerThirdText}
+        preview={stagingPreview && !hasHeadline}
       />
     );
   }

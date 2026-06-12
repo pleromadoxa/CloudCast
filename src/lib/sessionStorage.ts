@@ -1,10 +1,19 @@
 import type { StoredSession } from '../types/session';
 
-const STORAGE_KEY = 'cloudcast-session';
+export type SessionProduct = 'video' | 'audio';
 
-export function loadStoredSession(): StoredSession | null {
+const STORAGE_KEYS: Record<SessionProduct, string> = {
+  video: 'cloudcast-session',
+  audio: 'cloudcast-audio-session',
+};
+
+function storageKey(product: SessionProduct = 'video'): string {
+  return STORAGE_KEYS[product];
+}
+
+export function loadStoredSession(product: SessionProduct = 'video'): StoredSession | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey(product));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredSession;
     if (parsed.sessionId && parsed.accessCode) return parsed;
@@ -14,12 +23,12 @@ export function loadStoredSession(): StoredSession | null {
   }
 }
 
-export function saveStoredSession(session: StoredSession): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+export function saveStoredSession(session: StoredSession, product: SessionProduct = 'video'): void {
+  localStorage.setItem(storageKey(product), JSON.stringify(session));
 }
 
-export function clearStoredSession(): void {
-  localStorage.removeItem(STORAGE_KEY);
+export function clearStoredSession(product: SessionProduct = 'video'): void {
+  localStorage.removeItem(storageKey(product));
 }
 
 export async function copyToClipboard(text: string): Promise<boolean> {

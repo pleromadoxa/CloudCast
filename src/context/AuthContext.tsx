@@ -13,6 +13,8 @@ import { normalizeConnectionMode } from '../lib/branding';
 import { fetchAdminAccess } from '../lib/adminService';
 import type { AdminAccess } from '../types/admin';
 import type { PlanTier, SubscriptionPlan, UserProfile } from '../types/plans';
+import type { CloudCastProductId } from '../types/products';
+import { buildEntitlementsFromProfile } from '../lib/productEntitlements';
 
 interface AuthContextValue {
   user: User | null;
@@ -24,6 +26,7 @@ interface AuthContextValue {
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signOut: () => Promise<void>;
   updatePlan: (planId: PlanTier) => Promise<void>;
+  updateProductPlan: (product: CloudCastProductId | 'universal', planId: PlanTier) => Promise<void>;
   refreshProfile: () => Promise<void>;
   refreshAdminAccess: () => Promise<void>;
 }
@@ -76,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         full_name: p.full_name ? String(p.full_name) : null,
         plan_id: p.plan_id as PlanTier,
         plan: mapPlan(p.plan as Record<string, unknown>),
+        entitlements: buildEntitlementsFromProfile(p),
       });
     } catch {
       setProfile(null);
@@ -136,11 +140,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAdminAccess(null);
   }, []);
 
-  const updatePlan = useCallback(async (planId: PlanTier) => {
-    const { error } = await getSupabase().rpc('update_user_plan', { p_plan_id: planId });
-    if (error) throw error;
-    await refreshProfile();
-  }, [refreshProfile]);
+  const updateProductPlan = useCallback(
+    async (product: CloudCastProductId | 'universal', planId: PlanTier) => {
+      const effectiveProduct = product === 'instant_replay' ? 'video_mixer' : product;
+      const { error } = await getSupabase().rpc('update_user_product_plan', {
+        p_product: effectiveProduct,
+        p_plan_id: planId,
+      });
+      if (error) {
+        if (effectiveProduct === 'video_mixer' || product === 'universal' || planId === 'universal') {
+          const { error: legacyError } = await getSupabase().rpc('update_user_plan', {
+            p_plan_id: planId === 'universal' ? 'pro_master' : planId,
+          });
+          if (legacyError) throw legacyError;
+        } else {
+          throw error;
+        }
+      }
+      await refreshProfile();
+    },
+    [refreshProfile],
+  );
+
+  const updatePlan = useCallback(
+    async (planId: PlanTier) => {
+      await updateProductPlan('video_mixer', planId);
+    },
+    [updateProductPlan],
+  );
 
   return (
     <AuthContext.Provider
@@ -154,6 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signUp,
         signOut,
         updatePlan,
+        updateProductPlan,
         refreshProfile,
         refreshAdminAccess,
       }}

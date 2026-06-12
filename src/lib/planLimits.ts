@@ -5,12 +5,14 @@ export const PLAN_TOTAL_CHANNELS: Record<PlanTier, number> = {
   free: 2,
   pro: 5,
   pro_master: 11,
+  universal: 11,
 };
 
 export const PLAN_IP_CAMERA_SLOTS: Record<PlanTier, number> = {
   free: 0,
   pro: 1,
   pro_master: 1,
+  universal: 1,
 };
 
 /** Cloud storage included for saved video recordings (GB). */
@@ -18,6 +20,7 @@ export const PLAN_RECORDING_STORAGE_GB: Record<PlanTier, number> = {
   free: 0,
   pro: 50,
   pro_master: 100,
+  universal: 100,
 };
 
 export function planAllowsIpCamera(planId: PlanTier): boolean {

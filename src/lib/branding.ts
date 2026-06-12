@@ -34,6 +34,7 @@ export const PLAN_STREAM_QUALITY: Record<PlanTier, string> = {
   free: 'Standard',
   pro: 'HD streaming',
   pro_master: 'UHD streaming',
+  universal: 'All products · UHD',
 };
 
 export const PLAN_FEATURE_OVERRIDES: Partial<Record<PlanTier, string[]>> = {
@@ -41,12 +42,14 @@ export const PLAN_FEATURE_OVERRIDES: Partial<Record<PlanTier, string[]>> = {
     '2 mobile cameras',
     'Regal Mesh direct connect',
     'Basic video mixer',
+    'CloudCast Replay — 2 banks, 30s buffer',
     'Access code pairing',
     'Stream to 1 destination (YouTube or Custom)',
   ],
   pro: [
     '5 video inputs (4 mobile + 1 IP camera URL)',
     'Regal Cloud — HD streaming',
+    'CloudCast Replay — 8 banks, 2-min buffer, cloud clips',
     'Global low-latency delivery',
     'Full mixer controls',
     'Multi-stream to YouTube, Twitch & Custom',
@@ -55,9 +58,18 @@ export const PLAN_FEATURE_OVERRIDES: Partial<Record<PlanTier, string[]>> = {
   pro_master: [
     '11 video inputs (8 mobile + 2 USB + 1 IP camera URL)',
     'Regal Cloud — UHD streaming',
+    'CloudCast Replay — 16 banks, 5-min buffer, multi-angle sync',
     'Priority support',
     'Multi-stream + multiple YouTube accounts',
     '100GB cloud storage for video recordings',
+  ],
+  universal: [
+    'Video Mixer + Audio Mixer + Symphony + Replay',
+    'Pro Master features on every broadcast product',
+    '16-channel audio · 11 video inputs · 32-track DAW · 16 replay banks',
+    'Regal Cloud UHD · multi-stream',
+    '100GB cloud storage',
+    'One subscription for the full CloudCast suite',
   ],
 };
 

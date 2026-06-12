@@ -4,7 +4,7 @@ import { usePgmAudio } from '../../context/PgmAudioContext';
 import { usePgmBroadcast } from '../../hooks/usePgmBroadcast';
 import { usePgmRecording } from '../../hooks/usePgmRecording';
 import { useAIControls } from '../../hooks/useAIControls';
-import { AlertTriangle, Circle, LogOut, RefreshCw, Signal } from 'lucide-react';
+import { AlertTriangle, Circle, Clapperboard, LayoutGrid, LogOut, RefreshCw, Signal, SlidersHorizontal } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AdminNavLink } from '../admin/AdminNavLink';
 import { PlatformBroadcastBanner } from '../admin/PlatformBroadcastBanner';
@@ -30,6 +30,7 @@ import { MixerControlDeck } from '../mixer/MixerControlDeck';
 import { MultiviewModal } from '../mixer/MultiviewModal';
 import { StreamStatusBanner } from '../mixer/StreamStatusBanner';
 import { AccessCodePanel } from '../session/AccessCodePanel';
+import { VideoBridgePanel } from '../audio/VideoBridgePanel';
 import { CloudCastLogo } from '../brand/CloudCastLogo';
 import { CLOUDCAST_NAV_LOGO, resolveDeviceLimit } from '../../lib/branding';
 import { mergeIpCameraIntoDevices } from '../../lib/ipCameraDevice';
@@ -45,6 +46,7 @@ import { USER_MSG } from '../../lib/userMessaging';
 import { cn } from '../../lib/utils';
 import { buildLayerStack } from '../mixer/panels/layers/buildLayerStack';
 import type { LayerStackId } from '../mixer/panels/layers/layerStackTypes';
+import { isDraggableLayer, isLayerVisibleOnStagingPreview } from '../../lib/overlayPlacement';
 
 export function DashboardLayout() {
   const {
@@ -63,7 +65,7 @@ export function DashboardLayout() {
   } = useCloudCast();
   const { profile, signOut } = useAuth();
   const { setProductionOnAir } = useProduction();
-  const { isOnline, isRecovering, offlineSince, reconnectToken } = useNetwork();
+  const { isOnline, isRecovering, offlineSince, reconnectToken, recheckConnectivity } = useNetwork();
   const { registerPgmPlaybackStream, setPgmGain, getBroadcastAudioStream } = usePgmAudio();
   const pgmVideoRef = useRef<HTMLVideoElement | null>(null);
   const pgmOutputRef = useRef<HTMLDivElement | null>(null);
@@ -476,8 +478,19 @@ export function DashboardLayout() {
     }
     const id = controls.selectedGraphicsLayerId as LayerStackId;
     const item = buildLayerStack(controls.layers, controls.pgmLayers).find((s) => s.id === id);
-    return { id, label: item?.label ?? '' };
+    if (!item?.isPreview) {
+      return { id: null, label: '' };
+    }
+    return { id, label: item.label };
   }, [controls.openPanels, controls.selectedGraphicsLayerId, controls.layers, controls.pgmLayers]);
+
+  const graphicsDragEnabled = useMemo(() => {
+    if (!graphicsHighlight.id) return false;
+    return (
+      isDraggableLayer(graphicsHighlight.id) &&
+      isLayerVisibleOnStagingPreview(graphicsHighlight.id, controls.layers)
+    );
+  }, [graphicsHighlight.id, controls.layers]);
 
   const monitorSection = (
     <div
@@ -503,7 +516,7 @@ export function DashboardLayout() {
             layers={controls.layers}
             highlightLayerId={graphicsHighlight.id}
             highlightLayerLabel={graphicsHighlight.label}
-            graphicsDragEnabled={controls.openPanels.includes('layers')}
+            graphicsDragEnabled={graphicsDragEnabled}
             onPatchLayers={mixer.patchLayers}
             getQuality={mixer.getQualityForDevice}
             getOverlay={mixer.getOverlayForDevice}
@@ -577,7 +590,7 @@ export function DashboardLayout() {
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <CloudCastLogo variant={CLOUDCAST_NAV_LOGO.variant} className={CLOUDCAST_NAV_LOGO.className} />
             <span className="dashboard-header-tagline hidden text-[10px] text-mixer-muted md:inline">
-              MULTI-SOURCE VIDEO MIXER
+              VIDEO MIXER
             </span>
             {profile && (
               <span className="rounded bg-white/5 px-2 py-0.5 text-[9px] font-bold tracking-wider text-mixer-muted">
@@ -598,6 +611,11 @@ export function DashboardLayout() {
             isRegenerating={isRegenerating}
             className="hidden min-w-0 sm:flex"
           />
+          <VideoBridgePanel
+            mode="video"
+            sessionId={session?.sessionId}
+            className="hidden xl:flex"
+          />
           <div className="dashboard-header-actions flex shrink-0 items-center gap-2 text-[10px] sm:gap-4">
             <ExternalDisplayButton
               isOpen={externalDisplay.isOpen}
@@ -607,6 +625,15 @@ export function DashboardLayout() {
               onClick={() => { void externalDisplay.toggle(); }}
             />
             <AdminNavLink className="hidden lg:inline" />
+            <Link to="/hub" className="hidden items-center gap-1 text-mixer-muted hover:text-white lg:inline-flex" title="All products">
+              <LayoutGrid className="h-3.5 w-3.5" /> HUB
+            </Link>
+            <Link to="/replay" className="hidden items-center gap-1 text-mixer-muted hover:text-white xl:inline-flex">
+              <Clapperboard className="h-3.5 w-3.5" /> REPLAY
+            </Link>
+            <Link to="/audio" className="hidden items-center gap-1 text-mixer-muted hover:text-white xl:inline-flex">
+              <SlidersHorizontal className="h-3.5 w-3.5" /> AUDIO
+            </Link>
             <Link to="/profile" className="hidden text-mixer-muted hover:text-white lg:inline">
               Profile
             </Link>
@@ -656,6 +683,7 @@ export function DashboardLayout() {
           isOnline={isOnline}
           isRecovering={isRecovering}
           offlineSince={offlineSince}
+          onRecheck={recheckConnectivity}
         />
       )}
 

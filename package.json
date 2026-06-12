@@ -15,7 +15,11 @@
     "secrets:r2": "node tools/sync-r2-secrets.mjs",
     "deploy:r2": "npm run secrets:r2 && supabase functions deploy cloudcast-r2",
     "deploy:stream": "supabase functions deploy cloudcast-stream",
-    "deploy:cloudflare": "npm run deploy:r2 && supabase functions deploy cloudcast-stream"
+    "deploy:cloudflare": "npm run deploy:r2 && supabase functions deploy cloudcast-stream",
+    "deploy:pages": "node tools/deploy-pages.mjs",
+    "deploy": "node tools/deploy-all.mjs",
+    "setup:cloudflare": "node tools/setup-cloudflare.mjs",
+    "setup:dns": "node tools/setup-dns.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.0",
@@ -44,6 +48,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
+    "wrangler": "^4.100.0",
     "ws": "^8.18.0"
   }
 }

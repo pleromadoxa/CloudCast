@@ -41,6 +41,8 @@ interface CompositeMonitorProps {
   onPgmVideoRef?: (el: HTMLVideoElement | null) => void;
   onPgmPlaybackStream?: (stream: MediaStream | null) => void;
   onPgmOutputRef?: (el: HTMLDivElement | null) => void;
+  /** When set, PST monitor must not route the same feed to speakers (PGM bus owns it). */
+  pgmDeviceId?: string | null;
   /** Borderless fullscreen layout for external program output window. */
   cleanOutput?: boolean;
   /** Render video content only — parent supplies monitor chrome and aspect frame. */
@@ -55,6 +57,12 @@ const pipPositionClasses: Record<PipSettings['position'], string> = {
   center: 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
 };
 
+const SILENT_PLAYER = {
+  enableSpeakerPlayback: false,
+  audioMuted: true,
+  volume: 0,
+} as const;
+
 function TransitionBlend({
   fromDevice,
   toDevice,
@@ -64,6 +72,9 @@ function TransitionBlend({
   quality,
   audioMuted,
   volume,
+  audioDeviceId = null,
+  onBusPlaybackStream,
+  onPgmVideoRef,
 }: {
   fromDevice: Device | null;
   toDevice: Device | null;
@@ -73,16 +84,51 @@ function TransitionBlend({
   quality: StreamQuality;
   audioMuted: boolean;
   volume: number;
+  audioDeviceId?: string | null;
+  onBusPlaybackStream?: (stream: MediaStream | null) => void;
+  onPgmVideoRef?: (el: HTMLVideoElement | null) => void;
 }) {
   const p = progress / 100;
+  const busDevice = p >= 0.5 ? toDevice : fromDevice;
+
+  const pgmBusPlayer = onBusPlaybackStream ? (
+    <StreamPlayer
+      device={busDevice}
+      audioDeviceId={audioDeviceId}
+      overlay={overlay}
+      quality={quality}
+      audioMuted={audioMuted}
+      volume={volume}
+      showLabel={false}
+      enableSpeakerPlayback={false}
+      className="pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0"
+      onVideoRef={onPgmVideoRef}
+      onBusPlaybackStream={onBusPlaybackStream}
+    />
+  ) : null;
 
   if (type === 'wipe') {
     return (
       <div className="absolute inset-0">
-        <StreamPlayer device={fromDevice} overlay={overlay} quality={quality} audioMuted volume={volume} showLabel={false} className="absolute inset-0" />
+        <StreamPlayer
+          device={fromDevice}
+          overlay={overlay}
+          quality={quality}
+          showLabel={false}
+          className="absolute inset-0"
+          {...SILENT_PLAYER}
+        />
         <div className="absolute inset-0 overflow-hidden" style={{ clipPath: `inset(0 ${100 - p * 100}% 0 0)` }}>
-          <StreamPlayer device={toDevice} overlay={overlay} quality={quality} audioMuted volume={volume} showLabel={false} className="absolute inset-0" />
+          <StreamPlayer
+            device={toDevice}
+            overlay={overlay}
+            quality={quality}
+            showLabel={false}
+            className="absolute inset-0"
+            {...SILENT_PLAYER}
+          />
         </div>
+        {pgmBusPlayer}
       </div>
     );
   }
@@ -90,18 +136,52 @@ function TransitionBlend({
   if (type === 'dip') {
     return (
       <div className="absolute inset-0">
-        <StreamPlayer device={fromDevice} overlay={overlay} quality={quality} audioMuted volume={volume} showLabel={false} className="absolute inset-0" style={{ opacity: p < 0.5 ? 1 - p * 2 : 0 }} />
+        <StreamPlayer
+          device={fromDevice}
+          overlay={overlay}
+          quality={quality}
+          showLabel={false}
+          className="absolute inset-0"
+          style={{ opacity: p < 0.5 ? 1 - p * 2 : 0 }}
+          {...SILENT_PLAYER}
+        />
         <div className="absolute inset-0 bg-black" style={{ opacity: p < 0.5 ? p * 2 : 2 - p * 2 }} />
-        <StreamPlayer device={toDevice} overlay={overlay} quality={quality} audioMuted volume={volume} showLabel={false} className="absolute inset-0" style={{ opacity: p < 0.5 ? 0 : (p - 0.5) * 2 }} />
+        <StreamPlayer
+          device={toDevice}
+          overlay={overlay}
+          quality={quality}
+          showLabel={false}
+          className="absolute inset-0"
+          style={{ opacity: p < 0.5 ? 0 : (p - 0.5) * 2 }}
+          {...SILENT_PLAYER}
+        />
+        {pgmBusPlayer}
       </div>
     );
   }
 
-  // mix / fade
+  // mix / fade — video crossfades only; one PGM bus stream avoids double monitor output (crackle).
   return (
     <div className="absolute inset-0">
-      <StreamPlayer device={fromDevice} overlay={overlay} quality={quality} audioMuted volume={volume} showLabel={false} className="absolute inset-0" style={{ opacity: 1 - p }} />
-      <StreamPlayer device={toDevice} overlay={overlay} quality={quality} audioMuted={audioMuted} volume={volume} showLabel={false} className="absolute inset-0" style={{ opacity: p }} />
+      <StreamPlayer
+        device={fromDevice}
+        overlay={overlay}
+        quality={quality}
+        showLabel={false}
+        className="absolute inset-0"
+        style={{ opacity: 1 - p }}
+        {...SILENT_PLAYER}
+      />
+      <StreamPlayer
+        device={toDevice}
+        overlay={overlay}
+        quality={quality}
+        showLabel={false}
+        className="absolute inset-0"
+        style={{ opacity: p }}
+        {...SILENT_PLAYER}
+      />
+      {pgmBusPlayer}
     </div>
   );
 }
@@ -135,9 +215,11 @@ export function CompositeMonitor({
   onPgmVideoRef,
   onPgmPlaybackStream,
   onPgmOutputRef,
+  pgmDeviceId = null,
   cleanOutput = false,
   embedded = false,
 }: CompositeMonitorProps) {
+  const sameAsPgm = Boolean(device && pgmDeviceId && device.deviceId === pgmDeviceId);
   const isPgm = label === 'PGM';
   const showPip =
     outputMode === 'pip' && subDevice && device && subDevice.deviceId !== device.deviceId;
@@ -173,6 +255,9 @@ export function CompositeMonitor({
                 quality={quality}
                 audioMuted={audioMuted}
                 volume={volume}
+                audioDeviceId={isPgm ? audioDeviceId : null}
+                onBusPlaybackStream={isPgm ? handleBusPlaybackStream : undefined}
+                onPgmVideoRef={isPgm ? handleVideoRef : undefined}
               />
             ) : showKey ? (
               <>
@@ -227,6 +312,7 @@ export function CompositeMonitor({
                 className="absolute inset-0"
                 onVideoRef={isPgm ? handleVideoRef : undefined}
                 onBusPlaybackStream={isPgm ? handleBusPlaybackStream : undefined}
+                enableSpeakerPlayback={!isPgm && !sameAsPgm}
               />
             )}
 

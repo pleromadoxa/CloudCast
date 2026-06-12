@@ -1,3 +1,5 @@
+import type { LayerSettings } from '../types/mixer';
+import type { LayerStackId } from '../types/graphicsStack';
 import type { LowerThirdPosition, OverlayPosition } from '../types/overlays';
 
 export interface OverlayPlacement {
@@ -82,4 +84,19 @@ export function isDraggableLayer(layerId: string): boolean {
     layerId === 'live-button' ||
     layerId.startsWith('image:')
   );
+}
+
+/** Whether a layer is actually rendered on the PST staging preview (matches VideoOverlay). */
+export function isLayerVisibleOnStagingPreview(layerId: LayerStackId, gfx: LayerSettings): boolean {
+  if (layerId === 'lower-third') return gfx.showLowerThird;
+  if (layerId === 'logo') {
+    if (!gfx.showLogo) return false;
+    return gfx.programLogo.mode === 'image' ? Boolean(gfx.programLogo.imageDataUrl) : true;
+  }
+  if (layerId === 'live-button') return gfx.showLiveButton;
+  if (layerId.startsWith('image:')) {
+    const img = gfx.imageOverlays.find((o) => o.id === layerId.slice(6));
+    return Boolean(img?.visible);
+  }
+  return false;
 }

@@ -1,9 +1,19 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Device, DeviceStatus } from '../types/device';
 
-/** Mobile heartbeats every 30s — treat live/connecting as stale shortly after. */
-export const DEVICE_HEARTBEAT_STALE_MS = 35_000;
-export const DEVICE_STATUS_SWEEP_MS = 10_000;
+/** Mobile heartbeats every 15s — treat active slots as stale shortly after. */
+export const DEVICE_HEARTBEAT_STALE_MS = 22_000;
+export const DEVICE_STATUS_SWEEP_MS = 5_000;
+/** Paired on channel but no mesh/PC connected for this long → offline + re-offer. */
+export const DEVICE_CONNECTING_TIMEOUT_MS = 40_000;
+
+export interface DeviceReconcileContext {
+  presenceOnline: boolean;
+  hasMeshStream: boolean;
+  peerState?: RTCPeerConnectionState;
+  connectingSinceMs?: number | null;
+  nowMs?: number;
+}
 
 export interface DevicePresenceMeta {
   role?: string;
@@ -66,10 +76,11 @@ export function isActiveDeviceStatus(status: DeviceStatus): boolean {
 export function isDeviceHeartbeatStale(
   lastSeenAt: string | undefined,
   status: DeviceStatus,
+  nowMs = Date.now(),
 ): boolean {
-  if (status !== 'live') return false;
-  if (!lastSeenAt) return true;
-  return Date.now() - new Date(lastSeenAt).getTime() > DEVICE_HEARTBEAT_STALE_MS;
+  if (!isActiveDeviceStatus(status)) return false;
+  if (!lastSeenAt) return status === 'live';
+  return nowMs - new Date(lastSeenAt).getTime() > DEVICE_HEARTBEAT_STALE_MS;
 }
 
 /**
@@ -80,15 +91,16 @@ export function isDeviceHeartbeatStale(
  */
 export function reconcileDeviceConnectivity(
   device: Device,
-  context: { presenceOnline: boolean; hasMeshStream: boolean },
+  context: DeviceReconcileContext,
 ): Device {
   if (!device.deviceId || device.deviceId.startsWith('slot-')) return device;
 
-  const now = new Date().toISOString();
+  const nowMs = context.nowMs ?? Date.now();
+  const now = new Date(nowMs).toISOString();
   const meshActive = context.hasMeshStream;
-  const { presenceOnline } = context;
+  const { presenceOnline, peerState, connectingSinceMs } = context;
 
-  if (meshActive) {
+  if (meshActive || peerState === 'connected') {
     return {
       ...device,
       status: 'live',
@@ -98,26 +110,63 @@ export function reconcileDeviceConnectivity(
     };
   }
 
-  if (presenceOnline) {
+  if (presenceOnline || peerState === 'connecting' || peerState === 'new') {
+    const since = connectingSinceMs ?? (device.lastSeenAt ? new Date(device.lastSeenAt).getTime() : nowMs);
+    const stuckConnecting = !meshActive && since > 0 && nowMs - since > DEVICE_CONNECTING_TIMEOUT_MS;
+
+    if (stuckConnecting) {
+      return {
+        ...device,
+        status: 'offline',
+        isOnline: false,
+        connectionState: 'disconnected',
+        lastSeenAt: device.lastSeenAt ?? now,
+      };
+    }
+
     return {
       ...device,
       status: 'connecting',
       isOnline: true,
-      connectionState: 'connecting',
+      connectionState: peerState ?? 'connecting',
       lastSeenAt: now,
     };
   }
 
-  const heartbeatStale = isDeviceHeartbeatStale(device.lastSeenAt, device.status);
-  if (isActiveDeviceStatus(device.status) || heartbeatStale) {
+  const heartbeatStale = isDeviceHeartbeatStale(device.lastSeenAt, device.status, nowMs);
+  const since =
+    connectingSinceMs ??
+    (device.lastSeenAt ? new Date(device.lastSeenAt).getTime() : 0);
+  const connectingTimedOut =
+    device.status === 'connecting' &&
+    since > 0 &&
+    nowMs - since > DEVICE_CONNECTING_TIMEOUT_MS;
+
+  if (heartbeatStale || connectingTimedOut || (device.status === 'live' && !meshActive)) {
     return {
       ...device,
       status: 'offline',
       isOnline: false,
       connectionState: 'disconnected',
-      lastSeenAt: now,
+      lastSeenAt: device.lastSeenAt ?? now,
     };
   }
 
-  return { ...device, isOnline: false, status: 'offline', connectionState: 'disconnected' };
+  if (device.status === 'connecting') {
+    return {
+      ...device,
+      status: 'connecting',
+      isOnline: false,
+      connectionState: 'disconnected',
+      lastSeenAt: device.lastSeenAt ?? now,
+    };
+  }
+
+  return {
+    ...device,
+    isOnline: false,
+    status: 'offline',
+    connectionState: 'disconnected',
+    lastSeenAt: device.lastSeenAt,
+  };
 }

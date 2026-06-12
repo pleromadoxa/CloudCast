@@ -9,6 +9,8 @@ export const USER_MSG = {
   regalCloudRequestFailed: 'Regal Cloud request failed.',
   recordingSavedLocal: 'Recording saved locally.',
   recordingUpgradeHint: 'Upgrade to Pro for Regal Cloud recording storage.',
-  recordingSavedCloud: 'Recording saved locally and uploaded to CloudCast cloud storage.',
+  recordingSavedCloud: 'Recording saved locally and uploaded to Regal Cloud storage.',
+  symphonySavedCloud: 'Project saved to Regal Cloud Archive.',
+  symphonyLoadFailed: 'Could not load project from Regal Cloud Archive.',
   regalCloudReconnecting: 'Reconnecting Regal Cloud…',
 } as const;

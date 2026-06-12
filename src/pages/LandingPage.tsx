@@ -1,6 +1,36 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, Building2, Camera, Cloud, Radio, Smartphone, Tv, Zap } from 'lucide-react';
+import { ArrowRight, Building2, Camera, Clapperboard, Cloud, LayoutGrid, Music2, Radio, SlidersHorizontal, Smartphone, Tv, Video, Zap } from 'lucide-react';
+import { CLOUDCAST_PRODUCTS } from '../config/products';
 import { SITE_LEGAL } from '../config/siteLegal';
+import type { CloudCastProduct } from '../types/products';
+
+const PRODUCT_ICONS = {
+  video_mixer: Video,
+  audio_mixer: SlidersHorizontal,
+  symphony_studio: Music2,
+  instant_replay: Clapperboard,
+} as const;
+
+function productAccentClass(accent: CloudCastProduct['accent'], part: 'icon' | 'card') {
+  if (accent === 'blue') {
+    return part === 'icon'
+      ? 'border-sky-500/30 bg-sky-500/10 text-sky-400'
+      : 'hover:border-sky-500/30';
+  }
+  if (accent === 'purple') {
+    return part === 'icon'
+      ? 'border-violet-500/30 bg-violet-500/10 text-violet-400'
+      : 'hover:border-violet-500/30';
+  }
+  if (accent === 'emerald') {
+    return part === 'icon'
+      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+      : 'hover:border-emerald-500/30';
+  }
+  return part === 'icon'
+    ? 'border-mixer-red/30 bg-mixer-red/10 text-mixer-red'
+    : 'hover:border-white/20';
+}
 
 const broadcastFirms = [
   { name: 'Regal Broadcast Group', tag: 'Flagship network' },
@@ -58,22 +88,28 @@ export function LandingPage() {
       <section className="relative overflow-hidden px-6 pb-24 pt-20">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_#e11d4815_0%,_transparent_60%)]" />
         <div className="relative mx-auto max-w-4xl text-center">
-          <p className="mb-4 text-xs font-bold tracking-[0.3em] text-mixer-red">BY REGAL</p>
+          <p className="mb-4 text-xs font-bold tracking-[0.3em] text-mixer-red">CLOUDCAST BROADCAST SUITE</p>
           <h1 className="text-4xl font-bold leading-tight tracking-tight sm:text-6xl">
-            Multi-source video mixing
-            <span className="block text-mixer-muted">from anywhere.</span>
+            Professional broadcast tools
+            <span className="block text-mixer-muted">in the cloud.</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-mixer-muted sm:text-lg">
-            CloudCast turns phones, tablets, and USB capture devices into a live production switcher.
-            Pair cameras with an access code, mix in real time, and go on air — with Regal Mesh for
-            direct connect or Regal Cloud for HD and UHD streaming.
+            {SITE_LEGAL.brandLine} is the platform — start with the multi-channel video mixer, the
+            StudioLive-inspired audio console, CloudCast Symphony for music production, or CloudCast Replay for
+            instant replay on live events. Subscribe per product or unlock everything with CloudCast Universal.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <Link
-              to="/login"
+              to="/products"
               className="inline-flex items-center gap-2 rounded bg-mixer-red px-6 py-3 text-sm font-bold tracking-wider text-white hover:bg-mixer-red-dim"
             >
-              GET STARTED <ArrowRight className="h-4 w-4" />
+              VIEW PRODUCTS <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link
+              to="/products/guide"
+              className="rounded border border-white/20 px-6 py-3 text-sm font-bold tracking-wider hover:border-white/40"
+            >
+              PRODUCT GUIDE
             </Link>
             <Link
               to="/pricing"
@@ -81,6 +117,106 @@ export function LandingPage() {
             >
               VIEW PRICING
             </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-y border-white/5 bg-[#0a0a0a] px-6 py-20">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-12 text-center">
+            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">CloudCast products</h2>
+            <p className="mt-3 text-sm text-mixer-muted">
+              Each product has its own dashboard and pricing — or choose Universal for the full suite.
+            </p>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {CLOUDCAST_PRODUCTS.map((product) => {
+              const Icon = PRODUCT_ICONS[product.id];
+              return (
+                <Link
+                  key={product.id}
+                  to={product.pricingPath}
+                  className={`group rounded-xl border border-white/10 bg-mixer-panel p-8 transition-colors ${productAccentClass(product.accent, 'card')}`}
+                >
+                  <div className="flex items-start gap-4">
+                    <div
+                      className={`flex h-12 w-12 items-center justify-center rounded-lg border ${productAccentClass(product.accent, 'icon')}`}
+                    >
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold group-hover:text-white">{product.name}</h3>
+                      <p className="mt-1 text-xs uppercase tracking-wider text-mixer-muted">{product.tagline}</p>
+                      <p className="mt-3 text-sm leading-relaxed text-mixer-muted">{product.description}</p>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+          <Link
+            to="/pricing?product=universal"
+            className="group mt-6 block rounded-xl border border-amber-500/25 bg-gradient-to-br from-amber-500/10 to-mixer-panel p-8 transition-colors hover:border-amber-500/40"
+          >
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-amber-500/40 bg-amber-500/15 text-amber-400">
+                <LayoutGrid className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold">CloudCast Universal</h3>
+                <p className="mt-1 text-xs uppercase tracking-wider text-amber-200/80">All broadcast products · $119/mo</p>
+                <p className="mt-3 text-sm leading-relaxed text-mixer-muted">
+                  One subscription for Video Mixer, Audio Mixer, Symphony, and Replay with Pro Master features on every product.
+                </p>
+              </div>
+            </div>
+          </Link>
+        </div>
+      </section>
+
+      <section className="border-y border-white/5 px-6 py-20">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-12 text-center">
+            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Symphony & Replay</h2>
+            <p className="mx-auto mt-3 max-w-2xl text-sm text-mixer-muted">
+              Compose original scores in Symphony, then drop highlight clips to air with Replay — two tools that
+              extend every live production beyond the switcher.
+            </p>
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            {CLOUDCAST_PRODUCTS.filter((p) => p.id === 'symphony_studio' || p.id === 'instant_replay').map((product) => {
+              const Icon = PRODUCT_ICONS[product.id];
+              const pricing =
+                product.id === 'symphony_studio'
+                  ? 'Free · Pro $29/mo · Pro Master $79/mo'
+                  : 'Included with Video Mixer — no extra charge';
+              return (
+                <Link
+                  key={product.id}
+                  to={product.pricingPath}
+                  className={`group rounded-xl border bg-mixer-panel p-8 transition-colors ${
+                    product.accent === 'purple'
+                      ? 'border-violet-500/20 hover:border-violet-500/40'
+                      : 'border-emerald-500/20 hover:border-emerald-500/40'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-11 w-11 items-center justify-center rounded-lg border ${productAccentClass(product.accent, 'icon')}`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold">{product.name}</h3>
+                      <p className="text-xs uppercase tracking-wider text-mixer-muted">{product.tagline}</p>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-sm leading-relaxed text-mixer-muted">{product.description}</p>
+                  <p className="mt-4 text-xs font-bold tracking-wider text-mixer-muted">{pricing}</p>
+                  <span className="mt-6 inline-flex items-center gap-2 text-xs font-bold tracking-wider text-white group-hover:text-mixer-red">
+                    {product.id === 'instant_replay' ? 'VIEW VIDEO MIXER PLANS' : 'VIEW PRICING'} <ArrowRight className="h-3.5 w-3.5" />
+                  </span>
+                </Link>
+              );
+            })}
           </div>
         </div>
       </section>

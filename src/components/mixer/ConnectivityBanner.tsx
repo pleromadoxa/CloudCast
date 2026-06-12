@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { AlertTriangle, Wifi, WifiOff } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -5,6 +6,7 @@ interface ConnectivityBannerProps {
   isOnline: boolean;
   isRecovering: boolean;
   offlineSince: number | null;
+  onRecheck?: () => Promise<boolean>;
   className?: string;
 }
 
@@ -20,11 +22,20 @@ export function ConnectivityBanner({
   isOnline,
   isRecovering,
   offlineSince,
+  onRecheck,
   className,
 }: ConnectivityBannerProps) {
+  const [checking, setChecking] = useState(false);
+
   if (isOnline && !isRecovering) return null;
 
   const offline = !isOnline;
+
+  const handleRecheck = () => {
+    if (!onRecheck || checking) return;
+    setChecking(true);
+    void onRecheck().finally(() => setChecking(false));
+  };
 
   return (
     <div
@@ -50,8 +61,18 @@ export function ConnectivityBanner({
             <p className="text-[10px] opacity-90">
               The mixer stays open — your layout and ON AIR state are kept locally.
               {offlineSince != null && ` Offline for ${formatOfflineDuration(offlineSince)}.`}
-              {' '}Streams will resume automatically when connectivity returns.
+              {' '}Checking CloudCast connectivity every few seconds.
             </p>
+            {onRecheck && (
+              <button
+                type="button"
+                onClick={handleRecheck}
+                disabled={checking}
+                className="mt-1.5 rounded border border-current/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide hover:bg-white/5 disabled:opacity-50"
+              >
+                {checking ? 'Checking…' : 'Check again'}
+              </button>
+            )}
           </>
         ) : (
           <>

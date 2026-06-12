@@ -7,12 +7,14 @@ import { useProduction } from '../../context/ProductionContext';
 import { CloudCastProvider } from '../../context/CloudCastContext';
 import { PgmAudioProvider } from '../../context/PgmAudioContext';
 import { DashboardLayout } from '../layout/DashboardLayout';
+import { ReplayLayout } from '../replay/ReplayLayout';
+import { ReplayPgmOverlay } from '../replay/ReplayPgmOverlay';
 import { MixerErrorBoundary } from '../error/MixerErrorBoundary';
 import { cn } from '../../lib/utils';
 
 /**
  * Keeps the mixer session, device connections, and live output alive while the user
- * navigates to marketing or other routes. Unmounts only when off-air and off-dashboard.
+ * navigates to marketing, replay, or other routes. Unmounts only when off-air and off-dashboard/replay.
  */
 export function ProductionHost() {
   const { user, loading } = useAuth();
@@ -21,9 +23,11 @@ export function ProductionHost() {
   const { isOnline } = useNetworkOptional();
 
   const onDashboard = pathname === '/dashboard';
-  // Keep mixer mounted on dashboard even when offline (session + layout stay in memory).
+  const onReplay = pathname === '/replay';
   const keepAlive = Boolean(
-    !loading && (onDashboard || isOnAir) && (user || (!isOnline && onDashboard)),
+    !loading &&
+      (onDashboard || onReplay || isOnAir) &&
+      (user || (!isOnline && (onDashboard || onReplay))),
   );
 
   useEffect(() => {
@@ -36,7 +40,7 @@ export function ProductionHost() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [isOnAir]);
 
-  if (loading && onDashboard) {
+  if (loading && (onDashboard || onReplay)) {
     return (
       <div className="fixed inset-0 z-40 flex items-center justify-center bg-mixer-bg">
         <Loader2 className="h-8 w-8 animate-spin text-mixer-red" />
@@ -46,19 +50,35 @@ export function ProductionHost() {
 
   if (!keepAlive) return null;
 
+  const hiddenWhileReplay = onReplay && !onDashboard;
+  const hiddenWhileOffDashboard = !onDashboard && !onReplay;
+
   return (
     <div
       className={cn(
         'fixed inset-0 z-40 flex h-full w-full flex-col bg-mixer-bg',
-        !onDashboard && 'pointer-events-none opacity-0',
+        hiddenWhileOffDashboard && 'pointer-events-none opacity-0',
       )}
-      style={!onDashboard ? { left: '-10000px', top: 0 } : undefined}
-      aria-hidden={!onDashboard}
+      style={hiddenWhileOffDashboard ? { left: '-10000px', top: 0 } : undefined}
+      aria-hidden={hiddenWhileOffDashboard}
     >
       <MixerErrorBoundary>
         <CloudCastProvider>
           <PgmAudioProvider>
-            <DashboardLayout />
+            <ReplayPgmOverlay />
+            {onReplay && <ReplayLayout />}
+            {(onDashboard || isOnAir) && (
+              <div
+                className={cn(
+                  'flex h-full min-h-0 flex-col',
+                  hiddenWhileReplay && 'pointer-events-none absolute opacity-0',
+                )}
+                style={hiddenWhileReplay ? { left: '-10000px', top: 0, width: '100%', height: '100%' } : undefined}
+                aria-hidden={hiddenWhileReplay}
+              >
+                <DashboardLayout />
+              </div>
+            )}
           </PgmAudioProvider>
         </CloudCastProvider>
       </MixerErrorBoundary>

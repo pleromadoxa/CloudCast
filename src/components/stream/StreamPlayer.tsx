@@ -69,7 +69,12 @@ export function StreamPlayer({
       isRealDevice(device) &&
       (device.status === 'live' || device.status === 'connecting'),
   );
-  const isPairedOnline = Boolean(meshSessionActive && !hasMeshFeed && device?.status === 'connecting');
+  const isPairedOnline = Boolean(
+    meshSessionActive &&
+      !hasMeshFeed &&
+      device &&
+      (device.status === 'connecting' || (device.isOnline && device.status !== 'live')),
+  );
   const isStreaming = Boolean(
     device &&
       isRealDevice(device) &&

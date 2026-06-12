@@ -197,65 +197,81 @@ export function LayersPanel({
 
   return (
     <div className={cn('layers-split min-h-0 h-full', compact && 'layers-split--compact')}>
-      {/* ── LEFT: layer stack & routing ── */}
       <div className="layers-split-left">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wide text-mixer-muted">
-            <Layers className="h-3.5 w-3.5 text-mixer-red" />
-            Stack
+        <section className="mixer-panel-section">
+          <div className="mixer-panel-section-head">
+            <div className="mixer-panel-section-title">
+              <Layers className="h-3.5 w-3.5 text-mixer-red" />
+              Layer stack
+            </div>
+            <button
+              type="button"
+              onClick={graphics.clearAllPgmGraphics}
+              className="mixer-panel-section-action"
+            >
+              Clear PGM
+            </button>
           </div>
-          <button type="button" onClick={graphics.clearAllPgmGraphics} className="mixer-btn px-2 py-0.5 text-[7px] text-mixer-muted">
-            CLR PGM
+
+          <LayerQuickNav
+            selectedId={selectedId}
+            onSelect={selectLayer}
+            chromaLocked={!chromaAllowed}
+            advancedLocked={!advancedGraphics}
+          />
+
+          <LayerStackGrid
+            items={stack}
+            selectedId={selectedId}
+            chromaLocked={!chromaAllowed}
+            advancedLocked={!advancedGraphics}
+            compact={compact}
+            onSelect={selectLayer}
+            onTogglePreview={toggleLayerPreview}
+            onToggleLive={toggleLayerLive}
+            onDelete={deleteLayer}
+            onReorder={handleReorder}
+          />
+
+          <FeatureHint className="mixer-panel-tip">
+            Eye = PST preview · Radio = PGM live · Drag grip to reorder (top = front)
+          </FeatureHint>
+        </section>
+
+        <section className="mixer-panel-section mixer-panel-section--footer">
+          <button
+            type="button"
+            onClick={() => advancedGraphics && fileRef.current?.click()}
+            disabled={uploading || !advancedGraphics}
+            className="mixer-btn flex w-full items-center justify-center gap-1.5 py-2 text-[10px]"
+            title={!advancedGraphics ? 'Pro plan required' : undefined}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            {uploading ? 'Uploading…' : 'Add image layer'}
           </button>
-        </div>
-
-        <LayerQuickNav
-          selectedId={selectedId}
-          onSelect={selectLayer}
-          chromaLocked={!chromaAllowed}
-          advancedLocked={!advancedGraphics}
-        />
-
-        <FeatureHint className="mb-1">
-          Eye = preview on PST. Radio = live on PGM. Drag grip to reorder — top row draws in front.
-        </FeatureHint>
-
-        <LayerStackGrid
-          items={stack}
-          selectedId={selectedId}
-          chromaLocked={!chromaAllowed}
-          advancedLocked={!advancedGraphics}
-          compact={compact}
-          onSelect={selectLayer}
-          onTogglePreview={toggleLayerPreview}
-          onToggleLive={toggleLayerLive}
-          onDelete={deleteLayer}
-          onReorder={handleReorder}
-        />
-
-        <button
-          type="button"
-          onClick={() => advancedGraphics && fileRef.current?.click()}
-          disabled={uploading || !advancedGraphics}
-          className="mixer-btn flex w-full items-center justify-center gap-1 py-1.5 text-[9px]"
-          title={!advancedGraphics ? 'Pro plan required' : undefined}
-        >
-          <Upload className="h-3 w-3" /> {uploading ? 'UPLOADING…' : '+ Image Layer'}
-        </button>
-        {!advancedGraphics && (
-          <p className="rounded border border-mixer-yellow/25 bg-mixer-yellow/10 px-2 py-1 text-[8px] text-mixer-yellow">
-            Breaking, crawler, stinger &amp; image layers require Pro or Pro Master. They appear dimmed in the stack until you upgrade.
-          </p>
-        )}
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleGraphicUpload} />
-        {uploadError && <p className="text-[8px] text-mixer-red">{uploadError}</p>}
+          {!advancedGraphics && (
+            <p className="mixer-panel-notice mixer-panel-notice--warn">
+              Breaking, crawler, stinger &amp; image layers need Pro or Pro Master.
+            </p>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleGraphicUpload} />
+          {uploadError && <p className="mixer-panel-notice mixer-panel-notice--error">{uploadError}</p>}
+        </section>
       </div>
 
-      {/* ── RIGHT: layer properties ── */}
       <div className="layers-split-right">
-        <p className="layer-editor-header">
-          Properties · <strong>{selectedItem?.label ?? 'Layer'}</strong>
-        </p>
+        <header className="layer-editor-header">
+          <div className="layer-editor-header-row">
+            <span className="layer-editor-header-kicker">Properties</span>
+            <strong>{selectedItem?.label ?? 'Layer'}</strong>
+          </div>
+          {selectedItem && (selectedItem.isPreview || selectedItem.isLive) && (
+            <div className="layer-editor-header-badges">
+              {selectedItem.isPreview && <span className="layer-stack-badge-pst">PST</span>}
+              {selectedItem.isLive && <span className="layer-stack-badge-air">AIR</span>}
+            </div>
+          )}
+        </header>
 
         <div className="layer-editor-body">
           {selectedId === 'transition' && (

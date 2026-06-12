@@ -25,7 +25,7 @@ export function LayerQuickNav({
   advancedLocked,
 }: LayerQuickNavProps) {
   return (
-    <div className="flex flex-wrap gap-0.5">
+    <div className="layer-quick-nav" role="tablist" aria-label="Jump to layer">
       {SHORTCUTS.map((s) => {
         const locked =
           (s.tier === 'chroma' && chromaLocked) || (s.tier === 'advanced' && advancedLocked);

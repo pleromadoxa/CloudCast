@@ -28,6 +28,7 @@ function PreviewTile({
   index,
   isPst,
   isPgm,
+  pgmDeviceId,
   getQuality,
   getOverlay,
   monitorVolume,
@@ -42,6 +43,7 @@ function PreviewTile({
   index: number;
   isPst: boolean;
   isPgm: boolean;
+  pgmDeviceId: string | null;
   getQuality: (id: string) => StreamQuality;
   getOverlay: (id: string) => OverlayType;
   monitorVolume: number;
@@ -81,7 +83,7 @@ function PreviewTile({
             audioMuted={monitorVolume === 0}
             volume={monitorVolume}
             audioDeviceId={monitorAudioDeviceId}
-            enableSpeakerPlayback={isPst}
+            enableSpeakerPlayback={isPst && device.deviceId !== pgmDeviceId && !isPgm}
             compact
             showLabel={false}
             className="h-full w-full"
@@ -155,6 +157,7 @@ export function PreviewSourceGrid({
           index={focused ? slots.indexOf(focused) : 0}
           isPst={Boolean(focused && focused.deviceId === pstDeviceId)}
           isPgm={Boolean(focused && focused.deviceId === pgmDeviceId)}
+          pgmDeviceId={pgmDeviceId}
           getQuality={getQuality}
           getOverlay={getOverlay}
           monitorVolume={focused && isRealDevice(focused) ? getMonitorVolume(focused.deviceId) : 0}
@@ -176,6 +179,7 @@ export function PreviewSourceGrid({
                 index={i}
                 isPst={Boolean(device && device.deviceId === pstDeviceId)}
                 isPgm={Boolean(device && device.deviceId === pgmDeviceId)}
+                pgmDeviceId={pgmDeviceId}
                 getQuality={getQuality}
                 getOverlay={getOverlay}
                 monitorVolume={device && isRealDevice(device) ? getMonitorVolume(device.deviceId) : 0}
@@ -206,6 +210,7 @@ export function PreviewSourceGrid({
           index={index}
           isPst={Boolean(device && device.deviceId === pstDeviceId)}
           isPgm={Boolean(device && device.deviceId === pgmDeviceId)}
+          pgmDeviceId={pgmDeviceId}
           getQuality={getQuality}
           getOverlay={getOverlay}
           monitorVolume={device && isRealDevice(device) ? getMonitorVolume(device.deviceId) : 0}

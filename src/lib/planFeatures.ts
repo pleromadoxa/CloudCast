@@ -8,15 +8,15 @@ export {
 } from './planLimits';
 
 export function planAllowsChromaKey(planId: PlanTier): boolean {
-  return planId === 'pro' || planId === 'pro_master';
+  return planId === 'pro' || planId === 'pro_master' || planId === 'universal';
 }
 
 export function planAllowsAdvancedGraphics(planId: PlanTier): boolean {
-  return planId === 'pro' || planId === 'pro_master';
+  return planId === 'pro' || planId === 'pro_master' || planId === 'universal';
 }
 
 export function planAllowsCloudRecording(planId: PlanTier): boolean {
-  return planId === 'pro' || planId === 'pro_master';
+  return planId === 'pro' || planId === 'pro_master' || planId === 'universal';
 }
 
 export { planUsesRegalCloud, regalQualityTierForPlan } from './planStreamQuality';

@@ -4,6 +4,7 @@ import type { LayerSettings } from '../../types/mixer';
 import type { LayerStackId } from '../mixer/panels/layers/layerStackTypes';
 import {
   isDraggableLayer,
+  isLayerVisibleOnStagingPreview,
   LOWER_THIRD_Y,
   nearestCornerPreset,
   placementStyle,
@@ -123,7 +124,12 @@ export function GraphicsDragLayer({
     setDragging(false);
   }, []);
 
-  if (!enabled || !selectedLayerId || !isDraggableLayer(selectedLayerId)) {
+  if (
+    !enabled ||
+    !selectedLayerId ||
+    !isDraggableLayer(selectedLayerId) ||
+    !isLayerVisibleOnStagingPreview(selectedLayerId, layers)
+  ) {
     return null;
   }
 
@@ -153,13 +159,12 @@ export function GraphicsDragLayer({
     };
     handleSize = { w: '55%', h: '14%' };
   } else if (selectedLayerId === 'live-button') {
-    if (!layers.showLiveButton) return null;
     const p = resolveCornerPlacement(layers.liveButton.position, layers.liveButton);
     handleStyle = placementStyle(p);
     handleSize = { w: '18%', h: '10%' };
   } else if (selectedLayerId.startsWith('image:')) {
     const img = layers.imageOverlays.find((o) => o.id === selectedLayerId.slice(6));
-    if (!img?.visible) return null;
+    if (!img) return null;
     const p = resolveCornerPlacement(img.position, img);
     handleStyle = placementStyle(p);
     const size = rescaleOverlayDimensions(img.naturalWidth, img.naturalHeight, img.scale);

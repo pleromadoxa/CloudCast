@@ -11,6 +11,8 @@ import { useAuth } from '../../context/AuthContext';
 
 const nav = [
   { to: '/', label: 'Home' },
+  { to: '/products', label: 'Products' },
+  { to: '/products/guide', label: 'Guide' },
   { to: '/pricing', label: 'Pricing' },
 ];
 
@@ -54,7 +56,7 @@ export function MarketingLayout() {
                 >
                   Profile
                 </Link>
-                <Link to="/dashboard" className="rounded bg-mixer-red px-4 py-2 text-xs font-bold tracking-wider text-white hover:bg-mixer-red-dim">
+                <Link to="/hub" className="rounded bg-mixer-red px-4 py-2 text-xs font-bold tracking-wider text-white hover:bg-mixer-red-dim">
                   DASHBOARD
                 </Link>
               </>

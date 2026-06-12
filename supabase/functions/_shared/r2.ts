@@ -50,9 +50,44 @@ export function recordingObjectKey(storagePath: string): string {
   return `cloudcast/recordings/${storagePath.replace(/^\/+/, "")}`;
 }
 
+/** Symphony project storage path → R2 object key */
+export function symphonyObjectKey(storagePath: string): string {
+  return `cloudcast/symphony/${storagePath.replace(/^\/+/, "")}`;
+}
+
+/** Replay clip storage path → R2 object key */
+export function replayObjectKey(storagePath: string): string {
+  return `cloudcast/replay/${storagePath.replace(/^\/+/, "")}`;
+}
+
+export function isOwnedReplayPath(userId: string, storagePath: string): boolean {
+  const normalized = storagePath.replace(/^\/+/, "");
+  return normalized.startsWith(`${userId}/`) && !normalized.includes("..");
+}
+
+export function isOwnedSymphonyPath(userId: string, storagePath: string): boolean {
+  const normalized = storagePath.replace(/^\/+/, "");
+  return normalized.startsWith(`${userId}/`) && !normalized.includes("..");
+}
+
 export function isOwnedRecordingPath(userId: string, storagePath: string): boolean {
   const normalized = storagePath.replace(/^\/+/, "");
   return normalized.startsWith(`${userId}/`) && !normalized.includes("..");
+}
+
+const MOBILE_APP_PRODUCTS = new Set(["video_mixer", "audio_mixer", "symphony_studio", "instant_replay"]);
+
+/** Admin-uploaded APK storage path → R2 object key */
+export function mobileAppObjectKey(storagePath: string): string {
+  return `cloudcast/mobile-apps/${storagePath.replace(/^\/+/, "")}`;
+}
+
+export function isValidMobileAppStoragePath(storagePath: string): boolean {
+  const normalized = storagePath.replace(/^\/+/, "");
+  if (normalized.includes("..")) return false;
+  const parts = normalized.split("/");
+  if (parts.length !== 2) return false;
+  return MOBILE_APP_PRODUCTS.has(parts[0]!) && /^[0-9a-f-]{36}\.apk$/i.test(parts[1]!);
 }
 
 export async function presignUpload(

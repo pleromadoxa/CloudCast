@@ -21,6 +21,15 @@ export function hasUsableAudio(stream: MediaStream | null | undefined): boolean 
   return stream.getAudioTracks().some((track) => track.readyState !== 'ended');
 }
 
+/** Changes when tracks are added/removed or change state — use to re-wire mixer channels. */
+export function streamWireKey(stream: MediaStream): string {
+  const tracks = stream
+    .getAudioTracks()
+    .map((t) => `${t.id}:${t.readyState}:${t.enabled ? 1 : 0}`)
+    .join('|');
+  return `${stream.id}#${tracks || 'none'}`;
+}
+
 export function acquireStreamSource(
   ctx: AudioContext,
   stream: MediaStream,

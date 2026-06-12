@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ensureAudioOutputReady, registerDashboardAudioContext } from '../lib/audioOutput';
 import {
   acquireStreamSource,
   hasUsableAudio,
   releaseStreamSource,
 } from '../lib/streamAudioHub';
+import { useStreamAudioRevision } from './useStreamAudioRevision';
 
 export interface AudioAnalyserLevels {
   l: number;
@@ -41,8 +43,12 @@ let sharedAudioContext: AudioContext | null = null;
 function getSharedAudioContext(): AudioContext {
   if (!sharedAudioContext || sharedAudioContext.state === 'closed') {
     sharedAudioContext = new AudioContext();
+    registerDashboardAudioContext(sharedAudioContext);
   }
-  if (sharedAudioContext.state === 'suspended') void sharedAudioContext.resume();
+  if (typeof window !== 'undefined') {
+    (window as Window & { __cloudcastAnalyserCtx?: AudioContext }).__cloudcastAnalyserCtx =
+      sharedAudioContext;
+  }
   return sharedAudioContext;
 }
 
@@ -201,6 +207,14 @@ export function useMediaStreamAnalyser(stream: MediaStream | null, enabled = tru
   const listenersRef = useRef(new Set<() => void>());
   const [levels, setLevels] = useState<AudioAnalyserLevels>({ l: 0, r: 0 });
   const entryRef = useRef<SharedAnalyserEntry | null>(null);
+  const streamRevision = useStreamAudioRevision(stream);
+  const [unlockTick, setUnlockTick] = useState(0);
+
+  useEffect(() => {
+    const onUnlock = () => setUnlockTick((n) => n + 1);
+    window.addEventListener('cloudcast-audio-unlocked', onUnlock);
+    return () => window.removeEventListener('cloudcast-audio-unlocked', onUnlock);
+  }, []);
 
   const subscribe = useCallback((listener: () => void) => {
     listenersRef.current.add(listener);
@@ -217,39 +231,51 @@ export function useMediaStreamAnalyser(stream: MediaStream | null, enabled = tru
       return;
     }
 
-    const entry = acquireSharedAnalyser(stream);
-    if (!entry) {
-      frameRef.current = emptyFrame();
-      setLevels({ l: 0, r: 0 });
-      listenersRef.current.forEach((fn) => fn());
-      return;
-    }
+    let disposed = false;
+    let entry: SharedAnalyserEntry | null = null;
+    let onFrame: (() => void) | null = null;
+    let onLevels: ((next: AudioAnalyserLevels) => void) | null = null;
 
-    entryRef.current = entry;
+    void (async () => {
+      await ensureAudioOutputReady();
+      if (disposed || !enabled || !stream || !hasUsableAudio(stream)) return;
 
-    const onFrame = () => {
-      frameRef.current = entry.frameRef.current;
-      listenersRef.current.forEach((fn) => fn());
-    };
+      const acquired = acquireSharedAnalyser(stream);
+      if (!acquired || disposed) {
+        if (acquired) releaseSharedAnalyser(stream);
+        return;
+      }
 
-    const onLevels = (next: AudioAnalyserLevels) => {
-      setLevels(next);
-    };
+      entry = acquired;
+      entryRef.current = acquired;
 
-    entry.listeners.add(onFrame);
-    entry.levelListeners.add(onLevels);
-    onFrame();
-    onLevels(entry.levels);
+      onFrame = () => {
+        frameRef.current = acquired.frameRef.current;
+        listenersRef.current.forEach((fn) => fn());
+      };
+
+      onLevels = (next: AudioAnalyserLevels) => {
+        setLevels(next);
+      };
+
+      acquired.listeners.add(onFrame);
+      acquired.levelListeners.add(onLevels);
+      onFrame();
+      onLevels(acquired.levels);
+    })();
 
     return () => {
-      entry.listeners.delete(onFrame);
-      entry.levelListeners.delete(onLevels);
+      disposed = true;
+      if (entry && onFrame && onLevels) {
+        entry.listeners.delete(onFrame);
+        entry.levelListeners.delete(onLevels);
+      }
       entryRef.current = null;
       releaseSharedAnalyser(stream);
       frameRef.current = emptyFrame();
       setLevels({ l: 0, r: 0 });
     };
-  }, [stream, enabled]);
+  }, [stream, enabled, streamRevision, unlockTick]);
 
   return {
     levels,

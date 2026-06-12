@@ -154,6 +154,7 @@ export function PreviewMonitor({
               audioMuted={pstMonitorVolume === 0}
               volume={pstMonitorVolume}
               audioDeviceId={pstDevice ? getMonitorAudioDeviceId(pstDevice.deviceId) : null}
+              pgmDeviceId={pgmDeviceId}
               aspectRatio={aspectRatio}
               embedded
               showClock={false}
