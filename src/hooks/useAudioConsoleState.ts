@@ -375,6 +375,15 @@ export function useAudioConsoleState(devices: Device[]) {
       noiseFloors: { ...prev.noiseFloors, ...scene.noiseFloors },
       mixSends: { ...prev.mixSends, ...scene.mixSends },
       masterVolume: scene.masterVolume,
+      masterMuted: scene.masterMuted ?? prev.masterMuted,
+      monitorMuted: scene.monitorMuted ?? prev.monitorMuted,
+      monitorVolume: scene.monitorVolume ?? prev.monitorVolume,
+      soloId: scene.soloId ?? null,
+      fxEnabled: scene.fxEnabled ? { ...prev.fxEnabled, ...scene.fxEnabled } : prev.fxEnabled,
+      fxMix: scene.fxMix ? { ...prev.fxMix, ...scene.fxMix } : prev.fxMix,
+      channelLabels: scene.channelLabels ? { ...prev.channelLabels, ...scene.channelLabels } : prev.channelLabels,
+      selectedChannel: scene.selectedChannel ?? prev.selectedChannel,
+      activeBank: scene.activeBank ?? prev.activeBank,
     }));
   }, [scenes]);
 

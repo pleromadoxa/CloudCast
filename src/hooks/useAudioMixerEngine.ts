@@ -35,6 +35,7 @@ type FxSlot = 'A' | 'B' | 'C' | 'D';
 type ChannelChain = {
   deviceId: string;
   streamId: string;
+  mediaStream: MediaStream;
   wireKey: string;
   source: MediaStreamAudioSourceNode;
   inputGain: GainNode;
@@ -51,6 +52,7 @@ type ChannelChain = {
   pan: StereoPannerNode;
   fader: GainNode;
   busGain: GainNode;
+  meterAnalyser: AnalyserNode;
   fxSends: Record<FxSlot, GainNode>;
   mixSends: Record<1 | 2 | 3 | 4, GainNode>;
 };
@@ -133,6 +135,8 @@ export function useAudioMixerEngine({
   const fxNodesRef = useRef<Partial<Record<FxSlot, { input: GainNode; output: GainNode }>>>({});
   const monitorChainRef = useRef<{ deviceId: string; tap: GainNode } | null>(null);
 
+  const channelAnalysersRef = useRef<Map<string, AnalyserNode>>(new Map());
+
   const ensureCtx = useCallback(async () => {
     await ensureAudioOutputReady();
     if (!ctxRef.current || ctxRef.current.state === 'closed') {
@@ -158,7 +162,7 @@ export function useAudioMixerEngine({
     if (!ctx) return;
     try {
       chain.source.disconnect();
-      releaseStreamSource(ctx, chain.source.mediaStream);
+      releaseStreamSource(ctx, chain.mediaStream);
     } catch {
       /* ignore */
     }
@@ -234,6 +238,8 @@ export function useAudioMixerEngine({
     const broadcastDest = ctx.createMediaStreamDestination();
 
     master.connect(broadcastDest);
+    master.connect(ctx.destination);
+    monitor.connect(ctx.destination);
 
     masterGainRef.current = master;
     monitorGainRef.current = monitor;
@@ -292,6 +298,9 @@ export function useAudioMixerEngine({
       const pan = ctx.createStereoPanner();
       const fader = ctx.createGain();
       const busGain = ctx.createGain();
+      const meterAnalyser = ctx.createAnalyser();
+      meterAnalyser.fftSize = 2048;
+      meterAnalyser.smoothingTimeConstant = 0.78;
 
       source.connect(inputGain);
       inputGain.connect(ncLearnAnalyser);
@@ -311,6 +320,7 @@ export function useAudioMixerEngine({
       compressor.connect(pan);
       pan.connect(fader);
       fader.connect(busGain);
+      busGain.connect(meterAnalyser);
 
       const mixSends: ChannelChain['mixSends'] = {
         1: ctx.createGain(),
@@ -339,6 +349,7 @@ export function useAudioMixerEngine({
       chainsRef.current.set(device.deviceId, {
         deviceId: device.deviceId,
         streamId: stream.id,
+        mediaStream: stream,
         wireKey,
         source,
         inputGain,
@@ -355,9 +366,11 @@ export function useAudioMixerEngine({
         pan,
         fader,
         busGain,
+        meterAnalyser,
         fxSends,
         mixSends,
       });
+      channelAnalysersRef.current.set(device.deviceId, meterAnalyser);
     },
     [ensureMaster, getAudioSourceForDevice, getMeshStream, linkedUsbAudio, teardownChain],
   );
@@ -542,6 +555,7 @@ export function useAudioMixerEngine({
     stale.forEach((id) => {
       const chain = chainsRef.current.get(id);
       if (chain) teardownChain(chain);
+      channelAnalysersRef.current.delete(id);
     });
   }, [devices, meshStreams, meshStreamRevision, ensureMaster, teardownChain, updateGains, wireChannel]);
 
@@ -589,7 +603,17 @@ export function useAudioMixerEngine({
     };
   }, []);
 
+  const meterApi = useMemo(
+    () => ({
+      getChannelAnalyser: (deviceId: string) => channelAnalysersRef.current.get(deviceId) ?? null,
+      getMixBusAnalyser: (bus: 1 | 2 | 3 | 4) => mixBusesRef.current[bus]?.analyser ?? null,
+      getPgmStream: () => broadcastDestRef.current?.stream ?? null,
+    }),
+    [],
+  );
+
   return {
     masterLevel: getVolumeForDevice(state, state.soloId ?? devices.find(isRealDevice)?.deviceId ?? null),
+    meters: meterApi,
   };
 }

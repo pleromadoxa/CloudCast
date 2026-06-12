@@ -4094,16 +4094,6 @@ body {
   gap: 0.4rem;
 }
 
-.audio-mixer-speaker-output,
-.audio-mixer-speaker-sink {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-
 .studiolive-source-panel {
   margin-bottom: 0.5rem;
   padding: 0.65rem 0.75rem;

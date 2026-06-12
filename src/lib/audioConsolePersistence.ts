@@ -35,6 +35,15 @@ export interface ConsoleSceneSnapshot {
   noiseFloors: Record<string, number>;
   mixSends: AudioConsoleState['mixSends'];
   masterVolume: number;
+  masterMuted: boolean;
+  monitorMuted: boolean;
+  monitorVolume: number;
+  soloId: string | null;
+  fxEnabled: AudioConsoleState['fxEnabled'];
+  fxMix: AudioConsoleState['fxMix'];
+  channelLabels: Record<string, string>;
+  selectedChannel: number;
+  activeBank: AudioConsoleState['activeBank'];
 }
 
 export interface PersistedAudioMixerData {
@@ -72,6 +81,15 @@ export function captureSceneSnapshot(state: AudioConsoleState): ConsoleSceneSnap
     noiseFloors: { ...state.noiseFloors },
     mixSends: { ...state.mixSends },
     masterVolume: state.masterVolume,
+    masterMuted: state.masterMuted,
+    monitorMuted: state.monitorMuted,
+    monitorVolume: state.monitorVolume,
+    soloId: state.soloId,
+    fxEnabled: { ...state.fxEnabled },
+    fxMix: { ...state.fxMix },
+    channelLabels: { ...state.channelLabels },
+    selectedChannel: state.selectedChannel,
+    activeBank: state.activeBank,
   };
 }
 

@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useCloudCast } from '../../context/CloudCastContext';
+import { useAudioMixerMeters } from '../../context/AudioMixerEngineContext';
 import { resolveAudioStreamDeviceId } from '../../lib/audioSettings';
 import { useMediaStreamAnalyser } from '../../hooks/useMediaStreamAnalyser';
+import { useAnalyserNodeFrame } from '../../hooks/useAnalyserNodeFrame';
 import { drawVisualizerFrame } from '../../lib/digitalScreenDraw';
 import type { AudioInputSource } from '../../types/audio';
 import type { Device } from '../../types/device';
@@ -256,11 +258,14 @@ export function DigitalConsoleScreen({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const phaseRef = useRef(0);
   const { getMeshStream } = useCloudCast();
+  const mixerMeters = useAudioMixerMeters();
 
   const streamId = channel && isRealDevice(channel)
     ? resolveAudioStreamDeviceId(channel.deviceId, getAudioSourceForDevice, linkedUsbAudio)
     : null;
   const stream = streamId ? getMeshStream(streamId) : null;
+  const processedAnalyser =
+    channel && isRealDevice(channel) ? mixerMeters?.getChannelAnalyser(channel.deviceId) ?? null : null;
   const enabled = Boolean(
     channel &&
       isRealDevice(channel) &&
@@ -269,7 +274,15 @@ export function DigitalConsoleScreen({
       !state.inputMuted[channel.deviceId],
   );
 
-  const { frameRef, subscribe } = useMediaStreamAnalyser(stream, enabled && bank === 'inputs');
+  const streamAnalyser = useMediaStreamAnalyser(stream, enabled && bank === 'inputs' && !processedAnalyser);
+  const nodeAnalyser = useAnalyserNodeFrame(processedAnalyser, enabled && bank === 'inputs' && Boolean(processedAnalyser));
+  const { frameRef, subscribe } = processedAnalyser ? nodeAnalyser : streamAnalyser;
+
+  const mixBus1 = useAnalyserNodeFrame(mixerMeters?.getMixBusAnalyser(1) ?? null, bank === 'mix');
+  const mixBus2 = useAnalyserNodeFrame(mixerMeters?.getMixBusAnalyser(2) ?? null, bank === 'mix');
+  const mixBus3 = useAnalyserNodeFrame(mixerMeters?.getMixBusAnalyser(3) ?? null, bank === 'mix');
+  const mixBus4 = useAnalyserNodeFrame(mixerMeters?.getMixBusAnalyser(4) ?? null, bank === 'mix');
+  const mixBusFrames = [mixBus1, mixBus2, mixBus3, mixBus4];
   const fat = getFatChannelParams(state, channel?.deviceId ?? '');
 
   useEffect(() => {
@@ -359,7 +372,10 @@ export function DigitalConsoleScreen({
 
       if (bank === 'mix') {
         for (let i = 0; i < 4; i++) {
-          const level = (Math.sin(frame * 0.04 + i) * 0.5 + 0.5) * (state.masterMuted ? 0.1 : 0.6);
+          const busFrame = mixBusFrames[i]?.frameRef.current;
+          const level = state.masterMuted
+            ? 0.1
+            : Math.min(1, ((busFrame?.l ?? 0) + (busFrame?.r ?? 0)) / 200);
           const barH = level * h * 0.35;
           const x = 16 + i * ((w - 32) / 4);
           ctx.fillStyle = `rgba(37, 99, 235, ${0.35 + level * 0.4})`;

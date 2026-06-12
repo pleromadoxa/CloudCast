@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMediaStreamAnalyser, type AnalyserFrame } from '../../hooks/useMediaStreamAnalyser';
+import { useAnalyserNodeFrame } from '../../hooks/useAnalyserNodeFrame';
 import { cn } from '../../lib/utils';
 import { VUMeterBar } from './AudioMeters';
+
+export type { AnalyserFrame };
 
 export type VisualizerAccent = 'green' | 'red' | 'neutral';
 export type VisualizerSize = 'xs' | 'sm' | 'md' | 'lg';
 export type VisualizerLayout = 'stack' | 'strip';
 
 interface InputAudioVisualizerProps {
-  stream: MediaStream | null;
+  stream?: MediaStream | null;
+  analyser?: AnalyserNode | null;
   enabled?: boolean;
   accent?: VisualizerAccent;
   compact?: boolean;
@@ -177,7 +181,8 @@ function drawVisualizerFrame(
 }
 
 export function InputAudioVisualizer({
-  stream,
+  stream = null,
+  analyser = null,
   enabled = true,
   accent = 'green',
   compact = false,
@@ -187,7 +192,9 @@ export function InputAudioVisualizer({
 }: InputAudioVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const phaseRef = useRef(0);
-  const { levels, frameRef, subscribe } = useMediaStreamAnalyser(stream, enabled);
+  const streamAnalyser = useMediaStreamAnalyser(stream, enabled && !analyser);
+  const nodeAnalyser = useAnalyserNodeFrame(analyser, enabled && Boolean(analyser));
+  const { levels, frameRef, subscribe } = analyser ? nodeAnalyser : streamAnalyser;
   const [signalActive, setSignalActive] = useState(false);
 
   const resolvedSize: VisualizerSize =

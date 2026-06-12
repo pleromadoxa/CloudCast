@@ -31,6 +31,9 @@ import { MultiviewModal } from '../mixer/MultiviewModal';
 import { StreamStatusBanner } from '../mixer/StreamStatusBanner';
 import { AccessCodePanel } from '../session/AccessCodePanel';
 import { VideoBridgePanel } from '../audio/VideoBridgePanel';
+import { readLocalBridgeLink } from '../../lib/audioBridgeService';
+import { usePgmBridgeSubscriber } from '../../lib/pgmBridgeTransport';
+import type { MixerBridgeLink } from '../../types/audioBridge';
 import { CloudCastLogo } from '../brand/CloudCastLogo';
 import { CLOUDCAST_NAV_LOGO, resolveDeviceLimit } from '../../lib/branding';
 import { mergeIpCameraIntoDevices } from '../../lib/ipCameraDevice';
@@ -73,6 +76,24 @@ export function DashboardLayout() {
   const externalDisplay = useExternalDisplay();
   const [shortcutAssigning, setShortcutAssigning] = useState(false);
   const [deckNotice, setDeckNotice] = useState<StreamNotice | null>(null);
+  const [bridgeLink, setBridgeLink] = useState<MixerBridgeLink | null>(() => readLocalBridgeLink());
+  const [bridgedPgmStream, setBridgedPgmStream] = useState<MediaStream | null>(null);
+
+  usePgmBridgeSubscriber({
+    bridgeCode: bridgeLink?.bridgeCode ?? null,
+    onStream: setBridgedPgmStream,
+    enabled: Boolean(bridgeLink?.bridgeCode),
+  });
+
+  useEffect(() => {
+    if (bridgeLink && bridgedPgmStream) {
+      registerPgmPlaybackStream(bridgedPgmStream);
+      return;
+    }
+    if (!bridgeLink) {
+      registerPgmPlaybackStream(null);
+    }
+  }, [bridgedPgmStream, bridgeLink, registerPgmPlaybackStream]);
 
   const handleRecordingComplete = useCallback(
     async (blob: Blob, mimeType: string, fileName: string) => {
@@ -270,9 +291,10 @@ export function DashboardLayout() {
 
   const handlePgmPlaybackStream = useCallback(
     (stream: MediaStream | null) => {
+      if (bridgeLink) return;
       registerPgmPlaybackStream(stream);
     },
-    [registerPgmPlaybackStream],
+    [bridgeLink, registerPgmPlaybackStream],
   );
 
   const handlePgmOutputRef = useCallback((el: HTMLDivElement | null) => {
@@ -614,6 +636,7 @@ export function DashboardLayout() {
           <VideoBridgePanel
             mode="video"
             sessionId={session?.sessionId}
+            onLinkChange={setBridgeLink}
             className="hidden xl:flex"
           />
           <div className="dashboard-header-actions flex shrink-0 items-center gap-2 text-[10px] sm:gap-4">

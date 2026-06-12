@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { LayoutGrid, LogOut, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -7,14 +7,16 @@ import { useCloudCast } from '../../context/CloudCastContext';
 import { AccessCodePanel } from '../session/AccessCodePanel';
 import { CloudCastLogo } from '../brand/CloudCastLogo';
 import { CLOUDCAST_NAV_LOGO } from '../../lib/branding';
-import { resolveProductPlan } from '../../lib/productEntitlements';
+import { resolveProductPlan, canLinkAudioVideoMixers } from '../../lib/productEntitlements';
 import { useAudioConsoleState } from '../../hooks/useAudioConsoleState';
 import { useAudioMixerEngine } from '../../hooks/useAudioMixerEngine';
 import { useAudioConsoleShortcuts } from '../../hooks/useAudioConsoleShortcuts';
 import { updateDeviceAudioSettings } from '../../lib/streamingService';
 import { StudioLiveConsole } from './StudioLiveConsole';
 import { AudioUnlockBanner } from './AudioUnlockBanner';
-import { AudioMixerSpeakerOutput } from './AudioMixerSpeakerOutput';
+import { VideoBridgePanel } from './VideoBridgePanel';
+import { AudioMixerEngineProvider } from '../../context/AudioMixerEngineContext';
+import { usePgmBridgePublisher } from '../../lib/pgmBridgeTransport';
 import { AUDIO_MIXER_MAX_CHANNELS } from '../../config/products';
 import { createEmptyAudioSlot, isRealDevice } from '../../types/device';
 import type { AudioInputSource } from '../../types/audio';
@@ -23,6 +25,8 @@ export function AudioMixerLayout() {
   const { profile, signOut } = useAuth();
   const { session, sessionLoading, devices, regenerateCode, isRegenerating, reconnect } = useCloudCast();
   const planId = resolveProductPlan(profile, 'audio_mixer');
+  const canBridge = canLinkAudioVideoMixers(profile);
+  const [bridgeCode, setBridgeCode] = useState<string | null>(null);
 
   const {
     state,
@@ -56,13 +60,19 @@ export function AudioMixerLayout() {
     onRecallScene,
   } = useAudioConsoleState(devices);
 
-  useAudioMixerEngine({
+  const { meters } = useAudioMixerEngine({
     devices,
     state,
     getAudioSourceForDevice,
     linkedUsbAudio: linkedUsb,
     learningNoiseFor,
     onNoiseFloorLearned,
+  });
+
+  usePgmBridgePublisher({
+    bridgeCode,
+    getPgmStream: meters.getPgmStream,
+    enabled: canBridge && Boolean(bridgeCode),
   });
 
   const channelDeviceIds = useMemo(() => {
@@ -130,6 +140,7 @@ export function AudioMixerLayout() {
   }, [devices, reconnect]);
 
   return (
+    <AudioMixerEngineProvider value={meters}>
     <div className="audio-mixer-shell flex h-full min-h-0 flex-col overflow-hidden">
       <header className="audio-mixer-header flex shrink-0 items-center justify-between gap-2 border-b border-sky-500/20 px-3 py-2 sm:px-4">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -151,6 +162,14 @@ export function AudioMixerLayout() {
           isRegenerating={isRegenerating}
           className="hidden min-w-0 sm:flex"
         />
+        <VideoBridgePanel
+          mode="audio"
+          sessionId={session?.sessionId}
+          accessCode={session?.accessCode}
+          realtimeChannel={session?.realtimeChannel}
+          onBridgeCodeChange={setBridgeCode}
+          className="hidden lg:flex"
+        />
         <div className="flex shrink-0 items-center gap-2 text-[10px]">
           <Link
             to="/hub"
@@ -170,12 +189,6 @@ export function AudioMixerLayout() {
 
       <div className="min-h-0 flex-1 overflow-auto p-2 sm:p-3">
         <AudioUnlockBanner />
-        <AudioMixerSpeakerOutput
-          devices={devices}
-          state={state}
-          getAudioSourceForDevice={getAudioSourceForDevice}
-          linkedUsbAudio={linkedUsb}
-        />
         <StudioLiveConsole
           devices={devices}
           planId={planId}
@@ -209,5 +222,6 @@ export function AudioMixerLayout() {
         />
       </div>
     </div>
+    </AudioMixerEngineProvider>
   );
 }

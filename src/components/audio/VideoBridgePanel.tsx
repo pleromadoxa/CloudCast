@@ -20,6 +20,8 @@ interface VideoBridgePanelProps {
   sessionId?: string;
   accessCode?: string;
   realtimeChannel?: string;
+  onBridgeCodeChange?: (code: string | null) => void;
+  onLinkChange?: (link: MixerBridgeLink | null) => void;
   className?: string;
 }
 
@@ -28,6 +30,8 @@ export function VideoBridgePanel({
   sessionId,
   accessCode,
   realtimeChannel,
+  onBridgeCodeChange,
+  onLinkChange,
   className,
 }: VideoBridgePanelProps) {
   const { profile } = useAuth();
@@ -44,6 +48,7 @@ export function VideoBridgePanel({
     if (!sessionId || !accessCode || !canLink) return;
     const code = generateBridgeCode();
     setBridgeCode(code);
+    onBridgeCodeChange?.(code);
     setError(null);
 
     const payload: Omit<MixerBridgeLink, 'linkedAt'> = {
@@ -59,7 +64,7 @@ export function VideoBridgePanel({
 
     await publisherRef.current?.stop();
     publisherRef.current = createBridgePublisher(payload);
-  }, [sessionId, accessCode, realtimeChannel, canLink, profile?.id]);
+  }, [sessionId, accessCode, realtimeChannel, canLink, profile?.id, onBridgeCodeChange]);
 
   useEffect(() => {
     if (mode !== 'audio' || !canLink || !sessionId) return;
@@ -92,6 +97,7 @@ export function VideoBridgePanel({
       await linkVideoToAudioBridge(sessionId, resolved.bridgeCode);
       await persistBridgeLink(resolved);
       setLink(resolved);
+      onLinkChange?.(resolved);
       setInputCode('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to link mixers');
@@ -103,6 +109,7 @@ export function VideoBridgePanel({
   const handleDisconnect = () => {
     writeLocalBridgeLink(null);
     setLink(null);
+    onLinkChange?.(null);
     if (mode === 'audio') void startAudioBridge();
   };
 
