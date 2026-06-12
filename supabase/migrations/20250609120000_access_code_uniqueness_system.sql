@@ -1,0 +1,8 @@
+-- Applied to CloudCast Supabase project (ixjydnkpnyxnckhkqhue)
+-- Migration: access_code_uniqueness_system
+--
+-- - Uppercase normalization trigger on access_code
+-- - Unique index on active access codes
+-- - generate_unique_access_code() with explicit duplicate check
+-- - One active session per owner (deactivate others on create)
+-- - get_or_create_owner_session() for dashboard init

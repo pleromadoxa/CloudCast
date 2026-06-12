@@ -1,0 +1,2 @@
+-- Applied remotely via Supabase MCP: stream_destinations_and_audio_sources
+-- stream_destinations table, paired_devices audio columns, list/upsert/delete RPCs

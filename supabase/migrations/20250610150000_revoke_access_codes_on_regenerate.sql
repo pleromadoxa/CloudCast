@@ -1,0 +1,6 @@
+-- Applied to CloudCast Supabase project (ixjydnkpnyxnckhkqhue)
+-- Migration: revoke_access_codes_on_regenerate
+--
+-- - revoked_mixer_access_codes table blocks superseded codes
+-- - regenerate_access_code revokes old code, clears paired devices
+-- - get_mixer_session / pair_device / update_paired_device reject revoked codes

@@ -1,0 +1,34 @@
+/** Per-session channel prefix — full name is `cloudcast-{session_id}`. */
+export const SESSION_CHANNEL_PREFIX = 'cloudcast-';
+
+/** Broadcast event names for WebRTC signaling between mobile and dashboard. */
+export const SIGNALING_EVENTS = {
+  OFFER: 'offer',
+  ANSWER: 'answer',
+  ICE: 'ice',
+  STREAM_READY: 'stream-ready',
+  STREAM_STOPPED: 'stream-stopped',
+  DEVICE_ACK: 'device-ack',
+  DEVICE_CONNECTED: 'device-connected',
+  PAIRING_STATUS: 'pairing-status',
+  ACCESS_CODE_REVOKED: 'access-code-revoked',
+  /** Dashboard leader regained — mobile should re-send mesh offer. */
+  REQUEST_REOFFER: 'request-reoffer',
+} as const;
+
+/** Dashboard presence key — distinguishes dashboard observers from mobile publishers. */
+export const DASHBOARD_PRESENCE_KEY = 'dashboard';
+
+export const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:stun.l.google.com:19302' },
+];
+
+export const GRID_LAYOUTS = {
+  1: 'grid-cols-1',
+  2: 'grid-cols-2',
+  3: 'grid-cols-2 lg:grid-cols-3',
+  4: 'grid-cols-2 lg:grid-cols-2',
+  6: 'grid-cols-2 lg:grid-cols-3',
+  9: 'grid-cols-3',
+} as const;

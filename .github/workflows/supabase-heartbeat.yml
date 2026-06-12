@@ -1,0 +1,24 @@
+name: Supabase heartbeat
+
+on:
+  schedule:
+    # Every 6 hours — well inside the free-tier 7-day inactivity pause window
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Ping Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          HEARTBEAT_SOURCE: github-actions
+        run: node tools/supabase-heartbeat.mjs
