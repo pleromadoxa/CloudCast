@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-
-interface BufferChunk {
-  blob: Blob;
-  atMs: number;
-}
-
-function pickRecorderMime(): string {
-  if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) return 'video/webm;codecs=vp9,opus';
-  if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) return 'video/webm;codecs=vp8,opus';
-  if (MediaRecorder.isTypeSupported('video/webm')) return 'video/webm';
-  return '';
-}
+import {
+  bufferStartMs,
+  computeBufferSeconds,
+  extractMarkedClip,
+  pruneChunksBefore,
+  type TimestampedChunk,
+} from '../lib/replayClipMux';
+import { pickRecorderMimeType } from '../lib/broadcast/pgmCaptureStream';
+import {
+  DEFAULT_REPLAY_FPS,
+  formatSmpteFromSeconds,
+  houseClockSeconds,
+} from '../lib/replayTimecode';
 
 export interface ReplayBufferState {
   isRecording: boolean;
@@ -18,31 +19,57 @@ export interface ReplayBufferState {
   maxSeconds: number;
   markInSec: number | null;
   markOutSec: number | null;
+  markTimecodeIn: string | null;
+  markTimecodeOut: string | null;
+  houseClockSmpte: string;
   mimeType: string;
+  chunkCount: number;
 }
 
-export function useReplayBuffer(maxSeconds: number, sourceStream: MediaStream | null) {
-  const chunksRef = useRef<BufferChunk[]>([]);
+export function useReplayBuffer(
+  maxSeconds: number,
+  sourceStream: MediaStream | null,
+  options?: { fps?: number; houseAnchorMs?: number },
+) {
+  const fps = options?.fps ?? DEFAULT_REPLAY_FPS;
+  const houseAnchorRef = useRef(options?.houseAnchorMs ?? Date.now());
+
+  const chunksRef = useRef<TimestampedChunk[]>([]);
   const recorderRef = useRef<MediaRecorder | null>(null);
-  const startedAtRef = useRef<number>(0);
   const markInRef = useRef<number | null>(null);
   const markOutRef = useRef<number | null>(null);
+  const markTcInRef = useRef<string | null>(null);
+  const markTcOutRef = useRef<string | null>(null);
   const mimeRef = useRef('');
 
   const [isRecording, setIsRecording] = useState(false);
   const [bufferSeconds, setBufferSeconds] = useState(0);
   const [markInSec, setMarkInSec] = useState<number | null>(null);
   const [markOutSec, setMarkOutSec] = useState<number | null>(null);
+  const [markTimecodeIn, setMarkTimecodeIn] = useState<string | null>(null);
+  const [markTimecodeOut, setMarkTimecodeOut] = useState<string | null>(null);
+  const [houseClockSmpte, setHouseClockSmpte] = useState('00:00:00:00');
+  const [chunkCount, setChunkCount] = useState(0);
+
+  useEffect(() => {
+    if (options?.houseAnchorMs) {
+      houseAnchorRef.current = options.houseAnchorMs;
+    }
+  }, [options?.houseAnchorMs]);
+
+  useEffect(() => {
+    if (!isRecording) return;
+    const timer = window.setInterval(() => {
+      setHouseClockSmpte(formatSmpteFromSeconds(houseClockSeconds(houseAnchorRef.current), fps));
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [isRecording, fps]);
 
   const pruneOldChunks = useCallback(() => {
-    const cutoff = performance.now() - maxSeconds * 1000;
-    chunksRef.current = chunksRef.current.filter((c) => c.atMs >= cutoff);
-    if (chunksRef.current.length === 0) {
-      setBufferSeconds(0);
-      return;
-    }
-    const oldest = chunksRef.current[0]!.atMs;
-    setBufferSeconds(Math.min(maxSeconds, (performance.now() - oldest) / 1000));
+    const nowMs = performance.now();
+    chunksRef.current = pruneChunksBefore(chunksRef.current, maxSeconds, nowMs);
+    setChunkCount(chunksRef.current.length);
+    setBufferSeconds(computeBufferSeconds(chunksRef.current, maxSeconds, nowMs));
   }, [maxSeconds]);
 
   const stopRecorder = useCallback(() => {
@@ -58,15 +85,21 @@ export function useReplayBuffer(maxSeconds: number, sourceStream: MediaStream | 
     const videoTracks = sourceStream.getVideoTracks().filter((t) => t.readyState === 'live');
     if (videoTracks.length === 0) return false;
 
-    const mime = pickRecorderMime();
+    const mime = pickRecorderMimeType();
     if (!mime) return false;
 
-    chunksRef.current = [];
+    if (chunksRef.current.length === 0) {
+      houseAnchorRef.current = Date.now();
+    }
+
     markInRef.current = null;
     markOutRef.current = null;
+    markTcInRef.current = null;
+    markTcOutRef.current = null;
     setMarkInSec(null);
     setMarkOutSec(null);
-    startedAtRef.current = performance.now();
+    setMarkTimecodeIn(null);
+    setMarkTimecodeOut(null);
     mimeRef.current = mime;
 
     try {
@@ -88,6 +121,35 @@ export function useReplayBuffer(maxSeconds: number, sourceStream: MediaStream | 
     }
   }, [sourceStream, isRecording, pruneOldChunks]);
 
+  const restartRecorder = useCallback(() => {
+    if (!sourceStream) return;
+    const mime = mimeRef.current || pickRecorderMimeType();
+    if (!mime) return;
+
+    stopRecorder();
+
+    window.setTimeout(() => {
+      if (!sourceStream) return;
+      try {
+        const recorder = new MediaRecorder(sourceStream, {
+          mimeType: mime,
+          videoBitsPerSecond: 3_500_000,
+        });
+        recorder.ondataavailable = (e) => {
+          if (e.data.size <= 0) return;
+          chunksRef.current.push({ blob: e.data, atMs: performance.now() });
+          pruneOldChunks();
+        };
+        recorder.start(250);
+        recorderRef.current = recorder;
+        mimeRef.current = mime;
+        setIsRecording(true);
+      } catch {
+        /* ignore */
+      }
+    }, 250);
+  }, [sourceStream, stopRecorder, pruneOldChunks]);
+
   useEffect(() => {
     if (!isRecording) return;
     const id = window.setInterval(pruneOldChunks, 500);
@@ -101,55 +163,56 @@ export function useReplayBuffer(maxSeconds: number, sourceStream: MediaStream | 
     return () => stopRecorder();
   }, [sourceStream]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const bufferStartMs = useCallback(() => {
-    if (chunksRef.current.length === 0) return performance.now();
-    return chunksRef.current[0]!.atMs;
+  const getBufferStartMs = useCallback(() => {
+    return bufferStartMs(chunksRef.current, performance.now());
   }, []);
 
   const markIn = useCallback(() => {
     if (!isRecording || chunksRef.current.length === 0) return null;
-    const sec = (performance.now() - bufferStartMs()) / 1000;
+    const sec = (performance.now() - getBufferStartMs()) / 1000;
+    const tc = formatSmpteFromSeconds(houseClockSeconds(houseAnchorRef.current), fps);
     markInRef.current = sec;
+    markTcInRef.current = tc;
     setMarkInSec(sec);
+    setMarkTimecodeIn(tc);
     return sec;
-  }, [isRecording, bufferStartMs]);
+  }, [isRecording, getBufferStartMs, fps]);
 
   const markOut = useCallback(() => {
     if (!isRecording || chunksRef.current.length === 0) return null;
-    const sec = (performance.now() - bufferStartMs()) / 1000;
+    const sec = (performance.now() - getBufferStartMs()) / 1000;
+    const tc = formatSmpteFromSeconds(houseClockSeconds(houseAnchorRef.current), fps);
     markOutRef.current = sec;
+    markTcOutRef.current = tc;
     setMarkOutSec(sec);
+    setMarkTimecodeOut(tc);
     return sec;
-  }, [isRecording, bufferStartMs]);
+  }, [isRecording, getBufferStartMs, fps]);
 
   const clearMarks = useCallback(() => {
     markInRef.current = null;
     markOutRef.current = null;
+    markTcInRef.current = null;
+    markTcOutRef.current = null;
     setMarkInSec(null);
     setMarkOutSec(null);
+    setMarkTimecodeIn(null);
+    setMarkTimecodeOut(null);
   }, []);
 
-  const extractClip = useCallback((): { blob: Blob; mimeType: string; durationSec: number; inSec: number; outSec: number } | null => {
-    const chunks = chunksRef.current;
-    if (chunks.length === 0) return null;
-
-    const startMs = bufferStartMs();
-    const endMs = performance.now();
-    const inSec = markInRef.current ?? 0;
-    const outSec = markOutRef.current ?? (endMs - startMs) / 1000;
-    const fromSec = Math.min(inSec, outSec);
-    const toSec = Math.max(inSec, outSec);
-    if (toSec - fromSec < 0.05) return null;
-
-    const fromMs = startMs + fromSec * 1000;
-    const toMs = startMs + toSec * 1000;
-    const selected = chunks.filter((c) => c.atMs >= fromMs - 300 && c.atMs <= toMs + 300);
-    if (selected.length === 0) return null;
-
-    const mimeType = mimeRef.current || 'video/webm';
-    const blob = new Blob(selected.map((c) => c.blob), { type: mimeType });
-    return { blob, mimeType, durationSec: toSec - fromSec, inSec: fromSec, outSec: toSec };
-  }, [bufferStartMs]);
+  const extractClip = useCallback(() => {
+    const nowMs = performance.now();
+    return extractMarkedClip({
+      chunks: chunksRef.current,
+      bufferStartMs: getBufferStartMs(),
+      markInSec: markInRef.current,
+      markOutSec: markOutRef.current,
+      nowMs,
+      mimeType: mimeRef.current || 'video/webm',
+      fps,
+      snapFrames: true,
+    });
+  }, [getBufferStartMs, fps]);
 
   const toggleRecording = useCallback(() => {
     if (isRecording) {
@@ -168,7 +231,11 @@ export function useReplayBuffer(maxSeconds: number, sourceStream: MediaStream | 
     maxSeconds,
     markInSec,
     markOutSec,
+    markTimecodeIn,
+    markTimecodeOut,
+    houseClockSmpte,
     mimeType: mimeRef.current,
+    chunkCount,
     markIn,
     markOut,
     clearMarks,
@@ -176,5 +243,10 @@ export function useReplayBuffer(maxSeconds: number, sourceStream: MediaStream | 
     toggleRecording,
     stopRecorder,
     startRecorder,
+    restartRecorder,
+    getMarkTimecodes: () => ({
+      in: markTcInRef.current,
+      out: markTcOutRef.current,
+    }),
   };
 }

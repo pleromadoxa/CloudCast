@@ -513,6 +513,9 @@ export function LayersPanel({
                         onChange={(e) => onPatchKey({ lumaThreshold: Number(e.target.value) })}
                         className="w-full accent-mixer-green"
                       />
+                      <span className="mt-1 block text-amber-400/90">
+                        Luma keys dark pixels — use Chroma for green-screen overlays from Regal Display.
+                      </span>
                     </label>
                   ) : (
                     <div className="flex items-center gap-2">

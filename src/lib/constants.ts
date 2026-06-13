@@ -18,6 +18,10 @@ export const SIGNALING_EVENTS = {
   DISPLAY_FEED_SYNC: 'display-feed-sync',
   /** Regal Prism Eye — phone gyro virtual camera sync. */
   PRISM_TRACKING_SYNC: 'prism-tracking-sync',
+  /** CloudCast Replay — cross-operator console state sync. */
+  REPLAY_CONSOLE_SYNC: 'replay-console-sync',
+  /** CloudCast Audio Mixer — cross-operator console state sync. */
+  AUDIO_CONSOLE_SYNC: 'audio-console-sync',
 } as const;
 
 /** Dashboard presence key — distinguishes dashboard observers from mobile publishers. */

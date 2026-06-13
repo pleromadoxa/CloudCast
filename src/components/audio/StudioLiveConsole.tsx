@@ -60,6 +60,8 @@ interface StudioLiveConsoleProps {
   onSetLinkedUsb: (deviceId: string, audioDeviceId: string | null) => void;
   onStoreScene: (sceneId: SceneId) => void;
   onRecallScene: (sceneId: SceneId) => void;
+  readOnly?: boolean;
+  fatChannelLocked?: boolean;
   hostUsb?: {
     localDevices: Device[];
     selectableDevices: MediaDeviceInfo[];
@@ -136,6 +138,8 @@ export function StudioLiveConsole({
   onSetLinkedUsb,
   onStoreScene,
   onRecallScene,
+  readOnly = false,
+  fatChannelLocked = false,
   hostUsb,
 }: StudioLiveConsoleProps) {
   const activeChannels = audioChannelsForPlan(planId);
@@ -201,7 +205,7 @@ export function StudioLiveConsole({
               type="button"
               className={cn('studiolive-scene__recall', scenes[id] && 'studiolive-scene__recall--stored')}
               onClick={() => onRecallScene(id)}
-              disabled={!scenes[id]}
+              disabled={readOnly || !scenes[id]}
               title={`Recall scene ${id}`}
             >
               {id}
@@ -210,6 +214,7 @@ export function StudioLiveConsole({
               type="button"
               className="studiolive-scene__store"
               onClick={() => onStoreScene(id)}
+              disabled={readOnly}
               title={`Store scene ${id} (Shift+${id})`}
             >
               ●
@@ -245,6 +250,7 @@ export function StudioLiveConsole({
           onToggleHpfBypass={() => selectedId && onToggleHpfBypass(selectedId)}
           onPatchNoiseCancel={(patch) => selectedId && onPatchNoiseCancel(selectedId, patch)}
           onLearnNoiseFloor={() => selectedId && onLearnNoiseFloor(selectedId)}
+          fatChannelLocked={fatChannelLocked}
         />
         {state.activeBank === 'mix' && selectedLive && (
           <div className="studiolive-mix-sends studiolive-mix-sends--fat">
@@ -329,7 +335,7 @@ export function StudioLiveConsole({
         />
       )}
 
-      <div className="studiolive-fader-bank">
+      <div className={cn('studiolive-fader-bank', readOnly && 'studiolive-fader-bank--readonly')}>
         {channels.map(({ device, locked }, index) => {
           const live = isRealDevice(device) && device.status !== 'offline' && !locked;
           const label = channelDisplayLabel(device, state.channelLabels);
@@ -361,7 +367,7 @@ export function StudioLiveConsole({
         })}
       </div>
 
-      <AudioConnectionDebugPanel />
+      <AudioConnectionDebugPanel audioConsoleActive />
     </div>
   );
 }

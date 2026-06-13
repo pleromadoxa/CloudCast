@@ -1,7 +1,7 @@
 import type { ReplayBankSlot } from '../types/replay';
 
 const DB_NAME = 'cloudcast_replay';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const BANKS_KEY = 'banks';
 const CLIPS_STORE = 'clips';
 
@@ -14,6 +14,9 @@ interface StoredClipMeta {
   sourceLabel: string;
   sourceDeviceId?: string;
   tags: string[];
+  timecodeIn?: string;
+  timecodeOut?: string;
+  frameRate?: number;
   createdAt: string;
   synced: boolean;
   cloudId?: string;
@@ -56,6 +59,9 @@ export async function persistReplayBanks(banks: ReplayBankSlot[]): Promise<void>
           sourceLabel: clip.sourceLabel,
           sourceDeviceId: clip.sourceDeviceId,
           tags: clip.tags ?? [],
+          timecodeIn: clip.timecodeIn,
+          timecodeOut: clip.timecodeOut,
+          frameRate: clip.frameRate,
           createdAt: clip.createdAt,
           synced: clip.synced,
           cloudId: clip.cloudId,
@@ -114,6 +120,9 @@ export async function loadReplayBanksFromLocal(): Promise<ReplayBankSlot[]> {
         sourceLabel: m.sourceLabel,
         sourceDeviceId: m.sourceDeviceId,
         tags: m.tags,
+        timecodeIn: m.timecodeIn,
+        timecodeOut: m.timecodeOut,
+        frameRate: m.frameRate,
         createdAt: m.createdAt,
         synced: m.synced,
         cloudId: m.cloudId,

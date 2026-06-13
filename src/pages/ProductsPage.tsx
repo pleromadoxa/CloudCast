@@ -41,7 +41,7 @@ export function ProductsPage() {
           ))}
         </div>
 
-        <div className="mx-auto mt-12 max-w-6xl">
+        <div className="mx-auto mt-12 max-w-xl">
           <UniversalPlanCard />
         </div>
 

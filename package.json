@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "node tools/generate-og-image.mjs && node tools/generate-sitemap.mjs && tsc -b && vite build && node tools/prerender-marketing.mjs",
     "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "preview": "vite preview",
     "broadcast-relay": "node tools/broadcast-relay/server.mjs",
     "heartbeat": "node tools/supabase-heartbeat.mjs",
@@ -62,6 +64,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
+    "vitest": "^3.2.6",
     "wrangler": "^4.100.0",
     "ws": "^8.18.0"
   }

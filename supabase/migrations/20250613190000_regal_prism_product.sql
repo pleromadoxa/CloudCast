@@ -11,13 +11,13 @@ SET prism_plan_id = COALESCE(
 WHERE prism_plan_id IS NULL;
 
 UPDATE public.subscription_plans
-SET features = ARRAY[
+SET features = jsonb_build_array(
   'Video Mixer + Audio Mixer + Symphony + Replay + Regal Prism',
   'Pro Master on all products',
   '16-channel audio · 11 video inputs · 32-track DAW · 4K virtual production',
   'Regal Cloud UHD + Regal Cloud Archive',
   'Multi-stream destinations'
-]::text[]
+)
 WHERE id = 'universal';
 
 -- Extend stripe_subscriptions product constraint

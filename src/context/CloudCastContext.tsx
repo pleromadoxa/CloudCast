@@ -380,7 +380,7 @@ export function CloudCastProvider({
 
       const syncStatus = () => {
         setMeshStream(deviceId, stream);
-        const requireAudio = productType === 'audio';
+        const requireAudio = audioIngressEnabledRef.current;
         if (!streamHasActiveMedia(stream, { requireAudio })) {
           markDeviceConnecting(deviceId);
           return;
@@ -392,7 +392,7 @@ export function CloudCastProvider({
       stream.addEventListener('addtrack', syncStatus);
       stream.addEventListener('removetrack', syncStatus);
     },
-    [setMeshStream, attachStreamWatchers, markDeviceLive, markDeviceConnecting, productType],
+    [setMeshStream, attachStreamWatchers, markDeviceLive, markDeviceConnecting],
   );
 
   const broadcast = useCallback((event: string, payload: unknown) => {
@@ -403,7 +403,7 @@ export function CloudCastProvider({
     (reason = 'dashboard-reconnect') => {
       if (!isSignalingLeaderRef.current || !channelRef.current) return;
       const mode = sessionRef.current?.connectionMode ?? 'mesh';
-      if (mode !== 'mesh' && productType !== 'audio') return;
+      if (mode !== 'mesh' && !audioIngressEnabledRef.current) return;
 
       const now = Date.now();
       if (now - lastMeshReofferAtRef.current < MESH_REOFFER_COOLDOWN_MS) return;
@@ -415,7 +415,7 @@ export function CloudCastProvider({
         reason,
       });
     },
-    [broadcast, productType],
+    [broadcast],
   );
 
   const pruneDeadMeshStreams = useCallback(() => {
@@ -463,7 +463,7 @@ export function CloudCastProvider({
 
         if (channel && sessionRef.current) {
           const needsMesh =
-            sessionRef.current.connectionMode === 'mesh' || productType === 'audio';
+            sessionRef.current.connectionMode === 'mesh' || audioIngressEnabledRef.current;
           const videoTransport =
             sessionRef.current.connectionMode === 'regal' ? 'cloud' : 'mesh';
           missingLiveStream = needsMesh && next.some((d) => {
@@ -890,8 +890,6 @@ export function CloudCastProvider({
 
   const createPeerConnection = useCallback(
     (peerKey: string, deviceId: string) => {
-      const mode = sessionRef.current?.connectionMode ?? 'mesh';
-      const pcMode = productType === 'audio' ? 'mesh' : mode;
       const streamDeviceId = deviceId || peerKey;
 
       if (peerConnections.current.has(peerKey) || peerConnections.current.has(streamDeviceId)) {
@@ -900,9 +898,10 @@ export function CloudCastProvider({
         removeMeshStream(streamDeviceId);
       }
 
-      const pc = new RTCPeerConnection(pcConfigForMode(pcMode));
+      // Mobile mesh signaling always uses P2P ICE — independent of Regal Cloud video ingest.
+      const pc = new RTCPeerConnection(pcConfigForMode('mesh'));
 
-      if (productType === 'audio') {
+      if (audioIngressEnabledRef.current) {
         try {
           pc.addTransceiver('audio', { direction: 'recvonly' });
         } catch {
@@ -1015,7 +1014,6 @@ export function CloudCastProvider({
       registerPeerConnection,
       clearPeerDisconnectTimer,
       absorbPeerMedia,
-      productType,
     ],
   );
 
@@ -1166,9 +1164,18 @@ export function CloudCastProvider({
         .on('broadcast', { event: SIGNALING_EVENTS.STREAM_READY }, ({ payload }) => {
           const p = payload as StreamReadyPayload;
           appendEvent({ event: 'stream-ready', payload: p });
+          const peerKey = p.from?.trim() || p.deviceId?.trim();
+          if (isSignalingLeaderRef.current && peerKey && p.deviceId) {
+            sendDeviceAck(peerKey, p.deviceId, { force: true });
+          }
           if (audioIngressEnabledRef.current && p.deviceId && p.whepUrl) {
             connectAudioIngressWhep(p.deviceId, p.whepUrl, {
-              onStream: bindIngressStream,
+              onStream: (deviceId, stream) => {
+                bindIngressStream(deviceId, stream);
+                if (isSignalingLeaderRef.current) {
+                  sendDeviceAck(deviceId, deviceId, { force: true });
+                }
+              },
               onConnecting: markDeviceConnecting,
               onStreamLost: (deviceId) => {
                 if (!isMeshStreamPresent(meshStreamsRef.current.get(deviceId))) {
@@ -1223,13 +1230,18 @@ export function CloudCastProvider({
               markDeviceConnecting(joinedId);
             }
             if (isSignalingLeaderRef.current) {
+              const sessionMode = sessionRef.current?.connectionMode ?? 'mesh';
+              const needsMeshSignaling =
+                sessionMode === 'mesh' || audioIngressEnabledRef.current;
               const pc = resolvePeerConnection(joinedId, joinedId);
               if (pc?.connectionState === 'connected') {
                 sendDeviceAck(joinedId, joinedId, { force: hasStream });
               } else if (
-                !pc ||
-                pc.connectionState === 'failed' ||
-                pc.connectionState === 'closed'
+                needsMeshSignaling &&
+                !hasStream &&
+                (!pc ||
+                  pc.connectionState === 'failed' ||
+                  pc.connectionState === 'closed')
               ) {
                 requestMeshReoffer('device-presence-join');
               }
@@ -1540,11 +1552,21 @@ export function CloudCastProvider({
     wasSignalingLeaderRef.current = isSignalingLeader;
   }, [isSignalingLeader, requestMeshReoffer]);
 
+  const bindIngressStreamWithAck = useCallback(
+    (deviceId: string, stream: MediaStream) => {
+      bindIngressStream(deviceId, stream);
+      if (isSignalingLeaderRef.current) {
+        sendDeviceAck(deviceId, deviceId, { force: true });
+      }
+    },
+    [bindIngressStream, sendDeviceAck],
+  );
+
   useAudioIngressStreams({
     enabled: audioIngressEnabled,
     connectionMode: sessionConnectionMode,
     devices,
-    onStream: bindIngressStream,
+    onStream: bindIngressStreamWithAck,
     onConnecting: markDeviceConnecting,
     onStreamLost: (deviceId) => {
       if (!isMeshStreamPresent(meshStreamsRef.current.get(deviceId))) {

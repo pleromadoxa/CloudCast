@@ -75,8 +75,10 @@ export function customTemplateFromPartial(
   };
 }
 
+import { CHROMA_KEY_GREEN } from './chromaKeyColor';
+
 /** Chroma key green used when key mode is active. */
-export const DISPLAY_KEY_COLOR = '#00ff00';
+export const DISPLAY_KEY_COLOR = CHROMA_KEY_GREEN;
 
 export function resolveKeyBackground(bg: DisplayBackground | undefined, keyMode: boolean): DisplayBackground | undefined {
   if (!keyMode || !bg) return bg;

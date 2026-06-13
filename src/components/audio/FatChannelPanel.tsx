@@ -32,6 +32,7 @@ export function FatChannelPanel({
   onToggleHpfBypass,
   onPatchNoiseCancel,
   onLearnNoiseFloor,
+  fatChannelLocked = false,
 }: {
   channelIndex: number;
   device: Device | null;
@@ -54,9 +55,10 @@ export function FatChannelPanel({
   onToggleHpfBypass: () => void;
   onPatchNoiseCancel: (patch: Partial<NoiseCancelSettings>) => void;
   onLearnNoiseFloor: () => void;
+  fatChannelLocked?: boolean;
 }) {
   const deviceId = device?.deviceId ?? '';
-  const disabled = !live || locked;
+  const disabled = !live || locked || fatChannelLocked;
 
   const handleFat = (key: keyof FatChannelParams, value: number) => {
     if (disabled || !deviceId) return;
@@ -72,6 +74,9 @@ export function FatChannelPanel({
       <header className="fat-channel__header">
         <div className="fat-channel__title-block">
           <p className="studiolive-section-label">Fat Channel</p>
+          {fatChannelLocked && (
+            <p className="text-[9px] font-bold uppercase tracking-wider text-amber-400/90">Pro Master</p>
+          )}
           <p className="fat-channel__channel">
             CH {String(channelIndex + 1).padStart(2, '0')}
           </p>

@@ -1,12 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Copy, ExternalLink } from 'lucide-react';
+import {
+  AlertTriangle,
+  Circle,
+  Clapperboard,
+  Check,
+  Copy,
+  ExternalLink,
+  LayoutGrid,
+  LogOut,
+  MonitorPlay,
+  RefreshCw,
+  Signal,
+  SlidersHorizontal,
+  Sparkles,
+} from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { usePgmAudio } from '../../context/PgmAudioContext';
 import { usePgmBroadcast } from '../../hooks/usePgmBroadcast';
 import { usePgmRecording } from '../../hooks/usePgmRecording';
 import { useAIControls } from '../../hooks/useAIControls';
-import { AlertTriangle, Circle, Clapperboard, LayoutGrid, LogOut, MonitorPlay, RefreshCw, Signal, SlidersHorizontal, Sparkles } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { AdminNavLink } from '../admin/AdminNavLink';
 import { PlatformBroadcastBanner } from '../admin/PlatformBroadcastBanner';
 import { isSupabaseConfigured } from '../../lib/supabase';
@@ -51,16 +64,20 @@ import { uploadMixerRecording } from '../../lib/recordingService';
 import { planAllowsCloudRecording } from '../../lib/planFeatures';
 import { defaultStreamQualityForSession } from '../../lib/planStreamQuality';
 import { USER_MSG } from '../../lib/userMessaging';
+import { logReplayAudit } from '../../lib/replayAuditService';
 import { cn } from '../../lib/utils';
 import { buildLayerStack } from '../mixer/panels/layers/buildLayerStack';
 import type { LayerStackId } from '../mixer/panels/layers/layerStackTypes';
 import { isDraggableLayer, isLayerVisibleOnStagingPreview } from '../../lib/overlayPlacement';
 import { ProgramPresetToolbar } from '../presets/ProgramPresetToolbar';
 import { usePrismFeedOptional } from '../../context/PrismFeedContext';
+import { useDisplayFeedOptional } from '../../context/DisplayFeedContext';
+import { CHROMA_KEY_GREEN } from '../../lib/chromaKeyColor';
 import { buildMixerOutputUrl } from '../../lib/pgmOutputSync';
 import { usePgmOutputPublisher } from '../../lib/pgmOutputTransport';
 import { useVerticalWorkspaceSplit } from '../../hooks/useVerticalWorkspaceSplit';
 import { WorkspaceSplitHandle } from './WorkspaceSplitHandle';
+import { MobileHandshakeDebugPanel } from '../session/MobileHandshakeDebugPanel';
 
 export function DashboardLayout() {
   const {
@@ -78,7 +95,56 @@ export function DashboardLayout() {
     unpairDevice,
   } = useCloudCast();
   const { profile, signOut } = useAuth();
-  const { setProductionOnAir, displayRouteRequest, clearDisplayRoute } = useProduction();
+  const { setProductionOnAir, displayRouteRequest, clearDisplayRoute, replayPush, clearReplayRundown, advanceReplayRundown, replayRundownRemaining } = useProduction();
+  const handleReturnToLive = useCallback(() => {
+    if (replayPush) {
+      void logReplayAudit({
+        eventType: 'pgm_return',
+        sessionId: session?.sessionId,
+        clipId: replayPush.clipId,
+        label: replayPush.label,
+        meta: { remaining: replayRundownRemaining.length },
+      });
+    }
+    clearReplayRundown();
+  }, [replayPush, clearReplayRundown, session?.sessionId, replayRundownRemaining.length]);
+
+  const handleReplayEnded = useCallback(() => {
+    const ended = replayPush;
+    if (replayRundownRemaining.length > 0) {
+      if (ended) {
+        void logReplayAudit({
+          eventType: 'rundown_advance',
+          sessionId: session?.sessionId,
+          clipId: ended.clipId,
+          label: ended.label,
+          meta: { reason: 'clip_ended', remaining: replayRundownRemaining.length - 1 },
+        });
+      }
+      const next = advanceReplayRundown();
+      if (next) {
+        void logReplayAudit({
+          eventType: 'pgm_push',
+          sessionId: session?.sessionId,
+          clipId: next.clipId,
+          label: next.label,
+          meta: { source: 'rundown_auto' },
+        });
+      }
+      return;
+    }
+
+    if (ended) {
+      void logReplayAudit({
+        eventType: 'pgm_return',
+        sessionId: session?.sessionId,
+        clipId: ended.clipId,
+        label: ended.label,
+        meta: { reason: 'clip_ended' },
+      });
+    }
+    clearReplayRundown();
+  }, [replayPush, replayRundownRemaining.length, advanceReplayRundown, clearReplayRundown, session?.sessionId]);
   const { isOnline, isRecovering, offlineSince, reconnectToken, recheckConnectivity } = useNetwork();
   const { registerPgmPlaybackStream, setPgmGain, getBroadcastAudioStream } = usePgmAudio();
   const pgmVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -150,6 +216,7 @@ export function DashboardLayout() {
   const canAccessPrism = canAccessProduct(profile, 'regal_prism');
   const canAccessDisplay = canAccessProduct(profile, 'regal_display');
   const prismFeed = usePrismFeedOptional();
+  const displayFeed = useDisplayFeedOptional();
   const prismOnAir = Boolean(prismFeed?.isLive);
   const ipCamera = useIpCameraConfig({
     sessionId: session?.sessionId,
@@ -292,8 +359,37 @@ export function DashboardLayout() {
       engine.resetProgress();
       mixer.cutToDevice(REGAL_DISPLAY_DEVICE_ID);
     }
+    if (displayFeed?.state.keyMode) {
+      mixer.setOutputMode('key');
+      mixer.patchKey({ keyType: 'chroma', color: CHROMA_KEY_GREEN, enabled: true });
+    }
     clearDisplayRoute();
-  }, [displayRouteRequest, mixer, engine, clearDisplayRoute]);
+  }, [displayRouteRequest, mixer, engine, clearDisplayRoute, displayFeed?.state.keyMode]);
+
+  useEffect(() => {
+    if (!displayFeed?.state.keyMode) return;
+    const onDisplay =
+      controls.pgmDeviceId === REGAL_DISPLAY_DEVICE_ID ||
+      controls.pstDeviceId === REGAL_DISPLAY_DEVICE_ID;
+    if (!onDisplay) return;
+
+    if (controls.key.keyType !== 'chroma' || controls.key.color !== CHROMA_KEY_GREEN) {
+      mixer.patchKey({ keyType: 'chroma', color: CHROMA_KEY_GREEN });
+    }
+    if (controls.outputMode !== 'key' || !controls.key.enabled) {
+      mixer.setOutputMode('key');
+      mixer.patchKey({ enabled: true, keyType: 'chroma', color: CHROMA_KEY_GREEN });
+    }
+  }, [
+    displayFeed?.state.keyMode,
+    controls.pgmDeviceId,
+    controls.pstDeviceId,
+    controls.key.keyType,
+    controls.key.color,
+    controls.key.enabled,
+    controls.outputMode,
+    mixer,
+  ]);
 
   const handleCut = useCallback(() => {
     if (!controls.pstDeviceId) return;
@@ -653,6 +749,8 @@ export function DashboardLayout() {
           onPgmVideoRef={handlePgmVideoRef}
           onPgmPlaybackStream={handlePgmPlaybackStream}
           onPgmOutputRef={handlePgmOutputRef}
+          replayTake={replayPush}
+          onReplayEnded={handleReplayEnded}
         />
       </div>
       {!controls.fullscreenPgm && (
@@ -682,6 +780,22 @@ export function DashboardLayout() {
         onCancel={cancelStopStream}
       />
       {!controls.fullscreenPgm && <PlatformBroadcastBanner />}
+      {replayPush && (
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-emerald-500/40 bg-emerald-950/50 px-3 py-2 sm:px-4">
+          <div className="flex items-center gap-2 text-[10px] font-bold tracking-wider text-emerald-200">
+            <Clapperboard className="h-3.5 w-3.5" />
+            REPLAY ON PGM — {replayPush.label}
+            {replayRundownRemaining.length > 0 && ` · ${replayRundownRemaining.length} queued`}
+          </div>
+          <button
+            type="button"
+            onClick={handleReturnToLive}
+            className="rounded border border-emerald-400/40 bg-emerald-600/30 px-3 py-1 text-[9px] font-bold tracking-wider text-emerald-100 hover:bg-emerald-600/50"
+          >
+            RETURN TO LIVE
+          </button>
+        </div>
+      )}
       {!controls.fullscreenPgm && (
         <header className="dashboard-header flex shrink-0 items-center justify-between gap-2 border-b border-mixer-border bg-mixer-panel px-3 py-2 sm:px-4">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -965,6 +1079,8 @@ export function DashboardLayout() {
                 </div>
               </div>
             )}
+
+            <MobileHandshakeDebugPanel className="border-t border-mixer-border" />
           </div>
         )}
       </div>
@@ -993,6 +1109,8 @@ export function DashboardLayout() {
             audioDeviceId={pgmAudioDeviceId}
             showClock={false}
             cleanOutput
+            replayTake={replayPush}
+            onReplayEnded={handleReplayEnded}
           />,
           externalDisplay.portalTarget,
         )}

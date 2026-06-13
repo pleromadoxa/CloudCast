@@ -1,24 +1,5 @@
 -- CloudCast Universal — three bundle tiers (Essential, Studio, Master)
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_enum e
-    JOIN pg_type t ON t.oid = e.enumtypid
-    WHERE t.typname = 'plan_tier' AND e.enumlabel = 'universal_essential'
-  ) THEN
-    ALTER TYPE plan_tier ADD VALUE IF NOT EXISTS 'universal_essential';
-  END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_enum e
-    JOIN pg_type t ON t.oid = e.enumtypid
-    WHERE t.typname = 'plan_tier' AND e.enumlabel = 'universal_studio'
-  ) THEN
-    ALTER TYPE plan_tier ADD VALUE IF NOT EXISTS 'universal_studio';
-  END IF;
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
-END $$;
+-- Enum values added in 20250613205000_universal_plan_enum.sql
 
 CREATE OR REPLACE FUNCTION public.universal_bundle_video_tier(p_plan plan_tier)
 RETURNS plan_tier
@@ -103,13 +84,13 @@ VALUES
     5,
     'regal',
     5900,
-    ARRAY[
+    jsonb_build_array(
       'All six CloudCast products',
       'Pro tier on every product',
       'Audio ↔ Video bridge included',
       'Regal Cloud HD streaming',
       'Save vs buying each product separately'
-    ]::text[]
+    )
   ),
   (
     'universal_studio',
@@ -119,13 +100,13 @@ VALUES
     11,
     'regal',
     9900,
-    ARRAY[
+    jsonb_build_array(
       'All six CloudCast products',
       'Pro Master on Video, Audio & Replay',
       'Pro on Symphony & Regal Prism',
       'Audio ↔ Video bridge included',
       'Best balance of power and value'
-    ]::text[]
+    )
   )
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
@@ -140,13 +121,13 @@ UPDATE public.subscription_plans
 SET
   name = 'CloudCast Universal Master',
   price_monthly_cents = 14900,
-  features = ARRAY[
+  features = jsonb_build_array(
     'All six CloudCast products',
     'Pro Master on every product',
     '16-channel audio · 11 video · 32-track DAW · 4K VP',
     'Regal Cloud UHD · multi-stream',
     '100GB cloud storage · priority support'
-  ]::text[]
+  )
 WHERE id = 'universal';
 
 CREATE OR REPLACE FUNCTION public.set_user_product_plan(

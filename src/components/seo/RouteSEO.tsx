@@ -24,6 +24,16 @@ function pricingOverrides(search: string): Partial<PageSEOConfig> | undefined {
   const productParam = new URLSearchParams(search).get('product');
   if (!productParam) return undefined;
 
+  if (productParam === 'universal') {
+    return {
+      title: 'CloudCast Universal Pricing — Essential, Studio & Master',
+      description:
+        'CloudCast Universal bundles all six products from $59/mo. Choose Essential, Studio, or Master — video, audio, Symphony, Replay, Regal Display, and Regal Prism with audio ↔ video bridge included.',
+      path: '/pricing?product=universal',
+      keywords: ['CloudCast Universal pricing', 'Universal Essential', 'Universal Studio', 'Universal Master'],
+    };
+  }
+
   const productId = parseProductId(productParam);
   if (!productId) return undefined;
 

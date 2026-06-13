@@ -86,6 +86,11 @@ export function canLinkAudioVideoMixers(profile: UserProfile | null | undefined)
   return isUniversalPlan(profile.plan_id) || profile.entitlements?.universal === true;
 }
 
+/** Fat Channel (EQ/dynamics/noise cancel) requires Pro Master on Audio Mixer. */
+export function canUseAudioFatChannel(plan: ProductPlanTier): boolean {
+  return plan === 'pro_master';
+}
+
 export function universalTierLabel(planId: PlanTier | null | undefined): string {
   if (!planId || !isUniversalPlanTier(planId)) return PLAN_LABELS.universal;
   return PLAN_LABELS[planId];

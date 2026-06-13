@@ -12,6 +12,7 @@ import { isDisplayFeedDevice } from '../../lib/displayFeedDevice';
 import { isPrismFeedDevice } from '../../lib/prismFeedDevice';
 import { detectIpStreamKind } from '../../lib/ipCameraUrl';
 import { DisplayFeedPlayer } from '../display/DisplayFeedPlayer';
+import { DisplayFeedVideoCapture } from '../display/DisplayFeedVideoCapture';
 import { PrismFeedPlayer } from '../prism/PrismFeedPlayer';
 import { cn } from '../../lib/utils';
 import { ensureAudioOutputReady } from '../../lib/audioOutput';
@@ -213,6 +214,17 @@ export function StreamPlayer({
   }
 
   if (isDisplayFeedDevice(device)) {
+    if (onVideoRef) {
+      return (
+        <DisplayFeedVideoCapture
+          live={displayFeedLive}
+          compact={compact}
+          showLabel={showLabel}
+          className={cn('relative h-full w-full overflow-hidden bg-black', className)}
+          onVideoRef={onVideoRef}
+        />
+      );
+    }
     return (
       <div className={cn('relative h-full w-full overflow-hidden bg-black', className)} style={style}>
         <DisplayFeedPlayer live={displayFeedLive} compact={compact} showLabel={showLabel} />
@@ -223,7 +235,7 @@ export function StreamPlayer({
   if (isPrismFeedDevice(device)) {
     return (
       <div className={cn('relative h-full w-full overflow-hidden bg-black', className)} style={style}>
-        <PrismFeedPlayer compact={compact} showLabel={showLabel} />
+        <PrismFeedPlayer compact={compact} showLabel={showLabel} onVideoRef={onVideoRef} />
       </div>
     );
   }

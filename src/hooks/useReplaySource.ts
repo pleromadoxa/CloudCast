@@ -1,13 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReplaySourceKind } from '../types/replay';
+import { resolveReplayDeviceStream } from '../lib/replayIngress';
+import { useReplayPgmIngress } from './useReplayPgmIngress';
 
 export function useReplaySource(
   getMeshStream: (deviceId: string) => MediaStream | null,
   selectedDeviceId: string | null,
+  sourceKind: ReplaySourceKind,
+  setSourceKind: (kind: ReplaySourceKind) => void,
+  options: {
+    getWhepStream: (deviceId: string) => MediaStream | null;
+    sessionId?: string | null;
+    realtimeChannel?: string | null;
+  },
 ) {
-  const [sourceKind, setSourceKind] = useState<ReplaySourceKind>('camera');
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const pgmStream = useReplayPgmIngress(
+    options.sessionId,
+    options.realtimeChannel,
+    sourceKind === 'pgm-program',
+  );
 
   const stopScreen = useCallback(() => {
     screenStream?.getTracks().forEach((t) => t.stop());
@@ -30,20 +44,32 @@ export function useReplaySource(
       setError('Screen share was cancelled or unavailable.');
       return false;
     }
-  }, [stopScreen]);
+  }, [stopScreen, setSourceKind]);
 
   useEffect(() => () => stopScreen(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeStream = (() => {
     if (sourceKind === 'screen') return screenStream;
-    if (selectedDeviceId) return getMeshStream(selectedDeviceId);
+    if (sourceKind === 'pgm-program') return pgmStream;
+    if (selectedDeviceId) {
+      return resolveReplayDeviceStream(selectedDeviceId, getMeshStream, options.getWhepStream);
+    }
     return null;
   })();
 
+  useEffect(() => {
+    if (sourceKind === 'pgm-program' && !pgmStream) {
+      setError('Waiting for program feed — open Video Mixer with a source on PGM.');
+    } else if (sourceKind === 'camera' && selectedDeviceId && !activeStream) {
+      setError('Waiting for camera feed (mesh or WHEP)…');
+    } else if (sourceKind !== 'screen') {
+      setError(null);
+    }
+  }, [sourceKind, pgmStream, selectedDeviceId, activeStream]);
+
   return {
-    sourceKind,
-    setSourceKind,
     screenStream,
+    pgmStream,
     activeStream,
     error,
     startScreenShare,
@@ -56,19 +82,22 @@ export function useReplayPreviewPlayback() {
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  const loadUrl = useCallback((url: string | null) => {
-    const el = videoRef.current;
-    if (!el) return;
-    if (!url) {
-      el.removeAttribute('src');
-      el.load();
-      setIsPlaying(false);
-      return;
-    }
-    el.src = url;
-    el.playbackRate = playbackRate;
-    void el.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
-  }, [playbackRate]);
+  const loadUrl = useCallback(
+    (url: string | null) => {
+      const el = videoRef.current;
+      if (!el) return;
+      if (!url) {
+        el.removeAttribute('src');
+        el.load();
+        setIsPlaying(false);
+        return;
+      }
+      el.src = url;
+      el.playbackRate = playbackRate;
+      void el.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+    },
+    [playbackRate],
+  );
 
   useEffect(() => {
     if (videoRef.current) videoRef.current.playbackRate = playbackRate;

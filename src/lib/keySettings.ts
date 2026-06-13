@@ -1,10 +1,11 @@
 import type { KeySettings } from '../types/mixer';
 import { DEFAULT_CHROMA_BACKGROUND_ID } from '../types/chromaBackgrounds';
+import { CHROMA_KEY_GREEN } from './chromaKeyColor';
 import { resolveChromaBackgroundId } from './chromaBackgrounds';
 
 export const DEFAULT_KEY_SETTINGS: KeySettings = {
   keyType: 'chroma',
-  color: '#00ff00',
+  color: CHROMA_KEY_GREEN,
   tolerance: 40,
   lumaThreshold: 28,
   enabled: false,

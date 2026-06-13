@@ -255,6 +255,64 @@ export function buildEmail(template: string, payload: TemplatePayload): { subjec
         `),
       };
 
+    case "replay_ops_digest": {
+      const snapshotCount = Number(payload.snapshot_count_7d ?? 0);
+      const auditCount = Number(payload.audit_count_7d ?? 0);
+      const operator = String(payload.latest_operator ?? "—");
+      const houseClock = String(payload.latest_house_clock ?? "—");
+      const bufferSec = Number(payload.latest_buffer_seconds ?? 0);
+      const recentAudit = Array.isArray(payload.recent_audit) ? payload.recent_audit : [];
+      const auditLines = recentAudit
+        .slice(0, 5)
+        .map((row: Record<string, unknown>) =>
+          `<li style="margin:0 0 6px;color:#bbb;font-size:13px;">${String(row.event_type ?? "event")} · ${String(row.label ?? "—")}</li>`
+        )
+        .join("");
+      return {
+        subject: "CloudCast Replay ops digest",
+        html: layout("Replay ops digest", `
+          <p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#bbb;">
+            Last 7 days: <strong style="color:#fff;">${snapshotCount}</strong> buffer snapshots,
+            <strong style="color:#fff;">${auditCount}</strong> audit events.
+          </p>
+          <p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#bbb;">
+            Latest ops snapshot: ${operator} · house ${houseClock} · buffer ${bufferSec.toFixed(1)}s
+          </p>
+          ${auditLines ? `<ul style="margin:0 0 12px;padding-left:18px;">${auditLines}</ul>` : ""}
+          ${btn(`${base}/replay`, "OPEN REPLAY")}
+        `),
+      };
+    }
+
+    case "audio_ops_digest": {
+      const snapshotCount = Number(payload.snapshot_count_7d ?? 0);
+      const auditCount = Number(payload.audit_count_7d ?? 0);
+      const operator = String(payload.latest_operator ?? "—");
+      const masterVol = Number(payload.latest_master_volume ?? 0);
+      const scene = String(payload.latest_scene ?? "—");
+      const recentAudit = Array.isArray(payload.recent_audit) ? payload.recent_audit : [];
+      const auditLines = recentAudit
+        .slice(0, 5)
+        .map((row: Record<string, unknown>) =>
+          `<li style="margin:0 0 6px;color:#bbb;font-size:13px;">${String(row.event_type ?? "event")} · ${String(row.label ?? row.scene_id ?? "—")}</li>`
+        )
+        .join("");
+      return {
+        subject: "CloudCast Audio Mixer ops digest",
+        html: layout("Audio ops digest", `
+          <p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#bbb;">
+            Last 7 days: <strong style="color:#fff;">${snapshotCount}</strong> console snapshots,
+            <strong style="color:#fff;">${auditCount}</strong> audit events.
+          </p>
+          <p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#bbb;">
+            Latest: ${operator} · master ${masterVol}% · scene ${scene}
+          </p>
+          ${auditLines ? `<ul style="margin:0 0 12px;padding-left:18px;">${auditLines}</ul>` : ""}
+          ${btn(`${base}/audio`, "OPEN AUDIO MIXER")}
+        `),
+      };
+    }
+
     default:
       return {
         subject: "CloudCast by Quantum Regal",
@@ -284,6 +342,22 @@ export const EMAIL_TEMPLATE_SAMPLES: Record<string, TemplatePayload> = {
   coupon_redeemed: { code: "REGAL30", kind: "plan_upgrade", plan_id: "pro" },
   recording_uploaded: { file_name: "Sunday Service PGM.mp4", size_bytes: 1_200_000_000 },
   replay_clip_uploaded: { label: "Touchdown — Q3", size_bytes: 45_000_000 },
+  replay_ops_digest: {
+    snapshot_count_7d: 12,
+    audit_count_7d: 48,
+    latest_operator: "Director A",
+    latest_house_clock: "01:14:22:08",
+    latest_buffer_seconds: 42.5,
+    recent_audit: [{ event_type: "mark_in", label: "01:14:20:00" }],
+  },
+  audio_ops_digest: {
+    snapshot_count_7d: 8,
+    audit_count_7d: 32,
+    latest_operator: "A1 Engineer",
+    latest_master_volume: 78,
+    latest_scene: "B",
+    recent_audit: [{ event_type: "scene_recall", scene_id: "B" }],
+  },
 };
 
 export const EMAIL_TEMPLATE_IDS = Object.keys(EMAIL_TEMPLATE_SAMPLES);

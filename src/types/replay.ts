@@ -9,6 +9,9 @@ export interface ReplayClipLocal {
   sourceLabel: string;
   sourceDeviceId?: string;
   tags?: string[];
+  timecodeIn?: string;
+  timecodeOut?: string;
+  frameRate?: number;
   createdAt: string;
   cloudId?: string;
   storagePath?: string;
@@ -36,7 +39,12 @@ export interface ReplayCloudClip {
   bankIndex: number | null;
   label: string | null;
   tags: string[];
+  timecodeIn: string | null;
+  timecodeOut: string | null;
+  frameRate: number | null;
   createdAt: string;
+  lifecycleStatus?: 'active' | 'archived';
+  archivedAt?: string | null;
 }
 
 export interface ReplayStorageUsage {
@@ -47,11 +55,18 @@ export interface ReplayStorageUsage {
   totalUsedBytes?: number;
 }
 
-export type ReplaySourceKind = 'camera' | 'screen' | 'pgm-bridge';
+export type ReplaySourceKind = 'camera' | 'screen' | 'pgm-program';
 
 export interface ReplayPushRequest {
   url: string;
   label: string;
   clipId: string;
   playbackRate?: number;
+  /** Routes through Video Mixer PGM bus (stream encoders + monitor). */
+  busTake?: boolean;
+}
+
+/** Ordered clip in a PGM rundown (plays sequentially on program). */
+export interface ReplayRundownItem extends ReplayPushRequest {
+  bankIndex?: number;
 }

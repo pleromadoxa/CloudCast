@@ -6,10 +6,16 @@ interface PrismFeedPlayerProps {
   compact?: boolean;
   showLabel?: boolean;
   className?: string;
+  onVideoRef?: (el: HTMLVideoElement | null) => void;
 }
 
 /** Video Mixer source player for the Regal Prism virtual input. */
-export function PrismFeedPlayer({ compact = false, showLabel = true, className }: PrismFeedPlayerProps) {
+export function PrismFeedPlayer({
+  compact = false,
+  showLabel = true,
+  className,
+  onVideoRef,
+}: PrismFeedPlayerProps) {
   const prism = usePrismFeedOptional();
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -23,6 +29,11 @@ export function PrismFeedPlayer({ compact = false, showLabel = true, className }
       video.srcObject = null;
     }
   }, [prism?.programStream]);
+
+  useEffect(() => {
+    onVideoRef?.(videoRef.current);
+    return () => onVideoRef?.(null);
+  }, [onVideoRef, prism?.programStream]);
 
   const active = Boolean(prism?.isLive && prism.programStream);
 

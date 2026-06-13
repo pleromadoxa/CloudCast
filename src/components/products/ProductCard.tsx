@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Check, Clapperboard, Gem, LayoutGrid, Lock, MonitorPlay, Music, SlidersHorizontal, Video } from 'lucide-react';
 import type { CloudCastProduct } from '../../types/products';
-import { productLandingPath } from '../../config/productLanding';
+import { productLandingPath, productPricingPath } from '../../config/productLanding';
 import { cn } from '../../lib/utils';
 import { canAccessProduct, isUniversalPlan, resolveProductPlan } from '../../lib/productEntitlements';
-import { UNIVERSAL_TIERS } from '../../config/products';
+import { UNIVERSAL_PLAN_FROM_CENTS, UNIVERSAL_TIERS } from '../../config/products';
 import { useAuth } from '../../context/AuthContext';
 import { formatPrice, isUniversalPlanTier, PLAN_LABELS } from '../../types/plans';
 import { productAccentTheme } from './productAccent';
@@ -31,10 +31,7 @@ export function ProductCard({ product, compact = false, show3D = false }: Produc
   const hasAccess = user ? canAccessProduct(profile, product.id) : true;
   const plan = user ? resolveProductPlan(profile, product.id) : null;
   const accent = productAccentTheme(product.accent);
-  const pricingPath =
-    product.id === 'instant_replay' || product.id === 'regal_display'
-      ? '/pricing?product=video_mixer'
-      : product.pricingPath;
+  const pricingPath = productPricingPath(product.id);
   const pricingLabel = product.id === 'instant_replay' ? 'VIDEO PLANS' : 'PRICING';
 
   return (
@@ -55,75 +52,113 @@ export function ProductCard({ product, compact = false, show3D = false }: Produc
       )}
       <div className={cn('flex flex-1 flex-col', show3D ? 'p-6' : undefined)}>
         <div className="flex items-start justify-between gap-3">
-        <div className={cn('flex h-11 w-11 items-center justify-center rounded-lg border', accent.icon)}>
-          <Icon className="h-5 w-5" />
+          <div className={cn('flex h-11 w-11 items-center justify-center rounded-lg border', accent.icon)}>
+            <Icon className="h-5 w-5" />
+          </div>
+          {user && plan && (
+            <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-mixer-muted">
+              {product.id === 'instant_replay' ? `${PLAN_LABELS[plan]} · Video` : PLAN_LABELS[plan]}
+            </span>
+          )}
         </div>
-        {user && plan && (
-          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-mixer-muted">
-            {product.id === 'instant_replay' ? `${PLAN_LABELS[plan]} · Video` : PLAN_LABELS[plan]}
-          </span>
-        )}
-      </div>
 
-      <h3 className="mt-4 text-lg font-bold tracking-tight">{product.name}</h3>
-      <p className="mt-1 text-xs font-medium uppercase tracking-wider text-mixer-muted">
-        {product.tagline}
-      </p>
-      {!compact && <p className="mt-3 flex-1 text-sm leading-relaxed text-mixer-muted">{product.description}</p>}
+        <h3 className="mt-4 text-lg font-bold tracking-tight">{product.name}</h3>
+        <p className="mt-1 text-xs font-medium uppercase tracking-wider text-mixer-muted">
+          {product.tagline}
+        </p>
+        {!compact && <p className="mt-3 flex-1 text-sm leading-relaxed text-mixer-muted">{product.description}</p>}
 
-      <div className="mt-6 flex flex-wrap gap-2">
-        {user ? (
-          hasAccess ? (
+        <div className="mt-6 flex flex-wrap gap-2">
+          {user ? (
+            hasAccess ? (
+              <Link
+                to={product.dashboardPath}
+                className={cn(
+                  'inline-flex flex-1 items-center justify-center gap-2 rounded py-2.5 text-xs font-bold tracking-wider',
+                  accent.btn,
+                )}
+              >
+                OPEN DASHBOARD <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            ) : (
+              <Link
+                to={pricingPath}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded border border-white/20 py-2.5 text-xs font-bold tracking-wider hover:border-white/40"
+              >
+                <Lock className="h-3.5 w-3.5" /> UPGRADE
+              </Link>
+            )
+          ) : (
             <Link
-              to={product.dashboardPath}
+              to="/login"
+              state={{ from: product.dashboardPath }}
               className={cn(
                 'inline-flex flex-1 items-center justify-center gap-2 rounded py-2.5 text-xs font-bold tracking-wider',
                 accent.btn,
               )}
             >
-              OPEN DASHBOARD <ArrowRight className="h-3.5 w-3.5" />
+              GET STARTED
             </Link>
-          ) : (
-            <Link
-              to={product.pricingPath}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded border border-white/20 py-2.5 text-xs font-bold tracking-wider hover:border-white/40"
-            >
-              <Lock className="h-3.5 w-3.5" /> UPGRADE
-            </Link>
-          )
-        ) : (
+          )}
           <Link
-            to="/login"
-            state={{ from: product.dashboardPath }}
-            className={cn(
-              'inline-flex flex-1 items-center justify-center gap-2 rounded py-2.5 text-xs font-bold tracking-wider',
-              accent.btn,
-            )}
-          >
-            GET STARTED
-          </Link>
-        )}
-        <Link
-          to={pricingPath}
-          className="rounded border border-white/15 px-4 py-2.5 text-xs font-bold tracking-wider text-mixer-muted hover:border-white/30 hover:text-white"
-        >
-          {pricingLabel}
-        </Link>
-        {!compact && (
-          <Link
-            to={productLandingPath(product.id)}
+            to={pricingPath}
             className="rounded border border-white/15 px-4 py-2.5 text-xs font-bold tracking-wider text-mixer-muted hover:border-white/30 hover:text-white"
           >
-            LEARN MORE
+            {pricingLabel}
           </Link>
-        )}
+          {!compact && (
+            <Link
+              to={productLandingPath(product.id)}
+              className="rounded border border-white/15 px-4 py-2.5 text-xs font-bold tracking-wider text-mixer-muted hover:border-white/30 hover:text-white"
+            >
+              LEARN MORE
+            </Link>
+          )}
         </div>
       </div>
     </article>
   );
 }
 
-export function UniversalPlanCard({ hideHeader = false }: { hideHeader?: boolean }) {
+/** Compact Universal upsell — no 3D scene; used on Products and Hub pages. */
+export function UniversalPlanCard() {
+  const { profile } = useAuth();
+  const isUniversal = profile ? isUniversalPlan(profile.plan_id) || profile.entitlements?.universal : false;
+
+  return (
+    <article className="relative flex flex-col rounded-xl border border-amber-500/35 bg-gradient-to-b from-amber-500/10 to-[#0a0a0a] p-8">
+      <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-amber-500 px-3 py-0.5 text-[10px] font-bold tracking-wider text-black">
+        ALL PRODUCTS
+      </span>
+      <div className="flex items-center gap-3">
+        <LayoutGrid className="h-6 w-6 text-amber-400" />
+        <h3 className="text-xl font-bold">CloudCast Universal</h3>
+      </div>
+      <p className="mt-2 text-sm text-mixer-muted">
+        Three bundle tiers — Essential, Studio, and Master — covering Video Mixer, Audio Mixer, Symphony,
+        Replay, Regal Display, and Regal Prism.
+      </p>
+      <p className="mt-4 text-3xl font-bold">
+        From {formatPrice(UNIVERSAL_PLAN_FROM_CENTS)}
+        <span className="text-base font-normal text-mixer-muted">/mo</span>
+      </p>
+      <Link
+        to="/pricing?product=universal"
+        className={cn(
+          'mt-6 inline-flex items-center justify-center rounded py-3 text-xs font-bold tracking-wider',
+          isUniversal
+            ? 'border border-amber-500/40 text-amber-300'
+            : 'bg-amber-500 text-black hover:bg-amber-400',
+        )}
+      >
+        {isUniversal ? 'CURRENT UNIVERSAL PLAN' : 'VIEW UNIVERSAL PLAN'}
+      </Link>
+    </article>
+  );
+}
+
+/** Three-tier Universal comparison — used on the product guide and pricing-adjacent pages. */
+export function UniversalTiersSection({ hideHeader = false }: { hideHeader?: boolean }) {
   const { profile } = useAuth();
   const isUniversal = profile ? isUniversalPlan(profile.plan_id) || profile.entitlements?.universal : false;
   const currentUniversalTier = isUniversalPlanTier(profile?.plan_id)

@@ -56,7 +56,12 @@ function mapCloudClip(row: Record<string, unknown>): ReplayCloudClip {
     bankIndex: row.bank_index != null ? Number(row.bank_index) : null,
     label: row.label ? String(row.label) : null,
     tags,
+    timecodeIn: row.timecode_in ? String(row.timecode_in) : null,
+    timecodeOut: row.timecode_out ? String(row.timecode_out) : null,
+    frameRate: row.frame_rate != null ? Number(row.frame_rate) : null,
     createdAt: String(row.created_at),
+    lifecycleStatus: String(row.lifecycle_status ?? 'active') as ReplayCloudClip['lifecycleStatus'],
+    archivedAt: row.archived_at ? String(row.archived_at) : null,
   };
 }
 
@@ -73,8 +78,10 @@ export async function fetchReplayStorageUsage(): Promise<ReplayStorageUsage> {
   };
 }
 
-export async function fetchUserReplayClips(): Promise<ReplayCloudClip[]> {
-  const { data, error } = await getSupabase().rpc('list_user_replay_clips');
+export async function fetchUserReplayClips(lifecycleStatus: 'active' | 'archived' | null = 'active'): Promise<ReplayCloudClip[]> {
+  const { data, error } = await getSupabase().rpc('list_user_replay_clips', {
+    p_lifecycle_status: lifecycleStatus,
+  });
   if (error) throw new Error(error.message);
   return ((data ?? []) as Record<string, unknown>[]).map(mapCloudClip);
 }
@@ -91,6 +98,9 @@ export async function uploadReplayClip(
     bankIndex?: number;
     label?: string;
     tags?: string[];
+    timecodeIn?: string;
+    timecodeOut?: string;
+    frameRate?: number;
   } = {},
 ): Promise<ReplayCloudClip> {
   const supabase = getSupabase();
@@ -127,6 +137,9 @@ export async function uploadReplayClip(
     p_bank_index: meta.bankIndex ?? null,
     p_label: meta.label ?? null,
     p_tags: meta.tags ?? [],
+    p_timecode_in: meta.timecodeIn ?? null,
+    p_timecode_out: meta.timecodeOut ?? null,
+    p_frame_rate: meta.frameRate ?? 30,
   });
   if (error) {
     await invokeReplayR2('replay-delete', { storage_path: presigned.storagePath }).catch(() => undefined);

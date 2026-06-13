@@ -16,8 +16,10 @@ export function useAudioConsoleShortcuts(
   state: AudioConsoleState,
   channelDeviceIds: string[],
   handlers: ShortcutHandlers,
+  enabled = true,
 ) {
   useEffect(() => {
+    if (!enabled) return;
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -63,5 +65,5 @@ export function useAudioConsoleShortcuts(
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [channelDeviceIds, handlers, state.selectedChannel]);
+  }, [channelDeviceIds, handlers, state.selectedChannel, enabled]);
 }

@@ -1,4 +1,5 @@
 import type { CloudCastProductId } from '../types/products';
+import { getProduct } from './products';
 import { PRODUCT_GUIDE_SECTIONS } from './productGuideContent';
 
 /** URL slug → product id for SEO landing pages at /products/:slug */
@@ -87,6 +88,14 @@ export const PRODUCT_SEO_KEYWORDS: Record<CloudCastProductId, string[]> = {
 
 export function getProductGuideSection(productId: CloudCastProductId) {
   return PRODUCT_GUIDE_SECTIONS.find((s) => s.id === productId);
+}
+
+/** Pricing page URL — Replay and Regal Display bill through Video Mixer. */
+export function productPricingPath(productId: CloudCastProductId): string {
+  if (productId === 'instant_replay' || productId === 'regal_display') {
+    return '/pricing?product=video_mixer';
+  }
+  return getProduct(productId).pricingPath;
 }
 
 export function productLandingPath(productId: CloudCastProductId): string {

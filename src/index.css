@@ -4050,6 +4050,208 @@ body {
   gap: 0.35rem;
 }
 
+.studiolive-enterprise-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid rgb(14 165 233 / 0.15);
+  border-radius: 0.5rem;
+  background: rgb(2 6 23 / 0.6);
+  overflow: hidden;
+}
+
+.studiolive-enterprise-panel {
+  border-top: 1px solid rgb(255 255 255 / 0.05);
+  padding: 0.65rem 0.75rem;
+}
+
+.studiolive-enterprise-panel:first-child {
+  border-top: none;
+}
+
+.studiolive-enterprise-panel__title {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.studiolive-enterprise-panel__hint {
+  margin: 0.35rem 0 0;
+  font-size: 10px;
+  color: rgb(148 163 184 / 0.8);
+}
+
+.studiolive-enterprise-panel__body {
+  margin-top: 0.35rem;
+  font-size: 10px;
+  color: rgb(186 230 253 / 0.9);
+}
+
+.studiolive-enterprise-panel__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 0.25rem;
+  padding: 0.2rem 0.45rem;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgb(186 230 253 / 0.9);
+}
+
+.studiolive-enterprise-panel__btn:hover:not(:disabled) {
+  border-color: rgb(14 165 233 / 0.4);
+  color: #fff;
+}
+
+.studiolive-enterprise-panel__btn:disabled {
+  opacity: 0.45;
+}
+
+.studiolive-enterprise-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.studiolive-audit-list {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 10px;
+  color: rgb(186 230 253 / 0.85);
+}
+
+.studiolive-audit-list li {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+.studiolive-audit-list__time {
+  flex-shrink: 0;
+  color: rgb(148 163 184 / 0.8);
+  font-variant-numeric: tabular-nums;
+}
+
+.studiolive-fader-bank--readonly {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.handshake-debug__section-heading {
+  margin: 0.75rem 0 0.35rem;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.handshake-debug__section-note {
+  margin: 0 0 0.5rem;
+  font-size: 10px;
+  color: #64748b;
+}
+
+.handshake-debug__checklist-wrap {
+  margin-top: 0.25rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.35rem;
+  border: 1px solid rgba(51, 65, 85, 0.6);
+  background: rgba(2, 6, 23, 0.45);
+}
+
+.handshake-debug__checklist-section + .handshake-debug__checklist-section {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(51, 65, 85, 0.35);
+}
+
+.handshake-debug__checklist-title {
+  margin: 0 0 0.35rem;
+  font-size: 10px;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.handshake-debug__checklist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.handshake-debug__checklist-item {
+  margin-bottom: 0.45rem;
+}
+
+.handshake-debug__checklist-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  font-size: 10px;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.handshake-debug__checklist-label input {
+  margin-top: 0.1rem;
+  accent-color: #38bdf8;
+}
+
+.handshake-debug__checklist-done {
+  color: #86efac;
+}
+
+.handshake-debug__checklist-hint {
+  display: block;
+  margin-left: 1.15rem;
+  font-size: 9px;
+  color: #64748b;
+}
+
+.handshake-debug__health {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.1rem 0.4rem;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.handshake-debug__health--ok {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+
+.handshake-debug__health--warn {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fcd34d;
+}
+
+.handshake-debug__health--fail {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+.handshake-debug__health--idle {
+  background: rgba(100, 116, 139, 0.25);
+  color: #94a3b8;
+}
+
+.handshake-debug__events-table code {
+  font-size: 9px;
+  color: #7dd3fc;
+}
+
 .audio-unlock-banner {
   display: flex;
   align-items: center;

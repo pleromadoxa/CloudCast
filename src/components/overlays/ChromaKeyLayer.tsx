@@ -62,11 +62,13 @@ export function ChromaKeyLayer({ mainVideo, keyVideo, keySettings: rawKeySetting
             if (luma < threshold) data[i + 3] = 0;
           }
         } else {
+          const maxDist = tol * 1.732;
           for (let i = 0; i < data.length; i += 4) {
-            const dr = Math.abs(data[i] - kr);
-            const dg = Math.abs(data[i + 1] - kg);
-            const db = Math.abs(data[i + 2] - kb);
-            if (dr < tol && dg < tol && db < tol) data[i + 3] = 0;
+            const dr = data[i] - kr;
+            const dg = data[i + 1] - kg;
+            const db = data[i + 2] - kb;
+            const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+            if (dist < maxDist) data[i + 3] = 0;
           }
         }
         octx.putImageData(img, 0, 0);

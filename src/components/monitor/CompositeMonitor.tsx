@@ -8,6 +8,8 @@ import { StreamPlayer } from '../stream/StreamPlayer';
 import { VideoOverlay } from '../overlays/VideoOverlay';
 import { AspectRatioFrame } from './AspectRatioFrame';
 import type { LayerStackId } from '../mixer/panels/layers/layerStackTypes';
+import type { ReplayPushRequest } from '../../types/replay';
+import { ReplayPgmBusPlayer } from '../replay/ReplayPgmBusPlayer';
 
 interface CompositeMonitorProps {
   label: 'PST' | 'PGM';
@@ -47,6 +49,9 @@ interface CompositeMonitorProps {
   cleanOutput?: boolean;
   /** Render video content only — parent supplies monitor chrome and aspect frame. */
   embedded?: boolean;
+  /** Instant replay clip routed on the PGM program bus. */
+  replayTake?: ReplayPushRequest | null;
+  onReplayEnded?: () => void;
 }
 
 const pipPositionClasses: Record<PipSettings['position'], string> = {
@@ -218,6 +223,8 @@ export function CompositeMonitor({
   pgmDeviceId = null,
   cleanOutput = false,
   embedded = false,
+  replayTake = null,
+  onReplayEnded,
 }: CompositeMonitorProps) {
   const sameAsPgm = Boolean(device && pgmDeviceId && device.deviceId === pgmDeviceId);
   const isPgm = label === 'PGM';
@@ -226,7 +233,13 @@ export function CompositeMonitor({
   const keyFillReady =
     keySettings.fillSource === 'preset' || Boolean(subDevice);
   const showKey = outputMode === 'key' && keySettings.enabled && device && keyFillReady;
-  const isTransitioning = isPgm && transitionProgress > 0 && fromDevice && toDevice && fromDevice.deviceId !== toDevice.deviceId;
+  const isTransitioning =
+    isPgm &&
+    !replayTake &&
+    transitionProgress > 0 &&
+    fromDevice &&
+    toDevice &&
+    fromDevice.deviceId !== toDevice.deviceId;
   const pipSize = PIP_SIZE_MAP[pip.size];
   const [keyMainVideo, setKeyMainVideo] = useState<HTMLVideoElement | null>(null);
   const [keyFillVideo, setKeyFillVideo] = useState<HTMLVideoElement | null>(null);
@@ -245,7 +258,15 @@ export function CompositeMonitor({
       data-pgm-output={isPgm ? 'true' : undefined}
       className="relative h-full w-full"
     >
-            {isTransitioning ? (
+            {isPgm && replayTake ? (
+              <ReplayPgmBusPlayer
+                replay={replayTake}
+                className="absolute inset-0"
+                onVideoRef={handleVideoRef}
+                onBusPlaybackStream={handleBusPlaybackStream}
+                onEnded={onReplayEnded}
+              />
+            ) : isTransitioning ? (
               <TransitionBlend
                 fromDevice={fromDevice}
                 toDevice={toDevice}

@@ -487,7 +487,7 @@ export const PRODUCT_GUIDE_SECTIONS: ProductGuideSection[] = [
       {
         title: 'Green screen and virtual set workflows are fragmented',
         description:
-          'Traditional setups chain OBS, vMix, Unreal, and separate keyer plugins — each with its own failure point. Regal Prism is all-in-one: camera in, keyer tuned, virtual set selected, program out — the same integrated philosophy Aximetry pioneered, delivered as SaaS.',
+          'Traditional setups chain OBS, vMix, Unreal, and separate keyer plugins — each with its own failure point. Regal Prism is all-in-one: camera in, keyer tuned, virtual set selected, program out — the same integrated philosophy Aximmetry pioneered, delivered as SaaS.',
       },
       {
         title: 'AR and XR require specialist teams',

@@ -1,12 +1,7 @@
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { ArrowRight, Check } from 'lucide-react';
 import { CLOUDCAST_PRODUCTS } from '../config/products';
-import {
-  getProductGuideSection,
-  parseProductSlug,
-  productLandingPath,
-  PRODUCT_SEO_KEYWORDS,
-} from '../config/productLanding';
+import { getProductGuideSection, parseProductSlug, productLandingPath, productPricingPath, PRODUCT_SEO_KEYWORDS } from '../config/productLanding';
 import { RouteSEO } from '../components/seo/RouteSEO';
 import { mergeSEO } from '../config/seo';
 
@@ -17,10 +12,7 @@ export function ProductLandingPage() {
 
   const product = CLOUDCAST_PRODUCTS.find((p) => p.id === productId)!;
   const guide = getProductGuideSection(productId);
-  const pricingPath =
-    productId === 'instant_replay' || productId === 'regal_display'
-      ? '/pricing?product=video_mixer'
-      : product.pricingPath;
+  const pricingPath = productPricingPath(productId);
 
   const seo = mergeSEO(
     {

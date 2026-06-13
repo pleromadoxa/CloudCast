@@ -8,6 +8,7 @@ import {
   pickPersistedConsole,
   saveAudioConsoleState,
   type ConsoleSceneSnapshot,
+  type PersistedAudioMixerData,
   type SceneId,
 } from '../lib/audioConsolePersistence';
 import {
@@ -401,6 +402,26 @@ export function useAudioConsoleState(devices: Device[]) {
     }));
   }, [scenes]);
 
+  const applyPersistedConfig = useCallback((data: PersistedAudioMixerData) => {
+    setState((prev) => mergeLoadedState(prev, data));
+    if (data.scenes) setScenes(data.scenes);
+    if (data.audioSources) {
+      const out: Record<string, AudioInputSource> = {};
+      for (const [k, v] of Object.entries(data.audioSources)) {
+        if (v === 'camera' || v === 'capture_card' || v === 'usb_audio') out[k] = v;
+      }
+      setAudioSources((prev) => ({ ...prev, ...out }));
+    }
+    if (data.linkedUsb) setLinkedUsb((prev) => ({ ...prev, ...data.linkedUsb }));
+  }, []);
+
+  const buildPersistedConfig = useCallback((): PersistedAudioMixerData => ({
+    console: pickPersistedConsole(state),
+    scenes,
+    audioSources,
+    linkedUsb,
+  }), [state, scenes, audioSources, linkedUsb]);
+
   const liveDevices = useMemo(
     () => devices.filter((d) => isRealDevice(d) && d.status !== 'offline'),
     [devices],
@@ -452,5 +473,7 @@ export function useAudioConsoleState(devices: Device[]) {
     onSetChannelLabel,
     onStoreScene,
     onRecallScene,
+    applyPersistedConfig,
+    buildPersistedConfig,
   };
 }

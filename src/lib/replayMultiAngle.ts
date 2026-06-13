@@ -10,26 +10,43 @@ export interface AngleCaptureResult {
   blob: Blob;
   mimeType: string;
   durationSec: number;
+  syncGroupId: string;
+  houseAnchorMs: number;
+  capturedAtMs: number;
+}
+
+export type ReplayStreamResolver = (deviceId: string) => MediaStream | null;
+
+function streamHasLiveVideo(stream: MediaStream | null): boolean {
+  if (!stream) return false;
+  return stream.getVideoTracks().some((track) => track.readyState === 'live');
 }
 
 /** Record a short burst from each live camera for multi-angle replay banks. */
 export async function captureMultiAngleClips(
   devices: { deviceId: string; label: string }[],
-  getStream: (deviceId: string) => MediaStream | null,
+  resolveStream: ReplayStreamResolver,
   durationSec = 3,
   maxAngles = 4,
+  options?: { syncGroupId?: string; houseAnchorMs?: number },
 ): Promise<AngleCaptureResult[]> {
   const mime = pickRecorderMime();
   if (!mime) return [];
 
-  const targets = devices.slice(0, maxAngles);
+  const syncGroupId = options?.syncGroupId ?? crypto.randomUUID();
+  const houseAnchorMs = options?.houseAnchorMs ?? Date.now();
+  const targets = devices.slice(0, maxAngles).filter((device) => streamHasLiveVideo(resolveStream(device.deviceId)));
+  if (targets.length === 0) return [];
+
+  const capturedAtMs = performance.now();
+
   const captures = await Promise.all(
     targets.map(async (device) => {
-      const stream = getStream(device.deviceId);
-      if (!stream?.getVideoTracks().some((t) => t.readyState === 'live')) return null;
+      const stream = resolveStream(device.deviceId);
+      if (!streamHasLiveVideo(stream)) return null;
 
       const chunks: Blob[] = [];
-      const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 3_000_000 });
+      const recorder = new MediaRecorder(stream!, { mimeType: mime, videoBitsPerSecond: 3_000_000 });
 
       const blob = await new Promise<Blob | null>((resolve) => {
         recorder.ondataavailable = (e) => {
@@ -50,6 +67,9 @@ export async function captureMultiAngleClips(
         blob,
         mimeType: mime,
         durationSec,
+        syncGroupId,
+        houseAnchorMs,
+        capturedAtMs,
       } satisfies AngleCaptureResult;
     }),
   );
@@ -63,4 +83,18 @@ export function multiAngleDuration(markIn: number | null, markOut: number | null
     return Math.max(0.5, Math.min(Math.abs(markOut - markIn), 30));
   }
   return fallback;
+}
+
+/** Build a resolver that tries mesh then WHEP for each device. */
+export function createReplayStreamResolver(
+  getMeshStream: ReplayStreamResolver,
+  getWhepStream: ReplayStreamResolver,
+): ReplayStreamResolver {
+  return (deviceId) => {
+    const mesh = getMeshStream(deviceId);
+    if (streamHasLiveVideo(mesh)) return mesh;
+    const whep = getWhepStream(deviceId);
+    if (streamHasLiveVideo(whep)) return whep;
+    return mesh ?? whep ?? null;
+  };
 }

@@ -16,12 +16,13 @@ import {
   Sparkles,
   Video,
 } from 'lucide-react';
-import { CLOUDCAST_PRODUCTS, getProduct } from '../config/products';
+import { getProduct } from '../config/products';
 import {
   PRODUCT_GUIDE_SECTIONS,
   WHY_CLOUDCAST_POINTS,
 } from '../config/productGuideContent';
-import { UniversalPlanCard } from '../components/products/ProductCard';
+import { getProductGuideSection, productPricingPath } from '../config/productLanding';
+import { UniversalTiersSection } from '../components/products/ProductCard';
 import { SITE_LEGAL } from '../config/siteLegal';
 import type { CloudCastProduct, CloudCastProductId } from '../types/products';
 import { cn } from '../lib/utils';
@@ -36,7 +37,10 @@ const PRODUCT_ICONS = {
 } as const;
 
 const NAV_ITEMS: { id: CloudCastProductId | 'why' | 'universal'; label: string }[] = [
-  ...CLOUDCAST_PRODUCTS.map((p) => ({ id: p.id as CloudCastProductId, label: p.shortName })),
+  ...PRODUCT_GUIDE_SECTIONS.map((section) => ({
+    id: section.id,
+    label: getProduct(section.id).shortName,
+  })),
   { id: 'universal', label: 'Universal' },
   { id: 'why', label: 'Why CloudCast' },
 ];
@@ -106,7 +110,8 @@ function SectionHeading({
 
 function ProductGuideBlock({ productId }: { productId: CloudCastProductId }) {
   const product = getProduct(productId);
-  const section = PRODUCT_GUIDE_SECTIONS.find((s) => s.id === productId)!;
+  const section = getProductGuideSection(productId);
+  if (!section) return null;
   const Icon = PRODUCT_ICONS[productId];
   const accent = accentStyles(product.accent);
 
@@ -131,7 +136,7 @@ function ProductGuideBlock({ productId }: { productId: CloudCastProductId }) {
             <p className="mt-1 text-sm font-medium text-mixer-muted">{section.costEffectiveness.monthlyRange}</p>
           </div>
           <Link
-            to={product.pricingPath}
+            to={productPricingPath(productId)}
             className={cn(
               'inline-flex items-center gap-2 rounded border px-4 py-2 text-xs font-bold tracking-wider transition-colors hover:text-white',
               accent.border,
@@ -335,8 +340,8 @@ export function ProductGuidePage() {
         </div>
       </nav>
 
-      {CLOUDCAST_PRODUCTS.map((product) => (
-        <ProductGuideBlock key={product.id} productId={product.id} />
+      {PRODUCT_GUIDE_SECTIONS.map((section) => (
+        <ProductGuideBlock key={section.id} productId={section.id} />
       ))}
 
       <section id="universal" className="scroll-mt-28 border-t border-white/5 bg-[#0a0a0a] py-20">
@@ -347,7 +352,7 @@ export function ProductGuidePage() {
             description="Three bundle tiers — Essential, Studio, and Master — covering all six CloudCast products with Pro or Pro Master features matched to your production scale."
           />
           <div className="mt-10">
-            <UniversalPlanCard hideHeader />
+            <UniversalTiersSection hideHeader />
           </div>
         </div>
       </section>
