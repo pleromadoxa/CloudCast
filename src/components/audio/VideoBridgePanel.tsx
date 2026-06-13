@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Cable, Copy, Link2, Unlink, Zap } from 'lucide-react';
+import { Cable, Check, Copy, Link2, Unlink, Zap } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { canLinkAudioVideoMixers } from '../../lib/productEntitlements';
 import {
@@ -20,6 +20,7 @@ interface VideoBridgePanelProps {
   sessionId?: string;
   accessCode?: string;
   realtimeChannel?: string;
+  sessionLoading?: boolean;
   onBridgeCodeChange?: (code: string | null) => void;
   onLinkChange?: (link: MixerBridgeLink | null) => void;
   className?: string;
@@ -30,19 +31,24 @@ export function VideoBridgePanel({
   sessionId,
   accessCode,
   realtimeChannel,
+  sessionLoading = false,
   onBridgeCodeChange,
   onLinkChange,
   className,
 }: VideoBridgePanelProps) {
   const { profile } = useAuth();
   const canLink = canLinkAudioVideoMixers(profile);
-  const [bridgeCode, setBridgeCode] = useState<string | null>(null);
+  const [bridgeCode, setBridgeCode] = useState<string | null>(() => readLocalBridgeLink()?.bridgeCode ?? null);
   const [link, setLink] = useState<MixerBridgeLink | null>(() => readLocalBridgeLink());
   const [inputCode, setInputCode] = useState('');
   const [linking, setLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
   const publisherRef = useRef<{ stop: () => Promise<void> } | null>(null);
+
+  const displayCode = bridgeCode ?? link?.bridgeCode ?? null;
+  const sessionReady = Boolean(sessionId && accessCode);
 
   const startAudioBridge = useCallback(async () => {
     if (!sessionId || !accessCode || !canLink) return;
@@ -67,20 +73,23 @@ export function VideoBridgePanel({
   }, [sessionId, accessCode, realtimeChannel, canLink, profile?.id, onBridgeCodeChange]);
 
   useEffect(() => {
-    if (mode !== 'audio' || !canLink || !sessionId) return;
+    if (mode !== 'audio' || !canLink || !sessionReady) return;
     void startAudioBridge();
     return () => {
       void publisherRef.current?.stop();
       publisherRef.current = null;
     };
-  }, [mode, canLink, sessionId, startAudioBridge]);
+  }, [mode, canLink, sessionReady, startAudioBridge]);
 
   const handleCopy = async () => {
-    if (!bridgeCode) return;
-    const ok = await copyToClipboard(bridgeCode);
+    if (!displayCode) return;
+    setCopyError(null);
+    const ok = await copyToClipboard(displayCode);
     if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
+    } else {
+      setCopyError('Copy blocked — select the code and copy manually');
     }
   };
 
@@ -135,15 +144,41 @@ export function VideoBridgePanel({
         </div>
         <div className="bridge-panel__body">
           <span className="bridge-panel__label">Video bridge plug</span>
-          <span className="bridge-panel__code">{bridgeCode ?? '······'}</span>
+          {displayCode ? (
+            <button
+              type="button"
+              onClick={() => { void handleCopy(); }}
+              className="bridge-panel__code bridge-panel__code--copyable"
+              title="Click to copy bridge code"
+            >
+              {displayCode}
+            </button>
+          ) : (
+            <span className="bridge-panel__code bridge-panel__code--pending">
+              {sessionLoading || !sessionReady ? 'Generating…' : '······'}
+            </span>
+          )}
         </div>
-        <button type="button" onClick={() => { void handleCopy(); }} className="bridge-panel__btn" title="Copy bridge code">
-          <Copy className="h-3 w-3" />
+        <button
+          type="button"
+          disabled={!displayCode}
+          onClick={() => { void handleCopy(); }}
+          className="bridge-panel__btn"
+          title="Copy bridge code"
+        >
+          {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
           {copied ? 'OK' : 'COPY'}
         </button>
-        <button type="button" onClick={() => { void startAudioBridge(); }} className="bridge-panel__btn" title="New code">
+        <button
+          type="button"
+          disabled={!sessionReady || sessionLoading}
+          onClick={() => { void startAudioBridge(); }}
+          className="bridge-panel__btn"
+          title="New code"
+        >
           NEW
         </button>
+        {copyError && <span className="bridge-panel__error">{copyError}</span>}
       </div>
     );
   }

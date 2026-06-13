@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Check, Copy, ExternalLink } from 'lucide-react';
 import { usePgmAudio } from '../../context/PgmAudioContext';
 import { usePgmBroadcast } from '../../hooks/usePgmBroadcast';
 import { usePgmRecording } from '../../hooks/usePgmRecording';
 import { useAIControls } from '../../hooks/useAIControls';
-import { AlertTriangle, Circle, Clapperboard, LayoutGrid, LogOut, RefreshCw, Signal, SlidersHorizontal } from 'lucide-react';
+import { AlertTriangle, Circle, Clapperboard, LayoutGrid, LogOut, MonitorPlay, RefreshCw, Signal, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AdminNavLink } from '../admin/AdminNavLink';
 import { PlatformBroadcastBanner } from '../admin/PlatformBroadcastBanner';
@@ -37,6 +38,10 @@ import type { MixerBridgeLink } from '../../types/audioBridge';
 import { CloudCastLogo } from '../brand/CloudCastLogo';
 import { CLOUDCAST_NAV_LOGO, resolveDeviceLimit } from '../../lib/branding';
 import { mergeIpCameraIntoDevices } from '../../lib/ipCameraDevice';
+import { mergeDisplayFeedIntoDevices, isDisplayFeedDevice } from '../../lib/displayFeedDevice';
+import { mergePrismFeedIntoDevices, isPrismFeedDevice } from '../../lib/prismFeedDevice';
+import { REGAL_DISPLAY_DEVICE_ID } from '../../types/displayFeed';
+import { canAccessProduct, resolveProductPlan } from '../../lib/productEntitlements';
 import { useIpCameraConfig } from '../../hooks/useIpCameraConfig';
 import { updateDeviceAudioSettings } from '../../lib/streamingService';
 import type { AudioInputSource } from '../../types/audio';
@@ -50,6 +55,12 @@ import { cn } from '../../lib/utils';
 import { buildLayerStack } from '../mixer/panels/layers/buildLayerStack';
 import type { LayerStackId } from '../mixer/panels/layers/layerStackTypes';
 import { isDraggableLayer, isLayerVisibleOnStagingPreview } from '../../lib/overlayPlacement';
+import { ProgramPresetToolbar } from '../presets/ProgramPresetToolbar';
+import { usePrismFeedOptional } from '../../context/PrismFeedContext';
+import { buildMixerOutputUrl } from '../../lib/pgmOutputSync';
+import { usePgmOutputPublisher } from '../../lib/pgmOutputTransport';
+import { useVerticalWorkspaceSplit } from '../../hooks/useVerticalWorkspaceSplit';
+import { WorkspaceSplitHandle } from './WorkspaceSplitHandle';
 
 export function DashboardLayout() {
   const {
@@ -67,7 +78,7 @@ export function DashboardLayout() {
     unpairDevice,
   } = useCloudCast();
   const { profile, signOut } = useAuth();
-  const { setProductionOnAir } = useProduction();
+  const { setProductionOnAir, displayRouteRequest, clearDisplayRoute } = useProduction();
   const { isOnline, isRecovering, offlineSince, reconnectToken, recheckConnectivity } = useNetwork();
   const { registerPgmPlaybackStream, setPgmGain, getBroadcastAudioStream } = usePgmAudio();
   const pgmVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -76,6 +87,7 @@ export function DashboardLayout() {
   const externalDisplay = useExternalDisplay();
   const [shortcutAssigning, setShortcutAssigning] = useState(false);
   const [deckNotice, setDeckNotice] = useState<StreamNotice | null>(null);
+  const [copiedOutputUrl, setCopiedOutputUrl] = useState(false);
   const [bridgeLink, setBridgeLink] = useState<MixerBridgeLink | null>(() => readLocalBridgeLink());
   const [bridgedPgmStream, setBridgedPgmStream] = useState<MediaStream | null>(null);
 
@@ -97,7 +109,7 @@ export function DashboardLayout() {
 
   const handleRecordingComplete = useCallback(
     async (blob: Blob, mimeType: string, fileName: string) => {
-      const plan = profile?.plan_id ?? 'free';
+      const plan = resolveProductPlan(profile, 'video_mixer');
       if (!planAllowsCloudRecording(plan) || !isSupabaseConfigured()) {
         setDeckNotice({
           type: 'success',
@@ -130,6 +142,15 @@ export function DashboardLayout() {
 
   const planId = profile?.plan_id ?? 'free';
   const deviceLimit = resolveDeviceLimit(session, profile);
+  const prismPlan = resolveProductPlan(profile, 'regal_prism');
+  const showPrismFeed = Boolean(
+    canAccessProduct(profile, 'regal_prism') &&
+    (prismPlan === 'pro_master'),
+  );
+  const canAccessPrism = canAccessProduct(profile, 'regal_prism');
+  const canAccessDisplay = canAccessProduct(profile, 'regal_display');
+  const prismFeed = usePrismFeedOptional();
+  const prismOnAir = Boolean(prismFeed?.isLive);
   const ipCamera = useIpCameraConfig({
     sessionId: session?.sessionId,
     planId,
@@ -137,8 +158,12 @@ export function DashboardLayout() {
   });
 
   const mergedDevices = useMemo(
-    () => mergeIpCameraIntoDevices(devices, ipCamera.config),
-    [devices, ipCamera.config],
+    () =>
+      mergePrismFeedIntoDevices(
+        mergeDisplayFeedIntoDevices(mergeIpCameraIntoDevices(devices, ipCamera.config)),
+        showPrismFeed,
+      ),
+    [devices, ipCamera.config, showPrismFeed],
   );
 
   const mixer = useDashboardState(mergedDevices);
@@ -191,6 +216,39 @@ export function DashboardLayout() {
     onComplete: mixer.completeTransition,
   });
 
+  const programOutputUrl = useMemo(
+    () => (session?.accessCode ? buildMixerOutputUrl(session.accessCode) : ''),
+    [session?.accessCode],
+  );
+
+  const copyProgramOutputUrl = useCallback(async () => {
+    if (!programOutputUrl) return;
+    try {
+      await navigator.clipboard.writeText(programOutputUrl);
+      setCopiedOutputUrl(true);
+      setTimeout(() => setCopiedOutputUrl(false), 2000);
+    } catch {
+      /* ignore */
+    }
+  }, [programOutputUrl]);
+
+  const openProgramOutputWindow = useCallback(() => {
+    if (!programOutputUrl) return;
+    window.open(programOutputUrl, 'cloudcast-mixer-output', 'noopener,noreferrer,width=1280,height=720');
+  }, [programOutputUrl]);
+
+  usePgmOutputPublisher({
+    sessionId: session?.sessionId,
+    realtimeChannel: session?.realtimeChannel,
+    enabled: Boolean(session?.sessionId),
+    getSources: () => ({
+      getOutputContainer: () => pgmOutputRef.current,
+      getAudioVideo: () => pgmVideoRef.current,
+      getBroadcastAudioStream,
+      getFadeToBlackLevel: () => engine.fadeToBlackLevel,
+    }),
+  });
+
   useBroadcastAutoResume({
     wantsResume: controls.isOnAir && pgmBroadcast.status !== 'live',
     sessionLoading,
@@ -225,6 +283,17 @@ export function DashboardLayout() {
   useEffect(() => {
     mixer.setFadeToBlackLevel(engine.fadeToBlackLevel);
   }, [engine.fadeToBlackLevel, mixer.setFadeToBlackLevel]);
+
+  useEffect(() => {
+    if (!displayRouteRequest) return;
+    if (displayRouteRequest === 'pst') {
+      mixer.sendToPst(REGAL_DISPLAY_DEVICE_ID);
+    } else {
+      engine.resetProgress();
+      mixer.cutToDevice(REGAL_DISPLAY_DEVICE_ID);
+    }
+    clearDisplayRoute();
+  }, [displayRouteRequest, mixer, engine, clearDisplayRoute]);
 
   const handleCut = useCallback(() => {
     if (!controls.pstDeviceId) return;
@@ -490,7 +559,9 @@ export function DashboardLayout() {
     );
   }
 
-  const realDevices = mergedDevices.filter(isRealDevice);
+  const realDevices = mergedDevices.filter(
+    (d) => isRealDevice(d) && !isDisplayFeedDevice(d) && !isPrismFeedDevice(d),
+  );
   const aspectRatio = controls.display.aspectRatio;
   const transitionProgress = engine.isAnimating ? engine.progress : controls.transition.progress;
 
@@ -514,10 +585,18 @@ export function DashboardLayout() {
     );
   }, [graphicsHighlight.id, controls.layers]);
 
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const trailingChromeRef = useRef<HTMLDivElement>(null);
+  const { deckHeight, isDragging, splitHandleProps } = useVerticalWorkspaceSplit({
+    workspaceRef,
+    trailingChromeRef,
+    enabled: !controls.fullscreenPgm,
+  });
+
   const monitorSection = (
     <div
       className={cn(
-        'dashboard-monitors flex min-h-0 flex-1 flex-col',
+        'dashboard-monitors flex min-h-0 flex-1 flex-col overflow-hidden',
         controls.fullscreenPgm && 'fixed inset-0 z-40 bg-black',
       )}
     >
@@ -590,10 +669,6 @@ export function DashboardLayout() {
           aspectRatio={aspectRatio}
           onSelectSource={handleFocusSource}
           onCutToSource={handleSendToPgm}
-          activePanel={controls.activePanel}
-          openPanels={controls.openPanels}
-          onSelectPanel={mixer.setActivePanel}
-          onToggleOpenPanel={mixer.toggleOpenPanel}
         />
       )}
     </div>
@@ -631,7 +706,10 @@ export function DashboardLayout() {
             isLoading={sessionLoading}
             onRegenerate={regenerateCode}
             isRegenerating={isRegenerating}
-            className="hidden min-w-0 sm:flex"
+            product="video"
+            error={error}
+            onRetry={reconnect}
+            className="min-w-0 flex"
           />
           <VideoBridgePanel
             mode="video"
@@ -640,6 +718,7 @@ export function DashboardLayout() {
             className="hidden xl:flex"
           />
           <div className="dashboard-header-actions flex shrink-0 items-center gap-2 text-[10px] sm:gap-4">
+            <ProgramPresetToolbar />
             <ExternalDisplayButton
               isOpen={externalDisplay.isOpen}
               isDetecting={externalDisplay.isDetecting}
@@ -657,6 +736,20 @@ export function DashboardLayout() {
             <Link to="/audio" className="hidden items-center gap-1 text-mixer-muted hover:text-white xl:inline-flex">
               <SlidersHorizontal className="h-3.5 w-3.5" /> AUDIO
             </Link>
+            {canAccessPrism && (
+              <Link
+                to="/prism"
+                className={cn(
+                  'hidden items-center gap-1 xl:inline-flex',
+                  prismOnAir ? 'text-amber-400 hover:text-amber-300' : 'text-mixer-muted hover:text-white',
+                )}
+                title={prismOnAir ? 'Regal Prism feed active on mixer' : 'Open Regal Prism VP studio'}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                PRISM
+                {prismOnAir && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />}
+              </Link>
+            )}
             <Link to="/profile" className="hidden text-mixer-muted hover:text-white lg:inline">
               Profile
             </Link>
@@ -737,10 +830,15 @@ export function DashboardLayout() {
         </div>
       )}
 
-      <div className="dashboard-workspace flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div ref={workspaceRef} className="dashboard-workspace flex min-h-0 flex-1 flex-col overflow-hidden">
         {monitorSection}
 
         {!controls.fullscreenPgm && (
+          <WorkspaceSplitHandle isDragging={isDragging} {...splitHandleProps} />
+        )}
+
+        {!controls.fullscreenPgm && (
+          <div className="dashboard-deck-wrap" style={{ height: deckHeight }}>
           <MixerControlDeck
           controls={controls}
           devices={sourceDevices}
@@ -805,6 +903,69 @@ export function DashboardLayout() {
           onSaveIpCamera={ipCamera.save}
           onRemoveIpCamera={ipCamera.remove}
         />
+          </div>
+        )}
+
+        {!controls.fullscreenPgm && (
+          <div ref={trailingChromeRef} className="dashboard-workspace-chrome shrink-0">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-t border-mixer-border bg-[#0d0d0d] px-3 py-2">
+              <p className="text-[9px] text-mixer-muted">Presentation & virtual production</p>
+              <div className="flex items-center gap-2">
+                {canAccessPrism && (
+                  <Link
+                    to="/prism"
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded border px-3 py-1.5 text-[10px] font-bold tracking-wider',
+                      prismOnAir
+                        ? 'border-amber-400/60 bg-amber-500/20 text-amber-200'
+                        : 'border-amber-500/40 bg-amber-950/40 text-amber-200 hover:border-amber-400/60 hover:bg-amber-900/50',
+                    )}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {prismOnAir ? 'REGAL PRISM · ON AIR' : 'REGAL PRISM'}
+                  </Link>
+                )}
+                {canAccessDisplay && (
+                  <Link
+                    to="/display"
+                    className="inline-flex items-center gap-1.5 rounded border border-violet-500/40 bg-violet-950/40 px-3 py-1.5 text-[10px] font-bold tracking-wider text-violet-200 hover:border-violet-400/60 hover:bg-violet-900/50"
+                  >
+                    <MonitorPlay className="h-3.5 w-3.5" />
+                    REGAL DISPLAY
+                  </Link>
+                )}
+              </div>
+            </div>
+
+            {programOutputUrl && (
+              <div className="shrink-0 border-t border-emerald-500/20 bg-emerald-950/20 px-3 py-2.5 sm:px-4">
+                <p className="mb-1.5 text-[10px] font-bold tracking-wider text-emerald-300">PROGRAM OUTPUT URL</p>
+                <p className="mb-2 text-[9px] text-mixer-muted">
+                  Open on a projector PC, tablet, or TV — shows live PGM with all switched sources, graphics, and Display Feed (no operator controls).
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded bg-black/40 px-2 py-1.5 text-[10px] text-emerald-200">
+                    {programOutputUrl}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => void copyProgramOutputUrl()}
+                    className="mixer-btn flex items-center gap-1 px-3 py-1.5 text-[9px] font-bold"
+                  >
+                    {copiedOutputUrl ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                    {copiedOutputUrl ? 'COPIED' : 'COPY URL'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openProgramOutputWindow}
+                    className="inline-flex items-center gap-1.5 rounded border border-emerald-500/40 bg-emerald-600/30 px-3 py-1.5 text-[9px] font-bold tracking-wider text-emerald-100 hover:bg-emerald-600/50"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> OPEN PROGRAM OUTPUT
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
 

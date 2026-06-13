@@ -18,6 +18,8 @@ const PRODUCT_ACCENTS: Record<CloudCastProductId, string> = {
   audio_mixer: 'border-blue-500/30 bg-blue-500/5',
   symphony_studio: 'border-purple-500/30 bg-purple-500/5',
   instant_replay: 'border-emerald-500/30 bg-emerald-500/5',
+  regal_display: 'border-violet-500/30 bg-violet-500/5',
+  regal_prism: 'border-amber-500/30 bg-amber-500/5',
 };
 
 export function AdminMobileAppsPanel({

@@ -18,7 +18,8 @@ export const MIXER_QUICK_TERMS = {
   auxSub:
     'Auxiliary (Sub) — a second camera used as the small PiP inset or as the background behind chroma key. Pick a numbered input below; it does not replace PGM.',
   pip: 'Picture-in-Picture — shows Sub as a small box over your main PGM source.',
-  chromaKey: 'Chroma Key — removes a green/blue screen from PGM and fills the background with Sub or a preset.',
+  chromaKey: 'KEY — chroma removes green/blue from PGM; luma keys out dark/blacks. Fill with Aux (Sub) or a preset background.',
+  lumaKey: 'Luma Key — keys out dark areas and blacks from PGM so your background shows through.',
   cut: 'CUT — instantly swaps Preview to Program with no transition.',
   take: 'TAKE — moves Preview to Program using the selected effect and duration.',
   autoTrans: 'A/T — when on, TAKE uses your effect/duration instead of an instant cut.',

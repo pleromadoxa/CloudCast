@@ -1,6 +1,12 @@
 [functions.send-transactional-email]
 verify_jwt = false
 
+[functions.stripe-checkout]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+
 [functions.cloudcast-r2]
 verify_jwt = true
 

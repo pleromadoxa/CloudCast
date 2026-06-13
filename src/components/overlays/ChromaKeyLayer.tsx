@@ -55,11 +55,19 @@ export function ChromaKeyLayer({ mainVideo, keyVideo, keySettings: rawKeySetting
         octx.drawImage(mainVideo, 0, 0, w, h);
         const img = octx.getImageData(0, 0, w, h);
         const data = img.data;
-        for (let i = 0; i < data.length; i += 4) {
-          const dr = Math.abs(data[i] - kr);
-          const dg = Math.abs(data[i + 1] - kg);
-          const db = Math.abs(data[i + 2] - kb);
-          if (dr < tol && dg < tol && db < tol) data[i + 3] = 0;
+        if (keySettings.keyType === 'luma') {
+          const threshold = (keySettings.lumaThreshold / 100) * 255;
+          for (let i = 0; i < data.length; i += 4) {
+            const luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            if (luma < threshold) data[i + 3] = 0;
+          }
+        } else {
+          for (let i = 0; i < data.length; i += 4) {
+            const dr = Math.abs(data[i] - kr);
+            const dg = Math.abs(data[i + 1] - kg);
+            const db = Math.abs(data[i + 2] - kb);
+            if (dr < tol && dg < tol && db < tol) data[i + 3] = 0;
+          }
         }
         octx.putImageData(img, 0, 0);
         ctx.drawImage(off, 0, 0, w, h);
@@ -75,6 +83,8 @@ export function ChromaKeyLayer({ mainVideo, keyVideo, keySettings: rawKeySetting
     keyVideo,
     keySettings.color,
     keySettings.tolerance,
+    keySettings.keyType,
+    keySettings.lumaThreshold,
     keySettings.fillSource,
     keySettings.backgroundId,
     usePreset,
@@ -82,11 +92,16 @@ export function ChromaKeyLayer({ mainVideo, keyVideo, keySettings: rawKeySetting
 
   const bgLabel = usePreset ? resolveChromaBackgroundId(keySettings.backgroundId) : 'AUX CAM';
 
+  const keyLabel =
+    keySettings.keyType === 'luma'
+      ? `LUMA <${keySettings.lumaThreshold}%`
+      : `${keySettings.color} ±${keySettings.tolerance}%`;
+
   return (
     <>
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-cover" />
       <div className="pointer-events-none absolute bottom-2 left-2 z-20 rounded bg-black/70 px-2 py-0.5 text-[9px] text-mixer-green">
-        KEY: {keySettings.color} ±{keySettings.tolerance}% · {bgLabel}
+        KEY: {keyLabel} · {bgLabel}
       </div>
     </>
   );

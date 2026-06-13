@@ -1,4 +1,15 @@
-import type { RealtimeChannelOptions } from '@supabase/supabase-js';
+import type { RealtimeChannel, RealtimeChannelOptions } from '@supabase/supabase-js';
+import { getSupabase, isSupabaseConfigured } from './supabase';
+
+/** Fully tear down a Realtime channel before reusing its topic name. */
+export async function removeRealtimeChannel(channel: RealtimeChannel | null): Promise<void> {
+  if (!channel) return;
+  if (isSupabaseConfigured()) {
+    await getSupabase().removeChannel(channel);
+    return;
+  }
+  await channel.unsubscribe();
+}
 
 /** Per-session Supabase Realtime topic — dashboard and mobile must use the same name. */
 export const SESSION_CHANNEL_PREFIX = 'cloudcast-';
@@ -19,6 +30,28 @@ export function resolveRealtimeChannelName(
   if (fromDb?.startsWith(SESSION_CHANNEL_PREFIX)) return fromDb;
   if (sessionId) return sessionChannel(sessionId);
   return fromDb ?? '';
+}
+
+/** Find an active Supabase Realtime channel for a session topic, if any. */
+export function findSessionChannel(
+  sessionId: string,
+  realtimeChannel?: string | null,
+): RealtimeChannel | undefined {
+  const channelName = resolveRealtimeChannelName(sessionId, realtimeChannel);
+  const topic = `realtime:${channelName}`;
+  return getSupabase().getChannels().find((c) => c.topic === topic);
+}
+
+/**
+ * Remove any Realtime channel registered under the session topic.
+ * Supabase returns an existing joined channel from `channel()` — presence handlers
+ * cannot be attached after subscribe, so signaling must start from a clean topic.
+ */
+export async function removeSessionChannelByName(
+  sessionId: string,
+  realtimeChannel?: string | null,
+): Promise<void> {
+  await removeRealtimeChannel(findSessionChannel(sessionId, realtimeChannel) ?? null);
 }
 
 /** Shared Realtime channel options for dashboard + mobile signaling/presence. */

@@ -54,6 +54,8 @@ interface LayersPanelProps {
   onSetOutputMode: (mode: OutputMode) => void;
   graphics: GraphicsActions;
   compact?: boolean;
+  /** Side-by-side with other mixer panels — stack + editor use full column width. */
+  multiPanel?: boolean;
 }
 
 const POSITIONS: OverlayPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center'];
@@ -70,6 +72,7 @@ export function LayersPanel({
   onSelectLayer,
   graphics,
   compact = false,
+  multiPanel = false,
 }: LayersPanelProps) {
   const layers = normalizeLayerSettings(rawLayers);
   const pgmLayers = normalizeLayerSettings(rawPgmLayers);
@@ -196,9 +199,15 @@ export function LayersPanel({
   };
 
   return (
-    <div className={cn('layers-split min-h-0 h-full', compact && 'layers-split--compact')}>
-      <div className="layers-split-left">
-        <section className="mixer-panel-section">
+    <div
+      className={cn(
+        'layers-split min-h-0 h-full',
+        multiPanel && 'layers-split--multi-panel',
+        compact && !multiPanel && 'layers-split--compact',
+      )}
+    >
+      <div className="layers-split-left min-h-0 overflow-hidden">
+        <section className="mixer-panel-section mixer-panel-section--stack min-h-0 overflow-hidden">
           <div className="mixer-panel-section-head">
             <div className="mixer-panel-section-title">
               <Layers className="h-3.5 w-3.5 text-mixer-red" />
@@ -225,7 +234,8 @@ export function LayersPanel({
             selectedId={selectedId}
             chromaLocked={!chromaAllowed}
             advancedLocked={!advancedGraphics}
-            compact={compact}
+            compact={compact || multiPanel}
+            dense={multiPanel}
             onSelect={selectLayer}
             onTogglePreview={toggleLayerPreview}
             onToggleLive={toggleLayerLive}
@@ -233,7 +243,7 @@ export function LayersPanel({
             onReorder={handleReorder}
           />
 
-          <FeatureHint className="mixer-panel-tip">
+          <FeatureHint className={cn('mixer-panel-tip', multiPanel && 'hidden')}>
             Eye = PST preview · Radio = PGM live · Drag grip to reorder (top = front)
           </FeatureHint>
         </section>
@@ -474,13 +484,43 @@ export function LayersPanel({
                 <>
                   <label className="flex items-center gap-2 text-[10px]">
                     <input type="checkbox" checked={keySettings.enabled && outputMode === 'key'} onChange={(e) => { onSetOutputMode(e.target.checked ? 'key' : 'main'); onPatchKey({ enabled: e.target.checked }); }} />
-                    Enable on PGM
+                    Enable KEY on PGM
                   </label>
-                  <div className="flex items-center gap-2">
-                    <input type="color" value={keySettings.color} onChange={(e) => onPatchKey({ color: e.target.value, enabled: true })} className="h-9 w-12 cursor-pointer" />
-                    <input type="range" min={5} max={80} value={keySettings.tolerance} onChange={(e) => onPatchKey({ tolerance: Number(e.target.value) })} className="flex-1 accent-mixer-green" />
-                    <span className="text-[10px]">{keySettings.tolerance}%</span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onPatchKey({ keyType: 'chroma', enabled: true })}
+                      className={cn('mixer-btn flex-1 py-1 text-[9px]', keySettings.keyType !== 'luma' && 'mixer-btn-active')}
+                    >
+                      Chroma
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onPatchKey({ keyType: 'luma', enabled: true })}
+                      className={cn('mixer-btn flex-1 py-1 text-[9px]', keySettings.keyType === 'luma' && 'mixer-btn-active')}
+                    >
+                      Luma
+                    </button>
                   </div>
+                  {keySettings.keyType === 'luma' ? (
+                    <label className="text-[8px] text-mixer-muted">
+                      Black threshold {keySettings.lumaThreshold}%
+                      <input
+                        type="range"
+                        min={5}
+                        max={60}
+                        value={keySettings.lumaThreshold}
+                        onChange={(e) => onPatchKey({ lumaThreshold: Number(e.target.value) })}
+                        className="w-full accent-mixer-green"
+                      />
+                    </label>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <input type="color" value={keySettings.color} onChange={(e) => onPatchKey({ color: e.target.value, enabled: true })} className="h-9 w-12 cursor-pointer" />
+                      <input type="range" min={5} max={80} value={keySettings.tolerance} onChange={(e) => onPatchKey({ tolerance: Number(e.target.value) })} className="flex-1 accent-mixer-green" />
+                      <span className="text-[10px]">{keySettings.tolerance}%</span>
+                    </div>
+                  )}
                   <div className="flex gap-1">
                     <button
                       type="button"

@@ -28,6 +28,10 @@ export interface FatChannelParams {
 export type ConsoleBank = 'inputs' | 'mix' | 'fx' | 'routing';
 
 export interface AudioConsoleState {
+  /** Console power — when false, all buses are silent. */
+  consoleEnabled: boolean;
+  /** Peak-hold mode for master meters (latching peak LEDs). */
+  peakHoldEnabled: boolean;
   masterVolume: number;
   masterMuted: boolean;
   monitorMuted: boolean;
@@ -67,6 +71,8 @@ export const SCENE_IDS: SceneId[] = ['A', 'B', 'C', 'D'];
 
 function defaultConsoleState(): AudioConsoleState {
   return {
+    consoleEnabled: true,
+    peakHoldEnabled: false,
     masterVolume: 80,
     masterMuted: false,
     monitorMuted: false,
@@ -129,7 +135,7 @@ export function isMixEnabled(state: AudioConsoleState, deviceId: string): boolea
 }
 
 export function getVolumeForDevice(state: AudioConsoleState, deviceId: string | null): number {
-  if (!deviceId) return 0;
+  if (!deviceId || !state.consoleEnabled) return 0;
   if (state.masterMuted) return 0;
   if (state.inputMuted[deviceId]) return 0;
   if (state.soloId) {
@@ -145,7 +151,7 @@ export function getVolumeForDevice(state: AudioConsoleState, deviceId: string | 
 }
 
 export function getMonitorVolume(state: AudioConsoleState, deviceId: string | null): number {
-  if (!deviceId || state.monitorMuted) return 0;
+  if (!deviceId || state.monitorMuted || !state.consoleEnabled) return 0;
   return (state.monitorVolume / 100) * ((state.inputVolumes[deviceId] ?? 75) / 100);
 }
 
@@ -264,6 +270,14 @@ export function useAudioConsoleState(devices: Device[]) {
 
   const onToggleMonitorMute = useCallback(() => {
     setState((prev) => ({ ...prev, monitorMuted: !prev.monitorMuted }));
+  }, []);
+
+  const onToggleConsoleEnabled = useCallback(() => {
+    setState((prev) => ({ ...prev, consoleEnabled: !prev.consoleEnabled }));
+  }, []);
+
+  const onTogglePeakHold = useCallback(() => {
+    setState((prev) => ({ ...prev, peakHoldEnabled: !prev.peakHoldEnabled }));
   }, []);
 
   const onSetFatParam = useCallback(
@@ -424,6 +438,8 @@ export function useAudioConsoleState(devices: Device[]) {
     onSetMonitorVolume,
     onToggleMasterMute,
     onToggleMonitorMute,
+    onToggleConsoleEnabled,
+    onTogglePeakHold,
     onSetFatParam,
     onToggleHpfBypass,
     onPatchNoiseCancel,

@@ -8,7 +8,7 @@ const SHORTCUTS: { id: LayerStackId; label: string; tier?: 'advanced' | 'chroma'
   { id: 'logo', label: 'Logo' },
   { id: 'crawler', label: 'Crawler', tier: 'advanced' },
   { id: 'transition', label: 'Stinger', tier: 'advanced' },
-  { id: 'chroma', label: 'Chroma', tier: 'chroma' },
+  { id: 'chroma', label: 'KEY', tier: 'chroma' },
 ];
 
 interface LayerQuickNavProps {

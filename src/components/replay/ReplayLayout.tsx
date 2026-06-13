@@ -46,18 +46,24 @@ import type { ReplayCloudClip, ReplayClipLocal } from '../../types/replay';
 import { formatBytes } from '../../lib/formatBytes';
 import { cn } from '../../lib/utils';
 import { AccessCodePanel } from '../session/AccessCodePanel';
+import { PRODUCTION_OFFSCREEN_STYLE, productionShellClass } from '../../lib/productionShell';
 
 const PLAYBACK_RATES = [0.25, 0.5, 1, 1.5, 2] as const;
 
-export function ReplayLayout() {
+interface ReplayLayoutProps {
+  /** Off-screen render while replay buffer stays alive on another route */
+  hidden?: boolean;
+}
+
+export function ReplayLayout({ hidden = false }: ReplayLayoutProps) {
   const { profile, signOut } = useAuth();
   const cloudcast = useCloudCastOptional();
-  const { pushReplayToPgm, isOnAir } = useProduction();
+  const { pushReplayToPgm, isOnAir, setReplayConsoleActive } = useProduction();
 
   const plan = resolveProductPlan(profile, 'instant_replay');
   const maxBanks = REPLAY_BANKS[plan];
   const maxBuffer = REPLAY_BUFFER_SECONDS[plan];
-  const canMultiAngle = plan === 'pro_master' || plan === 'universal';
+  const canMultiAngle = plan === 'pro_master';
   const canCloud = plan !== 'free';
 
   const devices = useMemo(
@@ -129,6 +135,11 @@ export function ReplayLayout() {
       if (loaded.length > 0) banks.restoreBanks(loaded, maxBanks);
     });
   }, [maxBanks, banks.restoreBanks]);
+
+  useEffect(() => {
+    setReplayConsoleActive(true);
+    return () => setReplayConsoleActive(false);
+  }, [setReplayConsoleActive]);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -371,7 +382,14 @@ export function ReplayLayout() {
   );
 
   return (
-    <div className="replay-shell flex h-full min-h-0 flex-col overflow-hidden bg-[#040806] text-white">
+    <div
+      className={cn(
+        productionShellClass(hidden, 'replay-shell flex h-full min-h-0 flex-col overflow-hidden bg-[#040806] text-white'),
+      )}
+      style={hidden ? PRODUCTION_OFFSCREEN_STYLE : undefined}
+      aria-hidden={hidden}
+    >
+      {!hidden && (
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-emerald-500/20 bg-[#06100c] px-4 py-2">
         <div className="flex items-center gap-3">
           <span className="text-xs font-bold tracking-[0.25em] text-emerald-400">CLOUDCAST REPLAY</span>
@@ -403,6 +421,7 @@ export function ReplayLayout() {
           </button>
         </div>
       </header>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <section className="flex min-h-0 flex-1 flex-col border-b border-white/5 lg:border-b-0 lg:border-r">

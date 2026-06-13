@@ -6,6 +6,24 @@ Integration guide for iOS/Android (and USB capture) clients pairing to a CloudCa
 
 ---
 
+## One app — Video Mixer + Audio Mixer
+
+**CloudCast Mobile** is a single companion app for both products. There is **one access code per account** — the same code shown on the Video Mixer and Audio Mixer dashboards.
+
+1. Enter the access code in CloudCast Mobile once.
+2. The phone pairs to your shared session and appears on **both** dashboards.
+3. **Video Mixer** uses the stream for picture (Regal Mesh on Free, Regal Cloud on Pro+).
+4. **Audio Mixer** uses the **audio** from the same device (always Regal Mesh P2P when possible).
+
+On **Pro / Pro Master** video plans, the mobile app should:
+
+- Publish **video** through Regal Cloud (HD / UHD), **and**
+- Keep a **Regal Mesh** peer connection alive for **audio** so the Audio Mixer receives direct low-latency audio.
+
+`get_mixer_session` returns `product_type: 'video'` for the shared pairing session. Route by `connection_mode` for video ingest; always join the Realtime channel and answer mesh offers for audio.
+
+---
+
 ## Overview
 
 1. User enters access code → `get_mixer_session` validates and returns **plan + connection mode**

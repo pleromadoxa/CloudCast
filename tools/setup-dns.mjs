@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Check cloudcast.pro DNS / Workers custom domain status.
+ * Check production DNS / Workers custom domain status.
  * Reads CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID from .env.
  * Run: npm run setup:dns
  */
@@ -8,8 +8,11 @@ import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const APEX = 'cloudcast.pro';
-const WWW = 'www.cloudcast.pro';
+const APEX = (
+  process.env.CLOUDCAST_DOMAIN ??
+  process.env.APP_PUBLIC_URL?.replace(/^https?:\/\//, '').replace(/\/$/, '')
+) || 'cloudcast.live';
+const WWW = `www.${APEX}`;
 const WORKER_NAME = 'cloudcast';
 
 function loadEnv() {
@@ -59,7 +62,7 @@ function dig(name, type) {
 
 function printManualDnsFix({ apexA, wwwCnamePages }) {
   console.log(`
-━━━ Manual DNS cleanup (Cloudflare → cloudcast.pro → DNS) ━━━
+━━━ Manual DNS cleanup (Cloudflare → ${APEX} → DNS) ━━━
 
 The app runs on the "cloudcast" Worker — not Pages. Conflicting records block attach:
 

@@ -3,9 +3,7 @@ import type { Device, OverlayType, StreamQuality } from '../../types/device';
 import type { VideoAspectRatio } from '../../types/mixer';
 import { isRealDevice, isVideoDevice } from '../../types/device';
 import { ASPECT_RATIO_CSS } from '../../lib/aspectRatio';
-import type { MixerPanel } from '../../types/mixer';
 import { cn } from '../../lib/utils';
-import { MixerTabGuide } from '../mixer/MixerTabGuide';
 import { StreamPlayer } from '../stream/StreamPlayer';
 
 interface SourceStripProps {
@@ -21,10 +19,6 @@ interface SourceStripProps {
   aspectRatio?: VideoAspectRatio;
   onSelectSource: (deviceId: string) => void;
   onCutToSource?: (deviceId: string) => void;
-  activePanel: MixerPanel;
-  openPanels: MixerPanel[];
-  onSelectPanel: (panel: MixerPanel) => void;
-  onToggleOpenPanel: (panel: MixerPanel) => void;
 }
 
 export function SourceStrip({
@@ -40,10 +34,6 @@ export function SourceStrip({
   aspectRatio = '16:9',
   onSelectSource,
   onCutToSource,
-  activePanel,
-  openPanels,
-  onSelectPanel,
-  onToggleOpenPanel,
 }: SourceStripProps) {
   const slotCount = Math.max(devices.length, 2);
   const slots = Array.from({ length: slotCount }, (_, i) => devices[i] ?? null);
@@ -69,7 +59,7 @@ export function SourceStrip({
               isPst && 'border-mixer-green',
               isPgm && 'border-mixer-red',
             )}
-            style={{ aspectRatio: ASPECT_RATIO_CSS[aspectRatio], maxHeight: 72 }}
+            style={{ aspectRatio: ASPECT_RATIO_CSS[aspectRatio], maxHeight: 64, minHeight: 48 }}
           >
             <button
               type="button"
@@ -130,15 +120,6 @@ export function SourceStrip({
           </div>
         );
       })}
-      </div>
-      <div className="source-strip-footer border-t border-mixer-border/60 px-2 py-2">
-        <MixerTabGuide
-          className="max-h-44 overflow-y-auto"
-          activePanel={activePanel}
-          openPanels={openPanels}
-          onSelectPanel={onSelectPanel}
-          onToggleOpenPanel={onToggleOpenPanel}
-        />
       </div>
     </div>
   );

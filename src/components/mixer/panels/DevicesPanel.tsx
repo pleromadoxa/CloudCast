@@ -3,10 +3,11 @@ import { IpCameraPanel } from './IpCameraPanel';
 import { InputLiveMeter } from '../InputLiveMeter';
 import type { IpCameraConfig } from '../../../types/ipCamera';
 import { isIpCameraDevice } from '../../../lib/ipCameraDevice';
-import type { Device, DeviceStatus, StreamQuality } from '../../../types/device';
+import type { Device, StreamQuality } from '../../../types/device';
 import type { AudioInputSource } from '../../../types/audio';
 import { AUDIO_SOURCE_LABELS } from '../../../types/audio';
 import { isAudioOnlyDevice, isRealDevice, isVideoDevice } from '../../../types/device';
+import { isDeviceLinkedOnSession } from '../../../lib/deviceConnection';
 import { cn, formatRelativeTime } from '../../../lib/utils';
 
 interface DevicesPanelProps {
@@ -32,20 +33,24 @@ interface DevicesPanelProps {
 const AUDIO_SOURCES: AudioInputSource[] = ['camera', 'capture_card', 'usb_audio'];
 const QUALITIES: StreamQuality[] = ['auto', 'high', 'medium', 'low'];
 
-function statusLabel(status: DeviceStatus): string {
-  if (status === 'connecting') return 'connected';
-  return status;
+function statusLabel(device: Device): string {
+  if (device.status === 'live') return 'live';
+  if (isDeviceLinkedOnSession(device)) return 'linked';
+  if (device.status === 'connecting') return 'connecting';
+  return device.status;
 }
 
-function StatusDot({ status }: { status: DeviceStatus }) {
+function StatusDot({ device }: { device: Device }) {
+  const linked = isDeviceLinkedOnSession(device);
   return (
     <span
       className={cn(
         'inline-block h-1.5 w-1.5 shrink-0 rounded-full',
-        status === 'live' && 'bg-mixer-green animate-pulse',
-        status === 'connecting' && 'bg-mixer-yellow',
-        status === 'offline' && 'bg-mixer-muted',
-        status === 'error' && 'bg-mixer-red',
+        (device.status === 'live' || linked) && 'bg-mixer-green',
+        device.status === 'live' && 'animate-pulse',
+        device.status === 'connecting' && !linked && 'bg-mixer-yellow',
+        device.status === 'offline' && 'bg-mixer-muted',
+        device.status === 'error' && 'bg-mixer-red',
       )}
     />
   );
@@ -122,7 +127,7 @@ export function DevicesPanel({
                     <span className="text-[10px] font-bold text-mixer-muted">#{d.slotNumber}</span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <StatusDot status={d.status} />
+                        <StatusDot device={d} />
                         {d.platform === 'usb' ? <Usb className="h-3 w-3 text-mixer-muted" /> : null}
                         {isIpCameraDevice(d) ? <Camera className="h-3 w-3 text-mixer-green" /> : null}
                         <p className="truncate text-[11px] font-bold" title={d.label}>
@@ -130,7 +135,7 @@ export function DevicesPanel({
                         </p>
                       </div>
                       <p className="text-[8px] text-mixer-muted">
-                        {d.platform} · {statusLabel(d.status)} · {formatRelativeTime(d.lastSeenAt)}
+                        {d.platform} · {statusLabel(d)} · {formatRelativeTime(d.lastSeenAt)}
                       </p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-0.5">
@@ -152,7 +157,7 @@ export function DevicesPanel({
                     getAudioSourceForDevice={getAudioSourceForDevice}
                     linkedUsbAudio={linkedUsbAudio}
                     accent={isPgm ? 'red' : isPst ? 'green' : 'neutral'}
-                    enabled={d.status !== 'offline'}
+                    enabled={isDeviceLinkedOnSession(d) || d.status === 'live'}
                     size="md"
                     className="w-full"
                   />
@@ -250,8 +255,8 @@ export function DevicesPanel({
                       {d.label}
                     </p>
                     <p className="flex items-center gap-1 text-[8px] text-mixer-muted">
-                      <StatusDot status={d.status} />
-                      USB audio · {statusLabel(d.status)}
+                      <StatusDot device={d} />
+                      USB audio · {statusLabel(d)}
                     </p>
                   </div>
                   <button

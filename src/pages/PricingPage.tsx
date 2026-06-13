@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Check, LayoutGrid, Loader2, Music, SlidersHorizontal, Video } from 'lucide-react';
+import { Check, Gem, LayoutGrid, Loader2, Music, SlidersHorizontal, Video } from 'lucide-react';
 import { getSupabase } from '../lib/supabase';
 import { redeemCoupon } from '../lib/couponService';
 import { useAuth } from '../context/AuthContext';
-import type { PlanTier, ProductPlanTier, SubscriptionPlan } from '../types/plans';
-import { formatPrice, isProductPlanTier, PRODUCT_PLAN_LABELS } from '../types/plans';
+import type { PlanTier, ProductPlanTier, SubscriptionPlan, UniversalPlanTier } from '../types/plans';
+import { formatPrice, isProductPlanTier, isUniversalPlanTier, PRODUCT_PLAN_LABELS } from '../types/plans';
 import {
   connectionModeLabel,
   displayFeaturesForPlan,
@@ -15,7 +15,13 @@ import {
 import {
   CLOUDCAST_PRODUCTS,
   PRODUCT_TIER_PRICES,
-  UNIVERSAL_PLAN_PRICE_CENTS,
+  PRISM_CAMERAS,
+  PRISM_VIRTUAL_SETS,
+  PRISM_CLOUD_SCENES,
+  PRISM_OUTPUT_QUALITY,
+  UNIVERSAL_PLAN_FROM_CENTS,
+  UNIVERSAL_TIERS,
+  tierPriceCents,
   AUDIO_MIXER_CHANNELS,
   SYMPHONY_TRACKS,
   SYMPHONY_CLOUD_PROJECTS,
@@ -24,18 +30,25 @@ import {
 } from '../config/products';
 import type { CloudCastProductId } from '../types/products';
 import { parseProductId } from '../config/products';
-import { resolveProductPlan } from '../lib/productEntitlements';
+import { isUniversalPlan, resolveProductPlan } from '../lib/productEntitlements';
+import {
+  fetchStripeBillingEnabled,
+  startStripeCheckout,
+  type StripeCheckoutPlan,
+  type StripeCheckoutProduct,
+} from '../lib/stripeService';
 import { cn } from '../lib/utils';
 
 const HIGHLIGHT: ProductPlanTier = 'pro';
 
 type PricingTab = CloudCastProductId | 'universal';
-type PricingTabUi = Exclude<PricingTab, 'instant_replay'>;
+type PricingTabUi = Exclude<PricingTab, 'instant_replay' | 'regal_display'>;
 
 const TAB_META: Record<PricingTabUi, { label: string; icon: typeof Video }> = {
   video_mixer: { label: 'Video Mixer', icon: Video },
   audio_mixer: { label: 'Audio Mixer', icon: SlidersHorizontal },
   symphony_studio: { label: 'Symphony', icon: Music },
+  regal_prism: { label: 'Regal Prism', icon: Gem },
   universal: { label: 'Universal', icon: LayoutGrid },
 };
 
@@ -72,6 +85,23 @@ function symphonyFeaturesForPlan(planId: ProductPlanTier): string[] {
   return [...base, '32-track studio', `${projects} Regal Cloud Archive projects`, 'Priority support'];
 }
 
+function prismFeaturesForPlan(planId: ProductPlanTier): string[] {
+  const cameras = PRISM_CAMERAS[planId];
+  const sets = PRISM_VIRTUAL_SETS[planId];
+  const scenes = PRISM_CLOUD_SCENES[planId];
+  const output = PRISM_OUTPUT_QUALITY[planId];
+  const base = [
+    `${cameras} live camera input${cameras > 1 ? 's' : ''}`,
+    `${sets === 99 ? 'Unlimited' : sets} virtual set${sets === 1 ? '' : 's'}`,
+    'Real-time GPU chroma keyer',
+    '3D virtual studio compositing',
+    `${output} program output`,
+  ];
+  if (planId === 'free') return [...base, 'Regal Prism watermark', `${scenes} cloud scene preset`];
+  if (planId === 'pro') return [...base, 'Advanced keyer · light wrap & spill', 'AR overlay mode', 'RTMP stream output', `${scenes} cloud scene presets`];
+  return [...base, 'XR extension & LED wall mode', 'Virtual shadows & reflections', 'GLTF/FBX 3D import', 'Video Mixer feed output', `${scenes} cloud scene presets`, 'Priority support'];
+}
+
 
 export function PricingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -79,7 +109,7 @@ export function PricingPage() {
   const initialTab: PricingTabUi =
     searchParams.get('product') === 'universal'
       ? 'universal'
-      : initialProduct === 'instant_replay'
+      : initialProduct === 'instant_replay' || initialProduct === 'regal_display'
         ? 'video_mixer'
         : (initialProduct ?? 'video_mixer');
   const [tab, setTab] = useState<PricingTabUi>(initialTab);
@@ -90,15 +120,37 @@ export function PricingPage() {
   const [redeeming, setRedeeming] = useState(false);
   const [couponMessage, setCouponMessage] = useState<string | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
+  const [stripeEnabled, setStripeEnabled] = useState(false);
+  const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const { user, profile, updateProductPlan, refreshProfile } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     const fromUrl = parseProductId(searchParams.get('product'));
     if (searchParams.get('product') === 'universal') setTab('universal');
-    else if (fromUrl === 'instant_replay') setTab('video_mixer');
+    else if (fromUrl === 'instant_replay' || fromUrl === 'regal_display') setTab('video_mixer');
     else if (fromUrl) setTab(fromUrl);
   }, [searchParams]);
+
+  useEffect(() => {
+    fetchStripeBillingEnabled().then(setStripeEnabled);
+  }, []);
+
+  useEffect(() => {
+    const checkout = searchParams.get('checkout');
+    const product = searchParams.get('product');
+    if (checkout === 'success') {
+      setCheckoutNotice('Payment successful — your plan is updating. Refresh if features are not unlocked yet.');
+      void refreshProfile();
+    } else if (checkout === 'canceled') {
+      setCheckoutNotice('Checkout canceled. No charges were made.');
+    }
+    if (checkout && product) {
+      setSearchParams({ product }, { replace: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- run when checkout query params change
+  }, [searchParams.get('checkout'), searchParams.get('product')]);
 
   useEffect(() => {
     getSupabase()
@@ -168,28 +220,44 @@ export function PricingPage() {
       return;
     }
     if (tab === 'universal') return;
+
+    setCheckoutError(null);
     setUpgrading(planId);
+
     try {
-      await updateProductPlan(tab, planId);
-      navigate('/hub');
-    } catch {
-      /* stay */
+      if (planId === 'free' || !stripeEnabled) {
+        await updateProductPlan(tab, planId);
+        navigate('/hub');
+        return;
+      }
+
+      await startStripeCheckout(tab as StripeCheckoutProduct, planId as StripeCheckoutPlan);
+    } catch (err) {
+      setCheckoutError(err instanceof Error ? err.message : 'Checkout failed.');
     } finally {
       setUpgrading(null);
     }
   };
 
-  const handleSelectUniversal = async () => {
+  const handleSelectUniversal = async (tierId: UniversalPlanTier) => {
     if (!user) {
       navigate('/login', { state: { from: '/pricing?product=universal' } });
       return;
     }
-    setUpgrading('universal');
+
+    setCheckoutError(null);
+    setUpgrading(tierId);
+
     try {
-      await updateProductPlan('universal', 'universal');
-      navigate('/hub');
-    } catch {
-      /* stay */
+      if (!stripeEnabled) {
+        await updateProductPlan('universal', tierId);
+        navigate('/hub');
+        return;
+      }
+
+      await startStripeCheckout('universal', tierId);
+    } catch (err) {
+      setCheckoutError(err instanceof Error ? err.message : 'Checkout failed.');
     } finally {
       setUpgrading(null);
     }
@@ -197,7 +265,8 @@ export function PricingPage() {
 
   const currentProductPlan =
     tab !== 'universal' && profile ? resolveProductPlan(profile, tab) : null;
-  const isUniversalCurrent = profile?.plan_id === 'universal' || profile?.entitlements?.universal;
+  const isUniversalCurrent = profile ? isUniversalPlan(profile.plan_id) || profile.entitlements?.universal : false;
+  const currentUniversalTier = isUniversalPlanTier(profile?.plan_id) ? profile.plan_id : profile?.entitlements?.universal_tier;
   const productMeta = tab !== 'universal' ? CLOUDCAST_PRODUCTS.find((p) => p.id === tab)! : null;
 
   return (
@@ -206,7 +275,7 @@ export function PricingPage() {
         <p className="text-xs font-bold tracking-[0.3em] text-mixer-red">CLOUDCAST PRODUCTS</p>
         <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Pricing by product</h1>
         <p className="mt-3 text-sm text-mixer-muted">
-          Subscribe to Video Mixer (includes CloudCast Replay), Audio Mixer, Symphony, or unlock everything with CloudCast Universal.
+          Subscribe to Video Mixer (includes CloudCast Replay), Audio Mixer, Symphony, Regal Prism, or unlock everything with CloudCast Universal — three bundle tiers from {formatPrice(UNIVERSAL_PLAN_FROM_CENTS)}.
         </p>
 
         <div className="mx-auto mt-8 flex flex-wrap justify-center gap-2">
@@ -252,6 +321,8 @@ export function PricingPage() {
         </div>
         {couponMessage && <p className="mt-2 text-sm text-mixer-green">{couponMessage}</p>}
         {couponError && <p className="mt-2 text-sm text-mixer-red">{couponError}</p>}
+        {checkoutNotice && <p className="mt-2 text-sm text-mixer-green">{checkoutNotice}</p>}
+        {checkoutError && <p className="mt-2 text-sm text-mixer-red">{checkoutError}</p>}
       </div>
 
       {loading ? (
@@ -259,36 +330,102 @@ export function PricingPage() {
           <Loader2 className="h-8 w-8 animate-spin text-mixer-red" />
         </div>
       ) : tab === 'universal' ? (
-        <div className="mx-auto mt-14 max-w-lg">
-          <div className="rounded-xl border border-amber-500/35 bg-gradient-to-b from-amber-500/10 to-[#0a0a0a] p-8 text-center">
-            <h2 className="text-2xl font-bold">CloudCast Universal</h2>
-            <p className="mt-2 text-sm text-mixer-muted">
-              Video Mixer + Audio Mixer + Symphony + Replay · Pro Master features on every product · one login, full suite.
+        <div className="mx-auto mt-14 max-w-6xl">
+          <div className="text-center">
+            <p className="text-xs font-bold tracking-[0.25em] text-amber-400/90">ONE SUBSCRIPTION · SIX PRODUCTS</p>
+            <h2 className="mt-2 text-2xl font-bold sm:text-3xl">CloudCast Universal</h2>
+            <p className="mx-auto mt-3 max-w-2xl text-sm text-mixer-muted">
+              Video Mixer, Audio Mixer, Symphony, Replay, Regal Display, and Regal Prism — pick the bundle that fits your budget.
+              Every tier includes the audio ↔ video bridge.
             </p>
-            <p className="mt-6 text-4xl font-bold">{formatPrice(UNIVERSAL_PLAN_PRICE_CENTS)}</p>
-            <ul className="mt-6 space-y-2 text-left text-xs text-mixer-muted">
-              {displayFeaturesForPlan('universal', []).map((f) => (
-                <li key={f} className="flex items-start gap-2">
-                  <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
-                  {f}
-                </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              disabled={isUniversalCurrent || upgrading !== null}
-              onClick={() => { void handleSelectUniversal(); }}
-              className="mt-8 w-full rounded bg-amber-500 py-3 text-xs font-bold tracking-wider text-black hover:bg-amber-400 disabled:opacity-50"
-            >
-              {upgrading === 'universal' ? (
-                <Loader2 className="mx-auto h-4 w-4 animate-spin" />
-              ) : isUniversalCurrent ? (
-                'CURRENT PLAN'
-              ) : (
-                'CHOOSE UNIVERSAL'
-              )}
-            </button>
           </div>
+
+          <div className="mt-10 grid gap-6 lg:grid-cols-3">
+            {UNIVERSAL_TIERS.map((tier) => {
+              const isCurrent = currentUniversalTier === tier.id;
+              const highlighted = tier.highlight === true;
+              const savings = tier.compareAtCents - tier.priceCents;
+
+              return (
+                <div
+                  key={tier.id}
+                  className={cn(
+                    'relative flex flex-col rounded-xl border p-8 transition-shadow',
+                    highlighted
+                      ? 'border-amber-500/50 bg-gradient-to-b from-amber-500/15 via-amber-500/5 to-[#0a0a0a] shadow-[0_0_48px_#f59e0b18] lg:scale-[1.02]'
+                      : tier.id === 'universal'
+                        ? 'border-amber-400/30 bg-gradient-to-b from-amber-400/10 to-[#0a0a0a]'
+                        : 'border-white/10 bg-[#0a0a0a]',
+                  )}
+                >
+                  {tier.badge && (
+                    <span
+                      className={cn(
+                        'absolute -top-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-0.5 text-[10px] font-bold tracking-wider',
+                        highlighted ? 'bg-amber-500 text-black' : 'border border-amber-500/40 bg-[#0a0a0a] text-amber-300',
+                      )}
+                    >
+                      {tier.badge}
+                    </span>
+                  )}
+
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-200/70">{tier.shortName}</p>
+                  <h3 className="mt-1 text-xl font-bold">{tier.name}</h3>
+                  <p className="mt-2 min-h-[2.5rem] text-xs leading-relaxed text-mixer-muted">{tier.tagline}</p>
+
+                  <div className="mt-6 flex items-end gap-2">
+                    <p className="text-4xl font-bold">{formatPrice(tier.priceCents)}</p>
+                    <p className="pb-1 text-sm text-mixer-muted line-through">
+                      ${(tier.compareAtCents / 100).toFixed(0)}
+                    </p>
+                  </div>
+                  <p className="mt-1 text-[11px] font-medium text-emerald-400/90">
+                    Save ${(savings / 100).toFixed(0)}/mo vs separate subscriptions
+                  </p>
+
+                  <ul className="mt-6 flex-1 space-y-2.5">
+                    {tier.features.map((feature) => (
+                      <li key={feature} className="flex items-start gap-2 text-xs text-mixer-muted">
+                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                        {feature}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <button
+                    type="button"
+                    disabled={(isUniversalCurrent && isCurrent) || upgrading !== null}
+                    onClick={() => { void handleSelectUniversal(tier.id); }}
+                    className={cn(
+                      'mt-8 w-full rounded py-3 text-xs font-bold tracking-wider transition-colors disabled:opacity-50',
+                      highlighted
+                        ? 'bg-amber-500 text-black hover:bg-amber-400'
+                        : tier.id === 'universal'
+                          ? 'border border-amber-400/40 text-amber-200 hover:border-amber-400/60 hover:bg-amber-500/10'
+                          : 'border border-white/20 hover:border-white/40',
+                    )}
+                  >
+                    {upgrading === tier.id ? (
+                      <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+                    ) : isCurrent ? (
+                      'CURRENT PLAN'
+                    ) : isUniversalCurrent ? (
+                      `SWITCH TO ${tier.shortName.toUpperCase()}`
+                    ) : stripeEnabled ? (
+                      `SUBSCRIBE — ${tier.shortName.toUpperCase()}`
+                    ) : (
+                      `CHOOSE ${tier.shortName.toUpperCase()}`
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="mx-auto mt-8 max-w-3xl text-center text-xs text-mixer-muted">
+            Essential maps Pro features across all products. Studio adds Pro Master on your core broadcast stack.
+            Master unlocks Pro Master everywhere — 4K Regal Prism, 32-track Symphony, priority support.
+          </p>
         </div>
       ) : (
         <>
@@ -309,9 +446,15 @@ export function PricingPage() {
                   ? audioFeaturesForPlan(plan.id)
                   : tab === 'symphony_studio'
                     ? symphonyFeaturesForPlan(plan.id)
-                    : tab === 'video_mixer'
-                      ? videoFeaturesForPlan(plan.id, plan.features)
-                      : displayFeaturesForPlan(plan.id, plan.features);
+                    : tab === 'regal_prism'
+                      ? prismFeaturesForPlan(plan.id)
+                      : tab === 'video_mixer'
+                        ? videoFeaturesForPlan(plan.id, plan.features)
+                        : displayFeaturesForPlan(plan.id, plan.features);
+              const priceCents =
+                tab === 'regal_prism'
+                  ? tierPriceCents('regal_prism', plan.id)
+                  : plan.price_monthly_cents;
 
               return (
                 <div
@@ -328,7 +471,7 @@ export function PricingPage() {
                   )}
 
                   <h2 className="text-lg font-bold tracking-wide">{plan.name}</h2>
-                  <p className="mt-2 text-3xl font-bold">{formatPrice(plan.price_monthly_cents)}</p>
+                  <p className="mt-2 text-3xl font-bold">{formatPrice(priceCents)}</p>
                   {tab === 'video_mixer' && (
                     <p className="mt-1 text-xs text-mixer-muted">
                       {connectionModeLabel(plan.connection_mode)}
@@ -345,6 +488,11 @@ export function PricingPage() {
                   {tab === 'symphony_studio' && (
                     <p className="mt-1 text-xs text-mixer-muted">
                       {SYMPHONY_TRACKS[plan.id]} tracks · {SYMPHONY_CLOUD_PROJECTS[plan.id]} cloud projects
+                    </p>
+                  )}
+                  {tab === 'regal_prism' && (
+                    <p className="mt-1 text-xs text-mixer-muted">
+                      {PRISM_CAMERAS[plan.id]} camera{PRISM_CAMERAS[plan.id] > 1 ? 's' : ''} · {PRISM_OUTPUT_QUALITY[plan.id]}
                     </p>
                   )}
 
@@ -380,8 +528,10 @@ export function PricingPage() {
                       <Loader2 className="mx-auto h-4 w-4 animate-spin" />
                     ) : isCurrent ? (
                       'CURRENT PLAN'
-                    ) : plan.price_monthly_cents === 0 ? (
+                    ) : priceCents === 0 ? (
                       'GET STARTED FREE'
+                    ) : stripeEnabled ? (
+                      `SUBSCRIBE — ${plan.name.toUpperCase()}`
                     ) : (
                       `CHOOSE ${plan.name.toUpperCase()}`
                     )}
@@ -394,7 +544,9 @@ export function PricingPage() {
       )}
 
       <p className="mx-auto mt-10 max-w-xl text-center text-xs text-mixer-muted">
-        Payment integration coming soon — selecting a plan updates your account immediately for testing.{' '}
+        {stripeEnabled
+          ? 'Paid plans checkout securely with Stripe. Free tier available instantly. Manage subscriptions from your profile.'
+          : 'Stripe billing is being configured — free tier works instantly; paid plans use test checkout until Stripe is live.'}{' '}
         <Link to="/products" className="text-mixer-red underline">Browse products</Link>
         {' · '}
         <Link to="/login" className="text-mixer-red underline">Sign in</Link>

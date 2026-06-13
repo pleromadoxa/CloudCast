@@ -9,7 +9,7 @@ export async function probeCloudCastReachability(): Promise<boolean> {
   }
 
   try {
-    const res = await fetch('/favicon.svg', { method: 'HEAD', cache: 'no-store' });
+    const res = await fetch('/favicon.png', { method: 'HEAD', cache: 'no-store' });
     return res.ok;
   } catch {
     return false;

@@ -3,7 +3,7 @@ import { Mic, Smartphone, Usb } from 'lucide-react';
 import type { Device } from '../../types/device';
 import type { AudioInputSource } from '../../types/audio';
 import { createEmptyAudioSlot, isRealDevice } from '../../types/device';
-import { AUDIO_MIXER_CHANNELS, AUDIO_MIXER_MAX_CHANNELS } from '../../config/products';
+import { audioChannelsForPlan, AUDIO_MIXER_MAX_CHANNELS } from '../../config/products';
 import type { PlanTier } from '../../types/plans';
 import { unlockDashboardAudio } from '../../lib/audioOutput';
 import type { ConsoleSceneSnapshot, SceneId } from '../../lib/audioConsolePersistence';
@@ -19,14 +19,14 @@ import {
   type NoiseCancelSettings,
 } from '../../hooks/useAudioConsoleState';
 import { cn } from '../../lib/utils';
-import { AudioMeters } from '../mixer/AudioMeters';
 import { DigitalConsoleScreen } from './DigitalConsoleScreen';
+import { MasterOutputPanel } from './MasterOutputPanel';
 import { AudioDevicesStrip } from './AudioDevicesStrip';
 import { AudioSourcePanel, collectUsbAudioDevices } from './AudioSourcePanel';
+import { HostUsbAudioPanel } from './HostUsbAudioPanel';
 import { AudioConnectionDebugPanel } from './AudioConnectionDebugPanel';
 import { AudioInputChannel } from './AudioInputChannel';
 import { FatChannelPanel } from './FatChannelPanel';
-import { MixerPhysicalButton } from './MixerPhysicalButton';
 
 interface StudioLiveConsoleProps {
   devices: Device[];
@@ -45,6 +45,8 @@ interface StudioLiveConsoleProps {
   onSetMonitorVolume: (value: number) => void;
   onToggleMasterMute: () => void;
   onToggleMonitorMute: () => void;
+  onToggleConsoleEnabled: () => void;
+  onTogglePeakHold: () => void;
   onSetFatParam: (deviceId: string, key: keyof import('../../hooks/useAudioConsoleState').FatChannelParams, value: number | boolean) => void;
   onToggleHpfBypass: (deviceId: string) => void;
   onPatchNoiseCancel: (deviceId: string, patch: Partial<NoiseCancelSettings>) => void;
@@ -58,6 +60,18 @@ interface StudioLiveConsoleProps {
   onSetLinkedUsb: (deviceId: string, audioDeviceId: string | null) => void;
   onStoreScene: (sceneId: SceneId) => void;
   onRecallScene: (sceneId: SceneId) => void;
+  hostUsb?: {
+    localDevices: Device[];
+    selectableDevices: MediaDeviceInfo[];
+    deviceLabels: Record<string, string>;
+    maxInputs: number;
+    error: string | null;
+    scanning: boolean;
+    atLimit: boolean;
+    onAdd: (mediaDeviceId: string) => Promise<string | null>;
+    onRemove: (deviceId: string) => void;
+    onRefresh: () => Promise<MediaDeviceInfo[]>;
+  };
 }
 
 interface ChannelSlot {
@@ -107,6 +121,8 @@ export function StudioLiveConsole({
   onSetMonitorVolume,
   onToggleMasterMute,
   onToggleMonitorMute,
+  onToggleConsoleEnabled,
+  onTogglePeakHold,
   onSetFatParam,
   onToggleHpfBypass,
   onPatchNoiseCancel,
@@ -120,8 +136,9 @@ export function StudioLiveConsole({
   onSetLinkedUsb,
   onStoreScene,
   onRecallScene,
+  hostUsb,
 }: StudioLiveConsoleProps) {
-  const activeChannels = AUDIO_MIXER_CHANNELS[planId] ?? 4;
+  const activeChannels = audioChannelsForPlan(planId);
   const channels = useMemo(
     () => buildChannelSlots(devices, activeChannels),
     [devices, activeChannels],
@@ -154,13 +171,28 @@ export function StudioLiveConsole({
 
       <div className="studiolive-input-strip">
         <span className="studiolive-input-strip__label">Inputs</span>
-        <span><Smartphone className="inline h-3 w-3" /> CloudCast Audio Mobile</span>
-        <span><Usb className="inline h-3 w-3" /> USB microphones</span>
+        <span><Smartphone className="inline h-3 w-3" /> CloudCast Mobile</span>
+        <span><Usb className="inline h-3 w-3" /> USB microphones (this computer)</span>
         <span><Mic className="inline h-3 w-3" /> Line / capture alternatives</span>
         <span className="studiolive-input-strip__hint">
           Keys: 1–9 select · M mute · Shift+M master · S solo · H monitor · A–D recall · Shift+A–D store
         </span>
       </div>
+
+      {hostUsb && (
+        <HostUsbAudioPanel
+          localDevices={hostUsb.localDevices}
+          selectableDevices={hostUsb.selectableDevices}
+          deviceLabels={hostUsb.deviceLabels}
+          maxInputs={hostUsb.maxInputs}
+          error={hostUsb.error}
+          scanning={hostUsb.scanning}
+          atLimit={hostUsb.atLimit}
+          onAdd={hostUsb.onAdd}
+          onRemove={hostUsb.onRemove}
+          onRefresh={hostUsb.onRefresh}
+        />
+      )}
 
       <div className="studiolive-scenes">
         {SCENE_IDS.map((id) => (
@@ -267,56 +299,20 @@ export function StudioLiveConsole({
         </section>
 
         <section className="studiolive-master studiolive-panel-glow">
-          <p className="studiolive-section-label">Master</p>
-          <div className="studiolive-master-meters">
-            <AudioMeters active={!state.masterMuted} muted={state.masterMuted} />
-          </div>
-          <div className="studiolive-master-controls">
-            <MixerPhysicalButton
-              label="MON"
-              variant="solo"
-              active={!state.monitorMuted}
-              title="Monitor bus"
-              onClick={() => {
-                void unlockDashboardAudio();
-                onToggleMonitorMute();
-              }}
-            />
-            <MixerPhysicalButton
-              label="MSTR"
-              variant="mute"
-              active={state.masterMuted}
-              title="Master mute"
-              onClick={() => {
-                void unlockDashboardAudio();
-                onToggleMasterMute();
-              }}
-            />
-          </div>
-          <label className="studiolive-master-fader">
-            <span>Main L/R</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={state.masterVolume}
-              onPointerDown={() => { void unlockDashboardAudio(); }}
-              onChange={(e) => onSetMasterVolume(Number(e.target.value))}
-              className="studiolive-fader-input"
-            />
-          </label>
-          <label className="studiolive-master-fader">
-            <span>Monitor</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={state.monitorVolume}
-              disabled={state.monitorMuted}
-              onChange={(e) => onSetMonitorVolume(Number(e.target.value))}
-              className="studiolive-fader-input"
-            />
-          </label>
+          <MasterOutputPanel
+            consoleEnabled={state.consoleEnabled}
+            peakHoldEnabled={state.peakHoldEnabled}
+            masterVolume={state.masterVolume}
+            masterMuted={state.masterMuted}
+            monitorVolume={state.monitorVolume}
+            monitorMuted={state.monitorMuted}
+            onToggleConsoleEnabled={onToggleConsoleEnabled}
+            onTogglePeakHold={onTogglePeakHold}
+            onSetMasterVolume={onSetMasterVolume}
+            onSetMonitorVolume={onSetMonitorVolume}
+            onToggleMasterMute={onToggleMasterMute}
+            onToggleMonitorMute={onToggleMonitorMute}
+          />
         </section>
       </div>
 
@@ -350,6 +346,7 @@ export function StudioLiveConsole({
               volume={state.inputVolumes[device.deviceId] ?? 75}
               muted={state.inputMuted[device.deviceId] ?? false}
               solo={state.soloId === device.deviceId}
+              mixerEnabled={state.consoleEnabled}
               onMix={isMixEnabled(state, device.deviceId)}
               audioSource={getAudioSourceForDevice(device.deviceId)}
               getAudioSourceForDevice={getAudioSourceForDevice}

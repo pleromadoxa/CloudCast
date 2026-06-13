@@ -1,0 +1,35 @@
+# CloudCast by Quantum Regal
+
+> Professional browser-based broadcast tools — video mixer, audio console, virtual production, instant replay, worship display, and online DAW.
+
+CloudCast is a cloud broadcast production platform by Quantum Regal Digital Labs. Six products sold individually or as CloudCast Universal bundle.
+
+## Products
+
+- Video Mixer: https://cloudcast.live/products/video-mixer — PST/PGM switcher, chroma key, RTMP streaming
+- Audio Mixer: https://cloudcast.live/products/audio-mixer — 16-channel broadcast audio console
+- Symphony: https://cloudcast.live/products/symphony — browser DAW for music production
+- Replay: https://cloudcast.live/products/replay — instant replay for live sports and events
+- Regal Display: https://cloudcast.live/products/regal-display — worship presentation and scripture
+- Regal Prism: https://cloudcast.live/products/regal-prism — virtual production and chroma key VP
+
+## Solutions
+
+- Churches: https://cloudcast.live/for/churches
+- Sports: https://cloudcast.live/for/sports
+- News: https://cloudcast.live/for/news
+- Corporate events: https://cloudcast.live/for/corporate
+
+## Pricing
+
+https://cloudcast.live/pricing — Free tier, Pro $29/mo, Pro Master $79/mo, Universal from $59/mo
+
+## Guides
+
+- Product guide: https://cloudcast.live/products/guide
+- All products: https://cloudcast.live/products
+
+## Contact
+
+- Support: support@cloudcast.regal
+- Website: https://cloudcast.live

@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import { LayoutGrid } from 'lucide-react';
 import type { MixerPanel } from '../../types/mixer';
-import { CORE_MIXER_PANELS, MIXER_PANELS } from '../../config/mixerPanels';
+import { MIXER_PANELS } from '../../config/mixerPanels';
 import { cn } from '../../lib/utils';
 
 interface MixerTabGuideProps {
@@ -19,14 +19,11 @@ export function MixerTabGuide({
   onToggleOpenPanel,
   className,
 }: MixerTabGuideProps) {
-  const auxPanels = MIXER_PANELS.filter((panel) => !CORE_MIXER_PANELS.includes(panel.id));
-
   const renderPanelButton = (
     id: MixerPanel,
     label: string,
     description: string,
     Icon: LucideIcon,
-    compact = false,
   ) => {
     const active = activePanel === id;
     const open = openPanels.includes(id);
@@ -38,8 +35,8 @@ export function MixerTabGuide({
         onClick={() => onToggleOpenPanel(id)}
         onDoubleClick={() => onSelectPanel(id)}
         className={cn(
-          'mixer-tab-guide-cell group relative rounded-md border text-left transition-all',
-          compact ? 'px-2 py-1.5' : 'px-2.5 py-2',
+          'mixer-tab-guide-cell group relative shrink-0 rounded-md border text-left transition-all',
+          'min-w-[7rem] max-w-[10rem] flex-1 px-2 py-1',
           open
             ? 'border-mixer-red/40 bg-gradient-to-br from-mixer-red/15 to-mixer-red/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
             : 'border-white/8 bg-black/30 hover:border-white/20 hover:bg-white/5',
@@ -47,43 +44,32 @@ export function MixerTabGuide({
         )}
         title={`${description} · Click to open/close · double-click to focus`}
       >
-        <div className="flex items-start gap-2">
+        <div className="flex items-start gap-1.5">
           <span
             className={cn(
-              'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded border',
+              'mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded border',
               open ? 'border-mixer-red/30 bg-mixer-red/20 text-mixer-red' : 'border-white/10 bg-black/40 text-mixer-muted',
             )}
           >
-            <Icon className={cn(compact ? 'h-3 w-3' : 'h-3.5 w-3.5')} />
+            <Icon className="h-3 w-3" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="flex flex-wrap items-center gap-1.5">
+            <span className="flex flex-wrap items-center gap-1">
               <span
                 className={cn(
-                  'font-bold uppercase tracking-wide',
-                  compact ? 'text-[8px]' : 'text-[9px]',
+                  'font-bold uppercase tracking-wide text-[8px]',
                   active ? 'text-mixer-red' : 'text-mixer-text',
                 )}
               >
                 {label}
               </span>
               {open && (
-                <span className="rounded bg-mixer-green/20 px-1 py-px text-[7px] font-bold uppercase tracking-wider text-mixer-green">
+                <span className="rounded bg-mixer-green/20 px-1 py-px text-[6px] font-bold uppercase tracking-wider text-mixer-green">
                   Open
                 </span>
               )}
-              {active && (
-                <span className="rounded bg-mixer-red/20 px-1 py-px text-[7px] font-bold uppercase tracking-wider text-mixer-red">
-                  Focus
-                </span>
-              )}
             </span>
-            <span
-              className={cn(
-                'mt-0.5 block leading-snug text-mixer-muted',
-                compact ? 'text-[7px] line-clamp-1' : 'text-[8px] line-clamp-2',
-              )}
-            >
+            <span className="mt-0.5 block truncate text-[7px] leading-snug text-mixer-muted">
               {description}
             </span>
           </span>
@@ -93,28 +79,22 @@ export function MixerTabGuide({
   };
 
   return (
-    <nav className={cn('mixer-tab-guide flex min-h-0 flex-col gap-2', className)} aria-label="Mixer panels">
-      <div className="flex items-center justify-between gap-2 px-0.5">
-        <div className="flex items-center gap-1.5">
-          <LayoutGrid className="h-3.5 w-3.5 text-mixer-red" />
-          <span className="text-[9px] font-bold uppercase tracking-wider text-mixer-text">Mixer panels</span>
+    <nav className={cn('mixer-tab-guide shrink-0', className)} aria-label="Mixer panels">
+      <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 pr-1">
+          <LayoutGrid className="h-3 w-3 text-mixer-red" />
+          <span className="hidden text-[8px] font-bold uppercase tracking-wider text-mixer-text sm:inline">
+            Panels
+          </span>
+          <span className="text-[7px] font-bold uppercase tracking-wider text-mixer-muted">
+            {openPanels.length} open
+          </span>
         </div>
-        <span className="text-[7px] font-bold uppercase tracking-wider text-mixer-muted">
-          {openPanels.length} open
-        </span>
-      </div>
-      <p className="px-0.5 text-[7px] leading-relaxed text-mixer-muted">
-        Open several panels side-by-side in the deck below. Click to toggle · double-click to focus.
-      </p>
-      <div className="grid grid-cols-2 gap-1.5">
-        {CORE_MIXER_PANELS.map((id) => {
-          const panel = MIXER_PANELS.find((entry) => entry.id === id);
-          if (!panel) return null;
-          return renderPanelButton(panel.id, panel.label, panel.description, panel.icon);
-        })}
-      </div>
-      <div className="grid grid-cols-3 gap-1">
-        {auxPanels.map((panel) => renderPanelButton(panel.id, panel.label, panel.description, panel.icon, true))}
+        <div className="mixer-tab-guide-row flex min-w-0 flex-1 gap-1 overflow-x-auto">
+          {MIXER_PANELS.map((panel) =>
+            renderPanelButton(panel.id, panel.label, panel.description, panel.icon),
+          )}
+        </div>
       </div>
     </nav>
   );

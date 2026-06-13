@@ -1,4 +1,4 @@
-import { Mic, MicOff, Radio } from 'lucide-react';
+import { Mic, MicOff, Radio, KeyRound } from 'lucide-react';
 import { MIXER_PANELS } from '../../config/mixerPanels';
 import type { DashboardControls } from '../../types/controls';
 import type { MixerPanel } from '../../types/mixer';
@@ -9,7 +9,8 @@ import type { PlanTier } from '../../types/plans';
 import type { VideoAspectRatio } from '../../types/mixer';
 import type { LayerStackId } from './panels/layers/layerStackTypes';
 import { isRealDevice } from '../../types/device';
-import { resolveChassisPanelClass } from '../../lib/mixerPanelLayout';
+import { planAllowsChromaKey } from '../../lib/planFeatures';
+import { resolveChassisPanelClass, resolveMultiPanelGridColumns } from '../../lib/mixerPanelLayout';
 import { cn } from '../../lib/utils';
 import { AudioMeters } from './AudioMeters';
 import { SourcesPanel } from './panels/SourcesPanel';
@@ -20,6 +21,7 @@ import { DevicesPanel } from './panels/DevicesPanel';
 import { SettingsPanel } from './panels/SettingsPanel';
 import { StreamSettingsPanel } from './panels/StreamSettingsPanel';
 import { MixerPanelHeader } from './MixerPanelHeader';
+import { MixerTabGuide } from './MixerTabGuide';
 
 interface MixerControlDeckProps {
   controls: DashboardControls;
@@ -106,6 +108,8 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
   const chassisClass = resolveChassisPanelClass(visiblePanels, controls.activePanel);
   const narrowOutputCol = visiblePanels.some((panel) => panel === 'audio' || panel === 'devices');
   const canTake = Boolean(pstDeviceId && pgmDeviceId && pstDeviceId !== pgmDeviceId);
+  const keyAllowed = planAllowsChromaKey(props.planId);
+  const keyOn = controls.outputMode === 'key' && controls.key.enabled;
 
   const renderPanel = (panel: MixerPanel, compact: boolean) => {
     if (panel === 'sources') {
@@ -135,6 +139,7 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
       return (
           <LayersPanel
             compact={compact}
+            multiPanel={isMultiPanel}
             layers={controls.layers}
             pgmLayers={props.pgmLayers}
             planId={props.planId}
@@ -244,6 +249,7 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
             layers={controls.layers}
             onSetGlobalOverlay={props.onSetGlobalOverlay}
             onPatchLayers={props.onPatchLayers}
+            accessCode={props.accessCode}
           />
     );
   };
@@ -256,32 +262,14 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
         isMultiPanel && 'atem-chassis--multi',
       )}
     >
-      <nav className="atem-sidebar" aria-label="Mixer panels">
-        {MIXER_PANELS.map(({ id, icon: Icon, label }) => {
-          const open = visiblePanels.includes(id);
-          const active = controls.activePanel === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              title={`${label} — click to open/close`}
-              onClick={() => onToggleOpenPanel(id)}
-              onDoubleClick={() => onSetPanel(id)}
-              className={cn(
-                'atem-sidebar-btn',
-                active && 'atem-sidebar-btn--active',
-                open && !active && 'atem-sidebar-btn--open',
-              )}
-            >
-              <Icon className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
-              <span className="atem-sidebar-label">{label}</span>
-              {open && <span className="atem-sidebar-dot" aria-hidden />}
-            </button>
-          );
-        })}
-      </nav>
-
       <div className="atem-chassis-panel-body relative z-0 flex min-h-0 min-w-0 flex-1 flex-col">
+        <MixerTabGuide
+          className="shrink-0 border-b border-mixer-border/60 px-2 py-1.5"
+          activePanel={controls.activePanel}
+          openPanels={visiblePanels}
+          onSelectPanel={onSetPanel}
+          onToggleOpenPanel={onToggleOpenPanel}
+        />
         {!isMultiPanel && panelMeta(controls.activePanel) && (
           <MixerPanelHeader
             icon={panelMeta(controls.activePanel)!.icon}
@@ -294,8 +282,9 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
           className={cn(
             'atem-chassis-panel-scroll min-h-0',
             isMultiPanel && 'atem-multi-panel-grid',
+            isMultiPanel && `atem-multi-panel-grid--count-${visiblePanels.length}`,
           )}
-          style={isMultiPanel ? { gridTemplateColumns: `repeat(${visiblePanels.length}, minmax(0, 1fr))` } : undefined}
+          style={isMultiPanel ? { gridTemplateColumns: resolveMultiPanelGridColumns(visiblePanels) } : undefined}
         >
           {visiblePanels.map((panel) => {
             const meta = panelMeta(panel);
@@ -304,6 +293,7 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
                 key={panel}
                 className={cn(
                   'atem-multi-panel-column min-h-0 min-w-0',
+                  panel === 'layers' && isMultiPanel && 'atem-multi-panel-column--layers',
                   panel === controls.activePanel && isMultiPanel && 'atem-multi-panel-column-active',
                 )}
               >
@@ -328,7 +318,7 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
                   />
                 )}
                 <div className="atem-multi-panel-content min-h-0">
-                  {renderPanel(panel, isMultiPanel)}
+                  {renderPanel(panel, false)}
                 </div>
               </div>
             );
@@ -357,6 +347,28 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
               ))}
             </div>
             <div className="flex items-center gap-2">
+              {keyAllowed && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (keyOn) {
+                      props.onSetOutputMode('main');
+                      props.onPatchKey({ enabled: false });
+                    } else {
+                      props.onSetOutputMode('key');
+                      props.onPatchKey({ enabled: true });
+                    }
+                  }}
+                  className={cn(
+                    'atem-auto-btn !h-11 !min-w-[56px] !text-xs',
+                    keyOn && 'bg-emerald-600/40 text-emerald-200 ring-1 ring-emerald-500/50',
+                  )}
+                  title="Toggle chroma/luma KEY on PGM"
+                >
+                  <KeyRound className="mx-auto h-3.5 w-3.5" />
+                  KEY
+                </button>
+              )}
               <button type="button" onClick={props.onCut} className="atem-cut-btn !h-11 !min-w-[64px] !text-xs">CUT</button>
               <button type="button" onClick={props.onTake} disabled={!canTake} className="atem-auto-btn !h-11 !min-w-[64px] !text-xs">TAKE</button>
               <button

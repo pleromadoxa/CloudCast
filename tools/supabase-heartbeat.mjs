@@ -50,15 +50,26 @@ const intervalHours = Number(process.env.HEARTBEAT_INTERVAL_HOURS ?? 4);
 const intervalMs = Math.max(1, intervalHours) * 60 * 60 * 1000;
 
 async function processEmailQueue() {
+  const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
+  const webhookSecret = process.env.EMAIL_WEBHOOK_SECRET;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!serviceKey || !url) return true;
+
+  if (!url) return true;
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (webhookSecret) {
+    headers['x-email-webhook-secret'] = webhookSecret;
+  } else if (serviceKey) {
+    headers.Authorization = `Bearer ${serviceKey}`;
+  } else {
+    console.warn('[email-queue] skipped — set EMAIL_WEBHOOK_SECRET or SUPABASE_SERVICE_ROLE_KEY');
+    return true;
+  }
+
   try {
     const res = await fetch(`${url.replace(/\/$/, '')}/functions/v1/send-transactional-email`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${serviceKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({ process_pending: true }),
     });
     if (!res.ok) {

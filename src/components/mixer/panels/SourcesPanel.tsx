@@ -73,6 +73,9 @@ export function SourcesPanel({
     devices.some((d) => d.deviceId === subDeviceId && isRealDevice(d));
   const keyOn = outputMode === 'key' && keySettings.enabled;
   const chromaAllowed = planAllowsChromaKey(planId);
+  const keyReady =
+    keySettings.fillSource === 'preset' ||
+    Boolean(subDeviceId && pgmDeviceId && subDeviceId !== pgmDeviceId);
 
   return (
     <div className={cn('atem-deck min-h-0', compact && 'atem-deck--compact')}>
@@ -198,15 +201,32 @@ export function SourcesPanel({
           </div>
 
           <div className="atem-control-block">
-            <AtemLabel>Chroma Key</AtemLabel>
+            <AtemLabel>KEY</AtemLabel>
             {!chromaAllowed ? (
               <div className="flex items-center gap-2 rounded border border-dashed border-mixer-border px-2 py-2 text-[8px] text-mixer-muted">
                 <Lock className="h-3.5 w-3.5 shrink-0" />
-                Pro or Pro Master required. Tune key settings in the Layers panel.
+                Pro or Pro Master required. Tune key settings in Layers → Chroma.
               </div>
             ) : (
               <>
                 <FeatureHint className="mb-1">{MIXER_QUICK_TERMS.chromaKey}</FeatureHint>
+                <div className="mb-1 flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onPatchKey({ keyType: 'chroma', enabled: true })}
+                    className={cn('atem-small-btn flex-1 text-[8px] uppercase', keySettings.keyType !== 'luma' && 'atem-toggle-on')}
+                  >
+                    Chroma
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onPatchKey({ keyType: 'luma', enabled: true })}
+                    className={cn('atem-small-btn flex-1 text-[8px] uppercase', keySettings.keyType === 'luma' && 'atem-toggle-on')}
+                    title={MIXER_QUICK_TERMS.lumaKey}
+                  >
+                    Luma
+                  </button>
+                </div>
                 <div className="atem-onoff-row">
                   <button
                     type="button"
@@ -229,6 +249,16 @@ export function SourcesPanel({
                     OFF
                   </button>
                 </div>
+                {keyOn && !keyReady && (
+                  <p className="mt-1 text-[8px] leading-snug text-amber-400">
+                    Assign Aux/Sub to a source other than PGM, or use Preset BG in Layers → Chroma.
+                  </p>
+                )}
+                {keyOn && keySettings.keyType === 'luma' && (
+                  <p className="mt-1 text-[8px] leading-snug text-mixer-muted">
+                    Luma keys dark/blacks from PGM. Raise threshold in Layers → Chroma if too much is keyed.
+                  </p>
+                )}
               </>
             )}
           </div>

@@ -16,9 +16,11 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Ping Supabase
+      - name: Ping Supabase + drain email queue
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EMAIL_WEBHOOK_SECRET: ${{ secrets.EMAIL_WEBHOOK_SECRET }}
           HEARTBEAT_SOURCE: github-actions
         run: node tools/supabase-heartbeat.mjs

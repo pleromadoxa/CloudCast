@@ -72,8 +72,8 @@ const ITEM_DEFS: Record<
     canReorder: true,
   },
   chroma: {
-    label: 'Chroma Key',
-    sublabel: () => 'Pro output mode',
+    label: 'KEY',
+    sublabel: () => 'Chroma / Luma',
     isPreview: () => false,
     isLive: () => false,
     canPreview: false,

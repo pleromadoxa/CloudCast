@@ -35,9 +35,10 @@ function loadEnv() {
 
 console.log('CloudCast — full deploy\n');
 
-runOptional('npm run deploy:cloudflare', 'Supabase edge functions (R2 + Stream)');
+runOptional('npm run deploy:cloudflare', 'Supabase edge functions (R2 + Stream + Email)');
 
 loadEnv();
+runOptional('npm run email:preview', 'Regenerate email HTML previews');
 runOptional('npm run deploy:pages', 'Cloudflare frontend (Vite → Workers)');
 
 console.log('\n✓ Deploy complete.');

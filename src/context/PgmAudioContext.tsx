@@ -259,6 +259,10 @@ export function PgmAudioProvider({
   );
 }
 
+export function usePgmAudioOptional() {
+  return useContext(PgmAudioContext);
+}
+
 export function usePgmAudio() {
   const ctx = useContext(PgmAudioContext);
   if (!ctx) throw new Error('usePgmAudio must be used within PgmAudioProvider');

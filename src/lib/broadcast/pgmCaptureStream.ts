@@ -1,5 +1,5 @@
 import {
-  hasPgmVideoSignal,
+  hasPgmOutputReady,
   PgmProgramCapture,
   type PgmProgramCaptureOptions,
 } from './pgmProgramCapture';
@@ -38,7 +38,7 @@ export function createPgmBroadcastCapture(
   fadeToBlackLevel = 0,
   broadcastAudioStream?: MediaStream | null,
 ): PgmBroadcastCapture | null {
-  if (outputContainer && hasPgmVideoSignal(outputContainer)) {
+  if (outputContainer && hasPgmOutputReady(outputContainer)) {
     const capture = new PgmProgramCapture();
     const stream = capture.start({
       container: outputContainer,

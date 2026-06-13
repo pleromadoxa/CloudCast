@@ -6,7 +6,12 @@ import {
   REPLAY_BUFFER_SECONDS,
   SYMPHONY_CLOUD_PROJECTS,
   SYMPHONY_TRACKS,
-  UNIVERSAL_PLAN_PRICE_CENTS,
+  PRISM_TIER_PRICES,
+  PRISM_CAMERAS,
+  PRISM_VIRTUAL_SETS,
+  PRISM_CLOUD_SCENES,
+  PRISM_OUTPUT_QUALITY,
+  UNIVERSAL_PLAN_FROM_CENTS,
 } from './products';
 
 export interface ProductGuideSection {
@@ -58,7 +63,7 @@ export const PRODUCT_GUIDE_SECTIONS: ProductGuideSection[] = [
     ],
     costEffectiveness: {
       summary:
-        'Start at $0/month with Regal Mesh and a two-camera workflow. Pro at $29/month unlocks HD streaming via Regal Cloud and five video inputs — a fraction of the monthly cost of renting OB gear for a single remote. Pro Master at $79/month delivers UHD, eleven inputs, and priority support; CloudCast Universal at $119/month includes Video Mixer at Pro Master tier plus Audio, Symphony, and Replay.',
+        'Start at $0/month with Regal Mesh and a two-camera workflow. Pro at $29/month unlocks HD streaming via Regal Cloud and five video inputs — a fraction of the monthly cost of renting OB gear for a single remote. Pro Master at $79/month delivers UHD, eleven inputs, and priority support. CloudCast Universal bundles all six products from $59/month (Essential Pro tier) up to $149/month (Master Pro Master everywhere).',
       comparisonPoints: [
         'Typical OB truck rental for one sports event: $2,500–$8,000/day vs. CloudCast Pro Master at ~$2.63/day',
         'Hardware switcher amortized over 36 months: $400–$1,100/month before encoders, storage, or support contracts',
@@ -150,7 +155,7 @@ export const PRODUCT_GUIDE_SECTIONS: ProductGuideSection[] = [
       comparisonPoints: [
         '16-channel digital mixer rental: $150–$400/day vs. Pro Master at ~$2.63/day',
         'No snake runs, stage box rental, or analog splitters for simple productions',
-        'Universal ($119/month) includes audio at Pro Master tier plus video, DAW, and replay — replacing four separate tool subscriptions',
+        'Universal Studio ($99/month) includes audio at Pro Master tier plus video, DAW, and replay — replacing four separate tool subscriptions',
         'Inactive faders stay visible but locked on lower tiers, so operators learn the full console layout before upgrading',
       ],
       recommendedTier:
@@ -239,7 +244,7 @@ export const PRODUCT_GUIDE_SECTIONS: ProductGuideSection[] = [
         `Track limits scale clearly: ${SYMPHONY_TRACKS.free} / ${SYMPHONY_TRACKS.pro} / ${SYMPHONY_TRACKS.pro_master} tracks by tier`,
         `Regal Cloud Archive: ${SYMPHONY_CLOUD_PROJECTS.free} / ${SYMPHONY_CLOUD_PROJECTS.pro} / ${SYMPHONY_CLOUD_PROJECTS.pro_master} projects included`,
         'No separate iLok, upgrade path, or version-lock — subscription tier is the only gate',
-        'Universal bundles Symphony at Pro Master with live production tools for one $119/month line item',
+        'Universal Master ($149/month) bundles Symphony at Pro Master with live production tools in one subscription',
       ],
       recommendedTier:
         'Podcast producers and short-form stingers: Pro. Music beds, full arrangements, and archive-heavy teams: Pro Master or Universal.',
@@ -369,7 +374,7 @@ export const PRODUCT_GUIDE_SECTIONS: ProductGuideSection[] = [
         'Clip stays in Bank 3 for post-game social export; operator tags alternate angle from Camera 2 for second replay.',
       ],
       outcome:
-        'Broadcast-quality instant replay without EVS hardware. Universal at $119/month covered video, replay, and audio for the entire tournament weekend — less than 8% of a single-day dedicated replay rental.',
+        'Broadcast-quality instant replay without EVS hardware. Universal Studio at $99/month covered video, replay, and audio for the entire tournament weekend — less than 7% of a single-day dedicated replay rental.',
     },
     keyCapabilities: [
       `${REPLAY_BANKS.pro_master} replay banks on Pro Master (tiered from ${REPLAY_BANKS.free})`,
@@ -378,6 +383,184 @@ export const PRODUCT_GUIDE_SECTIONS: ProductGuideSection[] = [
       'One-click PGM push from Video Mixer',
       'Slow-mo clip export and multi-camera tagging on Pro+',
       'Multi-angle sync on Pro Master',
+    ],
+  },
+  {
+    id: 'regal_display',
+    overview:
+      'Regal Display is a browser-based worship and event presentation engine — the CloudCast answer to EasyWorship and ProPresenter. Build slide decks with custom text fields, backgrounds, media, and lyrics; look up scripture from NKJV, NIV, ESV, and WEB translations; organize your service order in a playlist; and output everything as a live Display Feed video source on the Video Mixer. Operators preview slides, take them live with cut or fade transitions, and share a congregation URL so sanctuary screens stay in sync — no separate projection laptop or HDMI spaghetti required.',
+    problems: [
+      {
+        title: 'Presentation software is disconnected from the video switcher',
+        description:
+          'Most churches run ProPresenter or EasyWorship on one machine and OBS or a hardware switcher on another. Regal Display outputs a Display Feed source the Video Mixer switches like any camera — lyrics, scripture, and announcements live on PGM without screen capture or NDI hacks.',
+      },
+      {
+        title: 'Dedicated presentation licenses add up',
+        description:
+          'ProPresenter and EasyWorship site licenses cost hundreds per year per campus, plus annual upgrades. Regal Display is included with your CloudCast Video Mixer plan at no extra subscription — the same access code session powers cameras and presentation.',
+      },
+      {
+        title: 'Scripture lookup interrupts the live flow',
+        description:
+          'Operators alt-tab to Bible apps or pre-build every verse slide days in advance. Regal Display includes in-app scripture search with multiple translations, saved presets, and one-click slide generation so a pastor can call out Philippians 4:13 and it appears on screen in seconds.',
+      },
+      {
+        title: 'Congregation screens need a separate output path',
+        description:
+          'Dual-output setups traditionally require two computers or complex mirror/extend configurations. Regal Display generates a congregation view URL tied to your session access code — open it on any browser-connected projector, TV, or confidence monitor.',
+      },
+    ],
+    costEffectiveness: {
+      summary:
+        'Regal Display is included with CloudCast Video Mixer at every tier — no separate subscription. Free tier covers full presentation workflows with Regal Mesh; Pro ($29/month) adds HD streaming and five video inputs; Pro Master ($79/month) adds UHD and eleven inputs. Compared to ProPresenter ($399+/year) or EasyWorship ($149–$499/year) plus a separate streaming stack, CloudCast consolidates presentation and production for one predictable bill.',
+      comparisonPoints: [
+        'ProPresenter site license: ~$33–$75/month amortized vs. Regal Display included with Video Mixer',
+        'No separate projection PC — congregation URL runs on any browser at the projector',
+        'Display Feed routes to Video Mixer PST/PGM without capture cards or screen sharing',
+        'Universal Essential ($59/month) includes Video Mixer Pro + Regal Display + five other products',
+      ],
+      recommendedTier:
+        'Single-campus churches and event AV: Video Mixer Free or Pro. Multi-campus or full broadcast suites: Pro Master or Universal Studio.',
+      monthlyRange: `Included with Video Mixer — Free · Pro ${formatGuidePrice(PRODUCT_TIER_PRICES.pro)}/mo · Pro Master ${formatGuidePrice(PRODUCT_TIER_PRICES.pro_master)}/mo`,
+    },
+    howToUse: [
+      {
+        step: 1,
+        title: 'Open Regal Display in your live session',
+        description:
+          'From the product hub or /display, join the same CloudCast session as your Video Mixer. Your access code links presentation, cameras, and congregation output together.',
+      },
+      {
+        step: 2,
+        title: 'Build your playlist and slides',
+        description:
+          'Create announcement, scripture, lyrics, and media slides with custom fields, backgrounds, and templates. Arrange slides in the service-order playlist and use scripture search to insert verses on the fly.',
+      },
+      {
+        step: 3,
+        title: 'Preview, go live, and route to the mixer',
+        description:
+          'Stage slides in Preview, take them Live with cut or fade, and route the Display Feed to PST or PGM on the Video Mixer. Enable key mode when you need a transparent top area for lower-third overlays.',
+      },
+      {
+        step: 4,
+        title: 'Share the congregation URL',
+        description:
+          'Copy the congregation view link from Regal Display and open it on sanctuary projectors or TVs. The live slide syncs automatically — operators drive everything from the Display dashboard.',
+      },
+    ],
+    liveScenario: {
+      title: 'Sunday worship — lyrics, scripture, and live cameras in one show',
+      context:
+        'Grace Fellowship runs a blended service: three phone cameras on Regal Mesh, Regal Display for lyrics and scripture, and CloudCast Video Mixer streaming to YouTube. The presentation volunteer and video director share one access code; a third volunteer opens the congregation URL on the sanctuary projector.',
+      workflow: [
+        '8:30 AM — Presentation volunteer builds the playlist: welcome slide, three worship lyrics slides, and pre-saved scripture presets for the sermon.',
+        '9:00 AM — Worship starts: volunteer takes lyrics live; video director switches between wide camera and Display Feed on PGM.',
+        '9:25 AM — Pastor calls Romans 8:28; volunteer searches scripture panel, inserts slide, takes live in under 10 seconds.',
+        '9:45 AM — Announcement slide with event details on Display Feed while director holds camera on pastor.',
+        '10:00 AM — Congregation URL on the projector matched the stream the entire service — no second operator at the projector PC.',
+      ],
+      outcome:
+        'One CloudCast Video Mixer Pro subscription ($29/month) replaced separate presentation software ($399/year) and simplified a two-computer workflow into one browser session. The same playlist preset loads next Sunday via program presets.',
+    },
+    keyCapabilities: [
+      'Slide decks with custom fields, layouts, and backgrounds',
+      'Scripture lookup — NKJV, NIV, ESV, WEB with saved presets',
+      'Service-order playlist with cut/fade transitions',
+      'Display Feed video source on CloudCast Video Mixer',
+      'Congregation view URL synced to live output',
+      'Lyrics, media library, templates, and operator keyboard shortcuts',
+      'Key mode for transparent overlay areas on PGM',
+    ],
+  },
+  {
+    id: 'regal_prism',
+    overview:
+      'Regal Prism is a browser-native virtual production and augmented reality studio — the CloudCast answer to desktop VP platforms like Aximmetry. It combines live camera input, real-time GPU chroma keying, 3D virtual sets, AR compositing, and virtual camera control in a single web dashboard. Place talent inside photorealistic virtual environments with shadows, reflections, and light wrap; switch between green-screen virtual studio, AR overlay, and XR extension modes; and route the composite to CloudCast Video Mixer on Pro Master. No Windows workstation, no Unreal install, no $5,000 lifetime license — just a browser and a camera.',
+    problems: [
+      {
+        title: 'Desktop VP software is expensive and platform-locked',
+        description:
+          'Industry tools like Aximmetry Broadcast & Film cost $5,990 lifetime or $490/month subscription, require Windows PCs with high-end GPUs, and demand dedicated operator training. Regal Prism runs in Chrome or Edge on any capable laptop — Pro at $49/month delivers chroma key, virtual sets, and AR for a fraction of desktop VP pricing.',
+      },
+      {
+        title: 'Green screen and virtual set workflows are fragmented',
+        description:
+          'Traditional setups chain OBS, vMix, Unreal, and separate keyer plugins — each with its own failure point. Regal Prism is all-in-one: camera in, keyer tuned, virtual set selected, program out — the same integrated philosophy Aximetry pioneered, delivered as SaaS.',
+      },
+      {
+        title: 'AR and XR require specialist teams',
+        description:
+          'Augmented reality overlays and LED wall XR extensions typically need motion tracking rigs, calibration engineers, and render farms. Regal Prism Pro and Pro Master include AR overlay mode, simulated virtual camera tracking, and XR stage presets — lowering the barrier for indie studios, churches, and education.',
+      },
+      {
+        title: 'Mobile camera and remote talent are afterthoughts',
+        description:
+          'Desktop VP platforms bolt on mobile apps as companions. CloudCast already pairs phones as cameras via access code — Regal Prism inherits that ecosystem so field reporters can feed keyed talent into virtual sets without SDI cables.',
+      },
+    ],
+    costEffectiveness: {
+      summary:
+        'Aximmetry Broadcast subscription starts at $490/month ($5,990 lifetime). Regal Prism Pro is $49/month — roughly 10× more affordable — with real-time chroma key, 12 virtual sets, AR mode, and 1080p output. Pro Master at $129/month adds 4K, unlimited sets, XR extension, 3D import, and Video Mixer feed routing. Universal Master ($149/month) bundles Regal Prism Pro Master with the entire six-product suite.',
+      comparisonPoints: [
+        `Camera inputs: ${PRISM_CAMERAS.free} / ${PRISM_CAMERAS.pro} / ${PRISM_CAMERAS.pro_master} by tier`,
+        `Virtual sets: ${PRISM_VIRTUAL_SETS.free} / ${PRISM_VIRTUAL_SETS.pro} / unlimited on Pro Master`,
+        `Output: ${PRISM_OUTPUT_QUALITY.free} → ${PRISM_OUTPUT_QUALITY.pro_master}`,
+        `Cloud scene presets: ${PRISM_CLOUD_SCENES.free} / ${PRISM_CLOUD_SCENES.pro} / ${PRISM_CLOUD_SCENES.pro_master}`,
+        'Universal includes Regal Prism Pro Master — saves vs. $129 standalone + other products',
+      ],
+      recommendedTier:
+        'YouTubers and single-camera green screen: Free or Pro. News desks, sports AR, and multi-cam VP: Pro Master or Universal.',
+      monthlyRange: `Free (${PRISM_OUTPUT_QUALITY.free}) · Pro ${formatGuidePrice(PRISM_TIER_PRICES.pro)}/mo · Pro Master ${formatGuidePrice(PRISM_TIER_PRICES.pro_master)}/mo`,
+    },
+    howToUse: [
+      {
+        step: 1,
+        title: 'Open Regal Prism and enable your camera',
+        description:
+          'Navigate to /prism, grant browser camera permission, and select your USB webcam or built-in camera. CloudCast mobile cameras pair via access code on Pro+.',
+      },
+      {
+        step: 2,
+        title: 'Tune the chroma keyer',
+        description:
+          'Select green or blue screen preset, adjust similarity, smoothness, spill suppression, and light wrap until talent edges are clean. The GPU keyer runs in real time with no render delay.',
+      },
+      {
+        step: 3,
+        title: 'Choose a virtual set and production mode',
+        description:
+          'Pick from News Studio, Corporate, Sports Desk, Outdoor AR, or XR Stage. Switch between Virtual Studio (keyed talent in 3D set), AR (graphics over live camera), or XR Extension (LED wall simulation).',
+      },
+      {
+        step: 4,
+        title: 'Adjust virtual camera and go live',
+        description:
+          'Control yaw, pitch, and zoom to frame the shot. Enable virtual shadows and floor reflections on Pro+. Push composite to Video Mixer on Pro Master, or stream via RTMP on Pro+.',
+      },
+    ],
+    liveScenario: {
+      title: 'Morning news — virtual studio from a spare office',
+      context:
+        'Channel 7 Local News wants a virtual set refresh without building a physical desk. A reporter films against a $200 green screen in a back office; the director runs Regal Prism Pro Master on a MacBook Pro.',
+      workflow: [
+        'Reporter on camera — keyer tuned for office lighting; talent keyed into News Studio virtual set with floor reflection.',
+        'Director adjusts virtual camera yaw for wide shot, then zooms for close-up during the weather handoff.',
+        'AR mode activated for the sports segment — 3D score graphic floats over live field footage from a mobile camera.',
+        'Composite routed as virtual source on CloudCast Video Mixer; director switches between live cameras and Prism output on PGM.',
+      ],
+      outcome:
+        'Broadcast-quality virtual studio without Aximmetry hardware or Unreal Engine operators. Pro Master at $129/month vs. Aximmetry at $490/month — plus no Windows workstation required.',
+    },
+    keyCapabilities: [
+      'Real-time GPU chroma keyer with light wrap and spill suppression',
+      '3D virtual sets: news, corporate, sports, AR plaza, XR stage',
+      'Virtual Studio, AR overlay, and XR extension production modes',
+      'Virtual camera control with shadows and floor reflections',
+      'GLTF/FBX 3D import on Pro Master',
+      'Video Mixer feed output and RTMP streaming',
+      `${PRISM_CAMERAS.pro_master} simultaneous camera inputs on Pro Master`,
     ],
   },
 ];
@@ -389,9 +572,9 @@ function formatGuidePrice(cents: number): string {
 
 export const WHY_CLOUDCAST_POINTS = [
   {
-    title: 'One platform, four professional tools',
+    title: 'One platform, six professional tools',
     description:
-      'Video switching, broadcast audio, music production, and instant replay are separate products with dedicated dashboards — subscribe only to what you need, or unlock CloudCast Universal for Pro Master features on every product at $119/month.',
+      'Video switching, broadcast audio, music production, instant replay, presentation, and virtual production are separate products with dedicated dashboards — subscribe only to what you need, or unlock CloudCast Universal (Essential $59, Studio $99, Master $149) for every product in one bill.',
   },
   {
     title: 'Built by Quantum Regal for real broadcast workflows',
@@ -431,15 +614,15 @@ export const WHY_CLOUDCAST_POINTS = [
 ] as const;
 
 export const UNIVERSAL_VALUE_SUMMARY = {
-  price: formatGuidePrice(UNIVERSAL_PLAN_PRICE_CENTS),
-  headline: 'All four products · Pro Master on every product',
+  price: `From ${formatGuidePrice(UNIVERSAL_PLAN_FROM_CENTS)}`,
+  headline: 'Three Universal tiers · all six products',
   bullets: [
-    'Video Mixer: 11 inputs, UHD, multi-stream, 100GB storage',
-    'Audio Mixer: 16 active channels, Fat Channel, bridge to video',
-    'Symphony: 32 tracks, 100 Regal Cloud Archive projects',
-    'Replay: 16 banks, 5-minute buffer, multi-angle sync',
-    'One invoice instead of four Pro Master subscriptions ($316/mo separately)',
+    'Essential ($59): Pro on every product — great for starters',
+    'Studio ($99): Pro Master video/audio + Pro creative tools — best value',
+    'Master ($149): Pro Master everywhere — 4K VP, 32-track DAW, priority support',
+    'Every tier includes Video, Audio, Symphony, Replay, Regal Display & Regal Prism',
+    'Audio ↔ Video bridge on all Universal plans',
   ],
   savingsNote:
-    'Universal at $119/month saves $197/month versus subscribing to Video, Audio, Symphony, and Replay each at Pro Master ($79 × 4 = $316).',
+    'Universal Essential at $59/month saves $77 versus separate Pro subscriptions ($29 + $29 + $29 + $49 = $136). Universal Master at $149 saves $217 versus all Pro Master ($366).',
 };

@@ -16,7 +16,11 @@ const emptyFrame = (): AnalyserFrame => ({
 });
 
 /** Poll an existing AnalyserNode (post-DSP mixer taps). */
-export function useAnalyserNodeFrame(analyser: AnalyserNode | null, enabled = true) {
+export function useAnalyserNodeFrame(
+  analyser: AnalyserNode | null,
+  enabled = true,
+  peakHold = false,
+) {
   const frameRef = useRef<AnalyserFrame>(emptyFrame());
   const listenersRef = useRef(new Set<() => void>());
   const [levels, setLevels] = useState<AudioAnalyserLevels>({ l: 0, r: 0 });
@@ -26,8 +30,17 @@ export function useAnalyserNodeFrame(analyser: AnalyserNode | null, enabled = tr
 
   const subscribe = useCallback((listener: () => void) => {
     listenersRef.current.add(listener);
-    return () => listenersRef.current.delete(listener);
+    return () => {
+      listenersRef.current.delete(listener);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!peakHold) {
+      lPeakRef.current = 0;
+      rPeakRef.current = 0;
+    }
+  }, [peakHold, analyser]);
 
   useEffect(() => {
     if (!enabled || !analyser) {
@@ -53,8 +66,8 @@ export function useAnalyserNodeFrame(analyser: AnalyserNode | null, enabled = tr
       const l = Math.min(100, (lSum / mid / 255) * 160);
       const r = Math.min(100, (rSum / (freqData.length - mid) / 255) * 160);
 
-      lPeakRef.current = Math.max(l, lPeakRef.current * PEAK_DECAY);
-      rPeakRef.current = Math.max(r, rPeakRef.current * PEAK_DECAY);
+      lPeakRef.current = Math.max(l, lPeakRef.current * (peakHold ? 1 : PEAK_DECAY));
+      rPeakRef.current = Math.max(r, rPeakRef.current * (peakHold ? 1 : PEAK_DECAY));
 
       const spectrum: number[] = [];
       const bandSize = Math.max(1, Math.floor(freqData.length / SPECTRUM_BANDS));
@@ -95,7 +108,7 @@ export function useAnalyserNodeFrame(analyser: AnalyserNode | null, enabled = tr
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [analyser, enabled]);
+  }, [analyser, enabled, peakHold]);
 
   return { levels, frameRef, subscribe };
 }

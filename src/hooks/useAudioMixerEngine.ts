@@ -106,6 +106,7 @@ export function useAudioMixerEngine({
   linkedUsbAudio,
   learningNoiseFor,
   onNoiseFloorLearned,
+  resolveStream,
 }: {
   devices: Device[];
   state: AudioConsoleState;
@@ -113,6 +114,7 @@ export function useAudioMixerEngine({
   linkedUsbAudio: Record<string, string | null>;
   learningNoiseFor?: string | null;
   onNoiseFloorLearned?: (deviceId: string, floor: number) => void;
+  resolveStream?: (deviceId: string) => MediaStream | null;
 }) {
   const { getMeshStream, meshStreams } = useCloudCast();
   const { registerPgmPlaybackStream, setPgmGain } = usePgmAudio();
@@ -128,6 +130,7 @@ export function useAudioMixerEngine({
 
   const ctxRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
+  const masterAnalyserRef = useRef<AnalyserNode | null>(null);
   const monitorGainRef = useRef<GainNode | null>(null);
   const broadcastDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const chainsRef = useRef<Map<string, ChannelChain>>(new Map());
@@ -234,14 +237,19 @@ export function useAudioMixerEngine({
     if (masterGainRef.current) return ctx;
 
     const master = ctx.createGain();
+    const masterMeter = ctx.createAnalyser();
+    masterMeter.fftSize = 2048;
+    masterMeter.smoothingTimeConstant = 0.72;
     const monitor = ctx.createGain();
     const broadcastDest = ctx.createMediaStreamDestination();
 
-    master.connect(broadcastDest);
-    master.connect(ctx.destination);
+    master.connect(masterMeter);
+    masterMeter.connect(broadcastDest);
+    masterMeter.connect(ctx.destination);
     monitor.connect(ctx.destination);
 
     masterGainRef.current = master;
+    masterAnalyserRef.current = masterMeter;
     monitorGainRef.current = monitor;
     broadcastDestRef.current = broadcastDest;
 
@@ -258,6 +266,11 @@ export function useAudioMixerEngine({
     return ctx;
   }, [ensureCtx, registerPgmPlaybackStream, wireFx]);
 
+  const readStream = useCallback(
+    (deviceId: string) => resolveStream?.(deviceId) ?? getMeshStream(deviceId),
+    [getMeshStream, resolveStream],
+  );
+
   const wireChannel = useCallback(
     async (device: Device) => {
       const ctx = await ensureMaster();
@@ -266,7 +279,7 @@ export function useAudioMixerEngine({
         getAudioSourceForDevice,
         linkedUsbAudio,
       );
-      const stream = getMeshStream(streamDeviceId);
+      const stream = readStream(streamDeviceId);
       if (!stream || !hasUsableAudio(stream)) return;
 
       const wireKey = streamWireKey(stream);
@@ -372,7 +385,7 @@ export function useAudioMixerEngine({
       });
       channelAnalysersRef.current.set(device.deviceId, meterAnalyser);
     },
-    [ensureMaster, getAudioSourceForDevice, getMeshStream, linkedUsbAudio, teardownChain],
+    [ensureMaster, getAudioSourceForDevice, linkedUsbAudio, readStream, teardownChain],
   );
 
   const updateGains = useCallback(() => {
@@ -380,7 +393,9 @@ export function useAudioMixerEngine({
     const monitor = monitorGainRef.current;
     if (!master || !monitor) return;
 
-    const masterLevel = state.masterMuted ? 0 : state.masterVolume / 100;
+    const masterLevel = !state.consoleEnabled || state.masterMuted
+      ? 0
+      : state.masterVolume / 100;
     master.gain.value = masterLevel;
     setPgmGain(masterLevel);
 
@@ -476,7 +491,7 @@ export function useAudioMixerEngine({
       monitorChainRef.current = null;
     }
 
-    if (monitorDeviceId && !state.monitorMuted) {
+    if (monitorDeviceId && !state.monitorMuted && state.consoleEnabled) {
       const chain = chainsRef.current.get(monitorDeviceId);
       if (chain) {
         if (!monitorChainRef.current) {
@@ -607,6 +622,7 @@ export function useAudioMixerEngine({
     () => ({
       getChannelAnalyser: (deviceId: string) => channelAnalysersRef.current.get(deviceId) ?? null,
       getMixBusAnalyser: (bus: 1 | 2 | 3 | 4) => mixBusesRef.current[bus]?.analyser ?? null,
+      getMasterAnalyser: () => masterAnalyserRef.current,
       getPgmStream: () => broadcastDestRef.current?.stream ?? null,
     }),
     [],

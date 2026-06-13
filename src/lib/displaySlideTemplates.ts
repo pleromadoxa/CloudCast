@@ -1,0 +1,178 @@
+import { createDefaultBackground } from '../types/displayFeed';
+import type { DisplaySlideTemplate } from './displaySlideTemplatesCatalog';
+
+export type { DisplaySlideTemplate };
+
+export const DISPLAY_SLIDE_TEMPLATES: DisplaySlideTemplate[] = [
+  {
+    id: 'welcome',
+    name: 'Welcome',
+    category: 'worship',
+    description: 'Warm greeting for service start',
+    type: 'announcement',
+    background: { kind: 'preset', presetId: 'worship-deep-blue', overlayOpacity: 35 },
+    build: () => ({
+      title: 'Welcome',
+      type: 'announcement',
+      background: { kind: 'preset', presetId: 'worship-deep-blue', overlayOpacity: 35 },
+      fields: [
+        { id: 'f0', label: 'Title', value: 'Welcome', visible: true, size: '2xl', align: 'center' },
+        { id: 'f1', label: 'Subtitle', value: "We're glad you're here", visible: true, size: 'lg', align: 'center' },
+        { id: 'f2', label: 'Body', value: 'Please silence your mobile devices', visible: true, size: 'md', align: 'center', color: '#94a3b8' },
+        { id: 'f3', label: 'Footer', value: '', visible: false, size: 'sm', align: 'center' },
+      ],
+    }),
+  },
+  {
+    id: 'offering',
+    name: 'Offering',
+    category: 'worship',
+    description: 'Giving / tithe moment',
+    type: 'announcement',
+    background: { kind: 'preset', presetId: 'worship-golden-hour', overlayOpacity: 40 },
+    build: () => ({
+      title: 'Offering',
+      type: 'announcement',
+      background: { kind: 'preset', presetId: 'worship-golden-hour', overlayOpacity: 40 },
+      fields: [
+        { id: 'f0', label: 'Title', value: 'Offering', visible: true, size: '2xl', align: 'center' },
+        { id: 'f1', label: 'Subtitle', value: 'Give cheerfully', visible: true, size: 'lg', align: 'center' },
+        { id: 'f2', label: 'Body', value: '2 Corinthians 9:7', visible: true, size: 'md', align: 'center', color: '#fcd34d' },
+        { id: 'f3', label: 'Footer', value: '', visible: false, size: 'sm', align: 'center' },
+      ],
+    }),
+  },
+  {
+    id: 'communion',
+    name: 'Communion',
+    category: 'worship',
+    description: "Lord's Supper",
+    type: 'announcement',
+    background: { kind: 'preset', presetId: 'worship-purple-glow', overlayOpacity: 45 },
+    build: () => ({
+      title: 'Communion',
+      type: 'announcement',
+      background: { kind: 'preset', presetId: 'worship-purple-glow', overlayOpacity: 45 },
+      fields: [
+        { id: 'f0', label: 'Title', value: 'Communion', visible: true, size: '2xl', align: 'center' },
+        { id: 'f1', label: 'Subtitle', value: 'Remember His sacrifice', visible: true, size: 'lg', align: 'center' },
+        { id: 'f2', label: 'Body', value: '1 Corinthians 11:23-26', visible: true, size: 'md', align: 'center' },
+        { id: 'f3', label: 'Footer', value: '', visible: false, size: 'sm', align: 'center' },
+      ],
+    }),
+  },
+  {
+    id: 'prayer',
+    name: 'Prayer',
+    category: 'worship',
+    description: 'Moment of prayer',
+    type: 'announcement',
+    background: { kind: 'preset', presetId: 'worship-emerald', overlayOpacity: 40 },
+    build: () => ({
+      title: 'Prayer',
+      type: 'announcement',
+      background: { kind: 'preset', presetId: 'worship-emerald', overlayOpacity: 40 },
+      fields: [
+        { id: 'f0', label: 'Title', value: 'Let Us Pray', visible: true, size: '2xl', align: 'center' },
+        { id: 'f1', label: 'Subtitle', value: '', visible: false, size: 'lg', align: 'center' },
+        { id: 'f2', label: 'Body', value: 'Please bow your heads', visible: true, size: 'lg', align: 'center' },
+        { id: 'f3', label: 'Footer', value: '', visible: false, size: 'sm', align: 'center' },
+      ],
+    }),
+  },
+  {
+    id: 'announcement',
+    name: 'Announcement',
+    category: 'announcement',
+    description: 'General church announcement',
+    type: 'announcement',
+    background: { kind: 'preset', presetId: 'modern-slate', overlayOpacity: 30 },
+    build: () => ({
+      title: 'Announcement',
+      type: 'announcement',
+      background: { kind: 'preset', presetId: 'modern-slate', overlayOpacity: 30 },
+      fields: [
+        { id: 'f0', label: 'Title', value: 'Announcements', visible: true, size: 'xl', align: 'center' },
+        { id: 'f1', label: 'Subtitle', value: '', visible: false, size: 'lg', align: 'center' },
+        { id: 'f2', label: 'Body', value: 'Add your announcement here…', visible: true, size: 'md', align: 'center' },
+        { id: 'f3', label: 'Footer', value: '', visible: false, size: 'sm', align: 'center' },
+      ],
+    }),
+  },
+  {
+    id: 'lyrics',
+    name: 'Song Lyrics',
+    category: 'worship',
+    description: 'Worship song with verse / chorus',
+    type: 'lyrics',
+    background: { kind: 'preset', presetId: 'gradient-aurora', overlayOpacity: 35 },
+    build: () => ({
+      title: 'Song Title',
+      type: 'lyrics',
+      background: { kind: 'preset', presetId: 'gradient-aurora', overlayOpacity: 35 },
+      fields: [
+        { id: 'f0', label: 'Title', value: 'Song Title', visible: true, size: 'xl', align: 'center' },
+        { id: 'f1', label: 'Subtitle', value: 'Verse 1', visible: true, size: 'sm', align: 'center', color: '#a78bfa' },
+        { id: 'f2', label: 'Body', value: 'Line one\nLine two\nLine three', visible: true, size: 'lg', align: 'center' },
+        { id: 'f3', label: 'Footer', value: '', visible: false, size: 'sm', align: 'center' },
+      ],
+    }),
+  },
+  {
+    id: 'scripture-full',
+    name: 'Scripture Full',
+    category: 'worship',
+    description: 'Full-screen scripture layout',
+    type: 'scripture',
+    background: { kind: 'preset', presetId: 'solid-black', overlayOpacity: 0 },
+    build: () => ({
+      title: 'Scripture',
+      type: 'scripture',
+      background: { kind: 'preset', presetId: 'solid-black', overlayOpacity: 0 },
+      fields: [
+        { id: 'f0', label: 'Reference', value: 'John 3:16', visible: true, size: 'lg', align: 'center', color: '#94a3b8' },
+        { id: 'f1', label: 'Scripture', value: 'For God so loved the world…', visible: true, size: 'xl', align: 'center' },
+        { id: 'f2', label: 'Translation', value: 'WEB', visible: true, size: 'sm', align: 'center', color: '#64748b' },
+        { id: 'f3', label: 'Footer', value: '', visible: false, size: 'sm', align: 'center' },
+      ],
+      scripture: { reference: 'John 3:16', text: 'For God so loved the world…', translation: 'WEB' },
+    }),
+  },
+  {
+    id: 'countdown',
+    name: 'Starting Soon',
+    category: 'announcement',
+    description: 'Pre-service hold screen',
+    type: 'announcement',
+    background: { kind: 'preset', presetId: 'gradient-broadcast', overlayOpacity: 20 },
+    build: () => ({
+      title: 'Starting Soon',
+      type: 'announcement',
+      background: { kind: 'preset', presetId: 'gradient-broadcast', overlayOpacity: 20 },
+      fields: [
+        { id: 'f0', label: 'Title', value: 'Starting Soon', visible: true, size: '2xl', align: 'center' },
+        { id: 'f1', label: 'Subtitle', value: 'Service begins shortly', visible: true, size: 'lg', align: 'center' },
+        { id: 'f2', label: 'Body', value: '', visible: false, size: 'md', align: 'center' },
+        { id: 'f3', label: 'Footer', value: '', visible: false, size: 'sm', align: 'center' },
+      ],
+    }),
+  },
+  {
+    id: 'blank',
+    name: 'Blank',
+    category: 'blank',
+    description: 'Empty slide with default background',
+    type: 'blank',
+    build: () => ({
+      title: 'Blank',
+      type: 'blank',
+      background: createDefaultBackground(),
+      fields: [
+        { id: 'f0', label: 'Title', value: '', visible: false, size: 'xl', align: 'center' },
+        { id: 'f1', label: 'Subtitle', value: '', visible: false, size: 'lg', align: 'center' },
+        { id: 'f2', label: 'Body', value: '', visible: false, size: 'md', align: 'center' },
+        { id: 'f3', label: 'Footer', value: '', visible: false, size: 'sm', align: 'center' },
+      ],
+    }),
+  },
+];

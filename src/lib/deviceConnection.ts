@@ -7,12 +7,24 @@ export const DEVICE_STATUS_SWEEP_MS = 5_000;
 /** Paired on channel but no mesh/PC connected for this long → offline + re-offer. */
 export const DEVICE_CONNECTING_TIMEOUT_MS = 40_000;
 
+export type VideoTransport = 'mesh' | 'cloud';
+
 export interface DeviceReconcileContext {
   presenceOnline: boolean;
   hasMeshStream: boolean;
   peerState?: RTCPeerConnectionState;
   connectingSinceMs?: number | null;
   nowMs?: number;
+  /** Regal Cloud video uses WHEP playback — not the mesh stream map. */
+  videoTransport?: VideoTransport;
+}
+
+/** Device publishes through Regal Cloud (WHEP), not mesh video. */
+export function deviceHasCloudPlayback(
+  device: Device,
+  videoTransport?: VideoTransport,
+): boolean {
+  return videoTransport === 'cloud' || Boolean(device.whepUrl?.trim());
 }
 
 export interface DevicePresenceMeta {
@@ -51,8 +63,15 @@ export function deriveStatusFromConnection(
   presenceOnline: boolean,
   peerState?: RTCPeerConnectionState,
 ): DeviceStatus {
-  if (hasStream || peerState === 'connected') return 'live';
-  if (presenceOnline || peerState === 'connecting' || peerState === 'new') return 'connecting';
+  if (hasStream) return 'live';
+  if (
+    presenceOnline ||
+    peerState === 'connecting' ||
+    peerState === 'new' ||
+    peerState === 'connected'
+  ) {
+    return 'connecting';
+  }
   return 'offline';
 }
 
@@ -71,6 +90,13 @@ export function isMeshStreamPresent(stream: MediaStream | null | undefined): boo
 
 export function isActiveDeviceStatus(status: DeviceStatus): boolean {
   return status === 'live' || status === 'connecting';
+}
+
+/** Paired on the session channel and acknowledged — waiting for Go Live / first frame. */
+export function isDeviceLinkedOnSession(device: Device): boolean {
+  if (device.status === 'live') return true;
+  if (device.status !== 'connecting') return false;
+  return Boolean(device.isOnline || device.connectionState === 'connected');
 }
 
 export function isDeviceHeartbeatStale(
@@ -98,12 +124,33 @@ export function reconcileDeviceConnectivity(
   const nowMs = context.nowMs ?? Date.now();
   const now = new Date(nowMs).toISOString();
   const meshActive = context.hasMeshStream;
-  const { presenceOnline, peerState, connectingSinceMs } = context;
+  const { presenceOnline, peerState, connectingSinceMs, videoTransport } = context;
+  const cloudPlayback = deviceHasCloudPlayback(device, videoTransport);
 
-  if (meshActive || peerState === 'connected') {
+  if (meshActive) {
     return {
       ...device,
       status: 'live',
+      isOnline: true,
+      connectionState: 'connected',
+      lastSeenAt: now,
+    };
+  }
+
+  if (cloudPlayback && device.status === 'live') {
+    return {
+      ...device,
+      status: 'live',
+      isOnline: presenceOnline || device.isOnline,
+      connectionState: 'connected',
+      lastSeenAt: now,
+    };
+  }
+
+  if (peerState === 'connected') {
+    return {
+      ...device,
+      status: 'connecting',
       isOnline: true,
       connectionState: 'connected',
       lastSeenAt: now,
@@ -142,7 +189,13 @@ export function reconcileDeviceConnectivity(
     since > 0 &&
     nowMs - since > DEVICE_CONNECTING_TIMEOUT_MS;
 
-  if (heartbeatStale || connectingTimedOut || (device.status === 'live' && !meshActive)) {
+  const staleLiveWithoutFeed =
+    device.status === 'live' &&
+    !meshActive &&
+    !cloudPlayback &&
+    !presenceOnline;
+
+  if (heartbeatStale || connectingTimedOut || staleLiveWithoutFeed) {
     return {
       ...device,
       status: 'offline',

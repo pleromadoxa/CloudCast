@@ -9,6 +9,8 @@ interface LayerStackGridProps {
   chromaLocked?: boolean;
   advancedLocked?: boolean;
   compact?: boolean;
+  /** Tighter columns when the layers column shares space with other mixer panels. */
+  dense?: boolean;
   onSelect: (id: LayerStackId) => void;
   onTogglePreview: (id: LayerStackId, on: boolean) => void;
   onToggleLive: (id: LayerStackId, live: boolean) => void;
@@ -36,6 +38,7 @@ export function LayerStackGrid({
   chromaLocked,
   advancedLocked = false,
   compact = false,
+  dense = false,
   onSelect,
   onTogglePreview,
   onToggleLive,
@@ -72,8 +75,13 @@ export function LayerStackGrid({
   );
 
   return (
-    <div className={cn('layer-stack-grid', !compact && 'flex min-h-0 flex-1 flex-col')}>
-      <div className={cn('layer-stack-header', GRID_COLS)} role="row">
+    <div
+      className={cn(
+        'layer-stack-grid flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
+        dense && 'layer-stack-grid--dense',
+      )}
+    >
+      <div className={cn('layer-stack-header shrink-0', GRID_COLS)} role="row">
         <span />
         <span>Z</span>
         <span>Layer</span>
@@ -83,7 +91,7 @@ export function LayerStackGrid({
         <span />
       </div>
 
-      <div ref={bodyRef} className={cn('layer-stack-body', compact && 'layer-stack-body-compact')}>
+      <div ref={bodyRef} className={cn('layer-stack-body min-h-0 flex-1 overflow-y-auto', compact && 'layer-stack-body-compact')}>
         {items.map((item, rowIndex) => {
           const selected = selectedId === item.id;
           const isAdvancedLayer =
@@ -152,7 +160,7 @@ export function LayerStackGrid({
                 onClick={() => onSelect(item.id)}
               >
                 <span className="truncate font-semibold">{item.label}</span>
-                {item.sublabel && (
+                {item.sublabel && !dense && (
                   <span className="truncate text-mixer-muted">{item.sublabel}</span>
                 )}
               </button>

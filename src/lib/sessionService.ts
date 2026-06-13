@@ -36,20 +36,9 @@ export async function getOrCreateOwnerSession(): Promise<MixerSession> {
   return mapSession(data as Record<string, unknown>);
 }
 
-/** Separate audio mixer session (product_type = audio). */
+/** @deprecated Audio mixer uses the shared owner session — same access code as Video Mixer. */
 export async function getOrCreateAudioOwnerSession(): Promise<MixerSession> {
-  const { data, error } = await getSupabase().rpc('get_or_create_audio_owner_session');
-  if (error) {
-    throw new Error(
-      error.message.includes('does not exist')
-        ? 'Audio mixer session is not available yet. Apply the latest database migrations.'
-        : error.message,
-    );
-  }
-  if (!data) {
-    throw new Error('Failed to create audio mixer session.');
-  }
-  return mapSession(data as Record<string, unknown>);
+  return getOrCreateOwnerSession();
 }
 
 export async function linkVideoToAudioBridge(

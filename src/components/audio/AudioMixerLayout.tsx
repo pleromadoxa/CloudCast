@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { LayoutGrid, LogOut, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useProduction } from '../../context/ProductionContext';
 import { reconnectWhepPoolDevice } from '../../lib/whepStreamPool';
 import { useCloudCast } from '../../context/CloudCastContext';
 import { AccessCodePanel } from '../session/AccessCodePanel';
@@ -11,19 +12,31 @@ import { resolveProductPlan, canLinkAudioVideoMixers } from '../../lib/productEn
 import { useAudioConsoleState } from '../../hooks/useAudioConsoleState';
 import { useAudioMixerEngine } from '../../hooks/useAudioMixerEngine';
 import { useAudioConsoleShortcuts } from '../../hooks/useAudioConsoleShortcuts';
+import { useLocalHostAudioInputs } from '../../hooks/useLocalHostAudioInputs';
 import { updateDeviceAudioSettings } from '../../lib/streamingService';
 import { StudioLiveConsole } from './StudioLiveConsole';
 import { AudioUnlockBanner } from './AudioUnlockBanner';
 import { VideoBridgePanel } from './VideoBridgePanel';
 import { AudioMixerEngineProvider } from '../../context/AudioMixerEngineContext';
+import { AudioStreamResolverProvider } from '../../context/AudioStreamResolverContext';
 import { usePgmBridgePublisher } from '../../lib/pgmBridgeTransport';
 import { AUDIO_MIXER_MAX_CHANNELS } from '../../config/products';
 import { createEmptyAudioSlot, isRealDevice } from '../../types/device';
 import type { AudioInputSource } from '../../types/audio';
+import { ProgramPresetToolbar } from '../presets/ProgramPresetToolbar';
+import { cn } from '../../lib/utils';
+import { PRODUCTION_OFFSCREEN_STYLE, productionShellClass } from '../../lib/productionShell';
 
-export function AudioMixerLayout() {
+interface AudioMixerLayoutProps {
+  /** Off-screen render while the audio engine stays alive on another route */
+  hidden?: boolean;
+}
+
+export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
   const { profile, signOut } = useAuth();
-  const { session, sessionLoading, devices, regenerateCode, isRegenerating, reconnect } = useCloudCast();
+  const { setAudioConsoleActive } = useProduction();
+  const { session, sessionLoading, devices, regenerateCode, isRegenerating, reconnect, error, getMeshStream } =
+    useCloudCast();
   const planId = resolveProductPlan(profile, 'audio_mixer');
   const canBridge = canLinkAudioVideoMixers(profile);
   const [bridgeCode, setBridgeCode] = useState<string | null>(null);
@@ -46,6 +59,8 @@ export function AudioMixerLayout() {
     onSetMonitorVolume,
     onToggleMasterMute,
     onToggleMonitorMute,
+    onToggleConsoleEnabled,
+    onTogglePeakHold,
     onSetFatParam,
     onToggleHpfBypass,
     onPatchNoiseCancel,
@@ -60,13 +75,32 @@ export function AudioMixerLayout() {
     onRecallScene,
   } = useAudioConsoleState(devices);
 
+  const maxHostUsbInputs = session?.maxUsbDevices ?? 2;
+  const hostUsb = useLocalHostAudioInputs(maxHostUsbInputs);
+
+  const mergedDevices = useMemo(() => {
+    const paired = devices.filter(isRealDevice);
+    const withHost = [...paired, ...hostUsb.localDevices];
+    const padded = [...withHost];
+    while (padded.length < AUDIO_MIXER_MAX_CHANNELS) {
+      padded.push(createEmptyAudioSlot(padded.length + 1));
+    }
+    return padded.slice(0, AUDIO_MIXER_MAX_CHANNELS);
+  }, [devices, hostUsb.localDevices]);
+
+  const resolveAudioStream = useCallback(
+    (deviceId: string) => hostUsb.localStreams.get(deviceId) ?? getMeshStream(deviceId),
+    [getMeshStream, hostUsb.localStreams],
+  );
+
   const { meters } = useAudioMixerEngine({
-    devices,
+    devices: mergedDevices,
     state,
     getAudioSourceForDevice,
     linkedUsbAudio: linkedUsb,
     learningNoiseFor,
     onNoiseFloorLearned,
+    resolveStream: resolveAudioStream,
   });
 
   usePgmBridgePublisher({
@@ -76,15 +110,8 @@ export function AudioMixerLayout() {
   });
 
   const channelDeviceIds = useMemo(() => {
-    const real = devices.filter(isRealDevice);
-    const padded = [...real];
-    while (padded.length < AUDIO_MIXER_MAX_CHANNELS) {
-      padded.push(createEmptyAudioSlot(padded.length + 1));
-    }
-    return padded.slice(0, AUDIO_MIXER_MAX_CHANNELS).map((d) =>
-      isRealDevice(d) ? d.deviceId : '',
-    );
-  }, [devices]);
+    return mergedDevices.map((d) => (isRealDevice(d) ? d.deviceId : ''));
+  }, [mergedDevices]);
 
   const persistSource = useCallback(
     async (deviceId: string, source: AudioInputSource, linkedId: string | null) => {
@@ -125,6 +152,11 @@ export function AudioMixerLayout() {
   });
 
   useEffect(() => {
+    setAudioConsoleActive(true);
+    return () => setAudioConsoleActive(false);
+  }, [setAudioConsoleActive]);
+
+  useEffect(() => {
     hydrateFromDevices(devices);
   }, [devices, hydrateFromDevices]);
 
@@ -140,8 +172,16 @@ export function AudioMixerLayout() {
   }, [devices, reconnect]);
 
   return (
+    <AudioStreamResolverProvider resolveStream={resolveAudioStream}>
     <AudioMixerEngineProvider value={meters}>
-    <div className="audio-mixer-shell flex h-full min-h-0 flex-col overflow-hidden">
+    <div
+      className={cn(
+        productionShellClass(hidden, 'audio-mixer-shell flex h-full min-h-0 flex-col overflow-hidden'),
+      )}
+      style={hidden ? PRODUCTION_OFFSCREEN_STYLE : undefined}
+      aria-hidden={hidden}
+    >
+      {!hidden && (
       <header className="audio-mixer-header flex shrink-0 items-center justify-between gap-2 border-b border-sky-500/20 px-3 py-2 sm:px-4">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <CloudCastLogo variant={CLOUDCAST_NAV_LOGO.variant} className={CLOUDCAST_NAV_LOGO.className} />
@@ -160,16 +200,21 @@ export function AudioMixerLayout() {
           isLoading={sessionLoading}
           onRegenerate={regenerateCode}
           isRegenerating={isRegenerating}
-          className="hidden min-w-0 sm:flex"
+          product="audio"
+          error={error}
+          onRetry={reconnect}
+          className="min-w-0 flex"
         />
         <VideoBridgePanel
           mode="audio"
           sessionId={session?.sessionId}
           accessCode={session?.accessCode}
           realtimeChannel={session?.realtimeChannel}
+          sessionLoading={sessionLoading}
           onBridgeCodeChange={setBridgeCode}
-          className="hidden lg:flex"
+          className="hidden lg:flex shrink-0"
         />
+        <ProgramPresetToolbar />
         <div className="flex shrink-0 items-center gap-2 text-[10px]">
           <Link
             to="/hub"
@@ -186,16 +231,29 @@ export function AudioMixerLayout() {
           </button>
         </div>
       </header>
+      )}
 
       <div className="min-h-0 flex-1 overflow-auto p-2 sm:p-3">
         <AudioUnlockBanner />
         <StudioLiveConsole
-          devices={devices}
+          devices={mergedDevices}
           planId={planId}
           state={state}
           scenes={scenes}
           getAudioSourceForDevice={getAudioSourceForDevice}
           linkedUsbAudio={linkedUsb}
+          hostUsb={{
+            localDevices: hostUsb.localDevices,
+            selectableDevices: hostUsb.selectableDevices,
+            deviceLabels: hostUsb.deviceLabels,
+            maxInputs: maxHostUsbInputs,
+            error: hostUsb.error,
+            scanning: hostUsb.scanning,
+            atLimit: hostUsb.atLimit,
+            onAdd: hostUsb.addInput,
+            onRemove: hostUsb.removeInput,
+            onRefresh: hostUsb.refreshDeviceList,
+          }}
           onSelectChannel={onSelectChannel}
           onSetBank={onSetBank}
           onToggleMix={onToggleMix}
@@ -206,6 +264,8 @@ export function AudioMixerLayout() {
           onSetMonitorVolume={onSetMonitorVolume}
           onToggleMasterMute={onToggleMasterMute}
           onToggleMonitorMute={onToggleMonitorMute}
+          onToggleConsoleEnabled={onToggleConsoleEnabled}
+          onTogglePeakHold={onTogglePeakHold}
           onSetFatParam={onSetFatParam}
           onToggleHpfBypass={onToggleHpfBypass}
           onPatchNoiseCancel={onPatchNoiseCancel}
@@ -223,5 +283,6 @@ export function AudioMixerLayout() {
       </div>
     </div>
     </AudioMixerEngineProvider>
+    </AudioStreamResolverProvider>
   );
 }

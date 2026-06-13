@@ -14,6 +14,10 @@ export const SIGNALING_EVENTS = {
   ACCESS_CODE_REVOKED: 'access-code-revoked',
   /** Dashboard leader regained — mobile should re-send mesh offer. */
   REQUEST_REOFFER: 'request-reoffer',
+  /** Regal Display — live congregation output sync. */
+  DISPLAY_FEED_SYNC: 'display-feed-sync',
+  /** Regal Prism Eye — phone gyro virtual camera sync. */
+  PRISM_TRACKING_SYNC: 'prism-tracking-sync',
 } as const;
 
 /** Dashboard presence key — distinguishes dashboard observers from mobile publishers. */

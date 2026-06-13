@@ -12,7 +12,7 @@ interface CloudCastLogoProps {
 }
 
 export function CloudCastLogo({
-  variant = 'dark',
+  variant = 'dark-header',
   className,
   alt = SITE_LEGAL.brandLine,
 }: CloudCastLogoProps) {

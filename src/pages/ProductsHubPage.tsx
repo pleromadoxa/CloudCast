@@ -4,14 +4,17 @@ import { useAuth } from '../context/AuthContext';
 import { CLOUDCAST_PRODUCTS } from '../config/products';
 import { MobileAppsSection } from '../components/products/MobileAppsSection';
 import { ProductCard, UniversalPlanCard } from '../components/products/ProductCard';
-import { listProductSubscriptions } from '../lib/productEntitlements';
-import { PLAN_LABELS, formatPrice } from '../types/plans';
-import { UNIVERSAL_PLAN_PRICE_CENTS } from '../config/products';
+import { ProgramPresetSelector } from '../components/presets/ProgramPresetSelector';
+import { listProductSubscriptions, isUniversalPlan, universalTierLabel } from '../lib/productEntitlements';
+import { PLAN_LABELS } from '../types/plans';
+import { useProgramPresets } from '../context/ProgramPresetContext';
 
 export function ProductsHubPage() {
   const { profile, signOut } = useAuth();
+  const { activePreset } = useProgramPresets();
   const subscriptions = listProductSubscriptions(profile);
-  const isUniversal = profile?.plan_id === 'universal' || profile?.entitlements?.universal;
+  const isUniversal = profile ? isUniversalPlan(profile.plan_id) || profile.entitlements?.universal : false;
+  const universalLabel = profile ? universalTierLabel(profile.plan_id) : 'Universal';
 
   return (
     <main className="min-h-[calc(100vh-8rem)] px-6 py-10">
@@ -43,6 +46,16 @@ export function ProductsHubPage() {
           </div>
         </div>
 
+        <section className="mt-8">
+          <ProgramPresetSelector variant="embedded" />
+        </section>
+
+        {!activePreset && (
+          <p className="mt-3 text-center text-xs text-amber-400/90">
+            Select or create a program preset above before opening a product dashboard.
+          </p>
+        )}
+
         <section className="mt-8 rounded-xl border border-white/10 bg-mixer-panel p-5">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-mixer-muted">
             <Sparkles className="h-4 w-4 text-mixer-red" />
@@ -51,9 +64,9 @@ export function ProductsHubPage() {
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             {isUniversal ? (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 sm:col-span-3">
-                <p className="text-sm font-bold text-amber-200">CloudCast Universal</p>
+                <p className="text-sm font-bold text-amber-200">{universalLabel}</p>
                 <p className="mt-1 text-xs text-mixer-muted">
-                  {formatPrice(UNIVERSAL_PLAN_PRICE_CENTS)} · Video + Audio · Pro Master on all products
+                  All six products · audio ↔ video bridge included
                 </p>
               </div>
             ) : (

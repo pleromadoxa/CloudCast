@@ -3,6 +3,8 @@ import { useState } from 'react';
 import type { MixerSession } from '../../types/session';
 import { PLAN_LABELS } from '../../types/plans';
 import { connectionModeShort, resolveDeviceLimit } from '../../lib/branding';
+import { audioChannelsForPlan } from '../../config/products';
+import type { SessionProduct } from '../../lib/sessionStorage';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '../../lib/utils';
 import { copyToClipboard } from '../../lib/sessionStorage';
@@ -12,6 +14,9 @@ interface AccessCodePanelProps {
   isLoading: boolean;
   onRegenerate: () => void;
   isRegenerating: boolean;
+  product?: SessionProduct;
+  error?: string | null;
+  onRetry?: () => void;
   className?: string;
 }
 
@@ -20,11 +25,17 @@ export function AccessCodePanel({
   isLoading,
   onRegenerate,
   isRegenerating,
+  product = 'video',
+  error = null,
+  onRetry,
   className,
 }: AccessCodePanelProps) {
   const { profile } = useAuth();
   const [copied, setCopied] = useState(false);
-  const deviceLimit = resolveDeviceLimit(session, profile);
+  const deviceLimit =
+    product === 'audio' && session
+      ? audioChannelsForPlan(session.planId)
+      : resolveDeviceLimit(session, profile);
 
   const handleCopy = async () => {
     if (!session?.accessCode) return;
@@ -35,11 +46,24 @@ export function AccessCodePanel({
     }
   };
 
-  if (isLoading || !session) {
+  if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-[10px] text-mixer-muted">
         <RefreshCw className="h-3 w-3 animate-spin" />
         Initializing session…
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-[10px]">
+        <span className="text-mixer-red">{error ?? 'Session unavailable'}</span>
+        {onRetry && (
+          <button type="button" onClick={onRetry} className="mixer-btn px-2 py-0.5 text-[10px]">
+            RETRY
+          </button>
+        )}
       </div>
     );
   }
@@ -74,7 +98,11 @@ export function AccessCodePanel({
 
       <span className="access-code-meta hidden text-[10px] text-mixer-muted lg:inline">
         <span className="font-bold text-mixer-text">{session.deviceCount}</span>
-        /{deviceLimit} paired · {PLAN_LABELS[session.planId]} · {connectionModeShort(session.connectionMode)}
+        /{deviceLimit} paired · {PLAN_LABELS[session.planId]} ·{' '}
+        {product === 'audio' ? 'MESH' : connectionModeShort(session.connectionMode)}
+        {product === 'audio' && (
+          <span className="ml-1 text-sky-300/80">· shared w/ Video</span>
+        )}
       </span>
 
       <button

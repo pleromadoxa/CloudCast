@@ -1,5 +1,8 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { DisplayFeedProvider } from './context/DisplayFeedContext';
+import { PrismFeedProvider } from './context/PrismFeedContext';
+import { ProgramPresetProvider } from './context/ProgramPresetContext';
 import { NetworkProvider } from './context/NetworkContext';
 import { ProductionProvider } from './context/ProductionContext';
 import { MarketingLayout } from './components/marketing/MarketingLayout';
@@ -10,13 +13,20 @@ import { OnAirBanner } from './components/production/OnAirBanner';
 import { LandingPage } from './pages/LandingPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { ProductGuidePage } from './pages/ProductGuidePage';
+import { ProductLandingPage } from './pages/ProductLandingPage';
+import { SolutionsPage } from './pages/SolutionsPage';
 import { ProductsHubPage } from './pages/ProductsHubPage';
 import { AuthPage } from './pages/AuthPage';
 import { PricingPage } from './pages/PricingPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AudioMixerDashboardPage } from './pages/AudioMixerDashboardPage';
 import { ReplayDashboardPage } from './pages/ReplayDashboardPage';
+import { DisplayDashboardPage } from './pages/DisplayDashboardPage';
+import { DisplayCongregationPage } from './pages/DisplayCongregationPage';
+import { MixerOutputPage } from './pages/MixerOutputPage';
 import { SymphonyDashboardPage } from './pages/SymphonyDashboardPage';
+import { PrismDashboardPage } from './pages/PrismDashboardPage';
+import { PrismEyePage } from './pages/PrismEyePage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AdminPage } from './pages/AdminPage';
 import { AdminRoute } from './components/auth/AdminRoute';
@@ -30,21 +40,28 @@ import { SecurityPage } from './pages/legal/SecurityPage';
 import { SlaPage } from './pages/legal/SlaPage';
 import { SubprocessorsPage } from './pages/legal/SubprocessorsPage';
 import { TermsPage } from './pages/legal/TermsPage';
+import { RouteSEO } from './components/seo/RouteSEO';
 
 export default function App() {
   return (
     <NetworkProvider>
       <AuthProvider>
+        <DisplayFeedProvider>
+        <PrismFeedProvider>
+        <ProgramPresetProvider>
         <ProductionProvider>
           <SupabaseHeartbeat />
           <BrowserRouter>
+          <RouteSEO />
           <ProductionHost />
           <OnAirBanner />
           <Routes>
             <Route element={<MarketingLayout />}>
               <Route index element={<LandingPage />} />
-              <Route path="products" element={<ProductsPage />} />
               <Route path="products/guide" element={<ProductGuidePage />} />
+              <Route path="products/:slug" element={<ProductLandingPage />} />
+              <Route path="products" element={<ProductsPage />} />
+              <Route path="for/:slug" element={<SolutionsPage />} />
               <Route path="pricing" element={<PricingPage />} />
               <Route
                 path="hub"
@@ -81,6 +98,9 @@ export default function App() {
               <Route path="legal/subprocessors" element={<SubprocessorsPage />} />
             </Route>
             <Route path="login" element={<AuthPage />} />
+            <Route path="display/view" element={<DisplayCongregationPage />} />
+            <Route path="dashboard/output" element={<MixerOutputPage />} />
+            <Route path="prism/eye" element={<PrismEyePage />} />
             <Route
               path="audio"
               element={
@@ -102,11 +122,31 @@ export default function App() {
               }
             />
             <Route
+              path="display"
+              element={
+                <ProtectedRoute>
+                  <ProductGate product="regal_display">
+                    <DisplayDashboardPage />
+                  </ProductGate>
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="symphony"
               element={
                 <ProtectedRoute>
                   <ProductGate product="symphony_studio">
                     <SymphonyDashboardPage />
+                  </ProductGate>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="prism"
+              element={
+                <ProtectedRoute>
+                  <ProductGate product="regal_prism">
+                    <PrismDashboardPage />
                   </ProductGate>
                 </ProtectedRoute>
               }
@@ -125,6 +165,9 @@ export default function App() {
           </Routes>
           </BrowserRouter>
         </ProductionProvider>
+        </ProgramPresetProvider>
+        </PrismFeedProvider>
+        </DisplayFeedProvider>
       </AuthProvider>
     </NetworkProvider>
   );

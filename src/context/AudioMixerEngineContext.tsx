@@ -3,6 +3,7 @@ import { createContext, useContext, type ReactNode } from 'react';
 export type AudioMixerMeterAPI = {
   getChannelAnalyser: (deviceId: string) => AnalyserNode | null;
   getMixBusAnalyser: (bus: 1 | 2 | 3 | 4) => AnalyserNode | null;
+  getMasterAnalyser: () => AnalyserNode | null;
   getPgmStream: () => MediaStream | null;
 };
 

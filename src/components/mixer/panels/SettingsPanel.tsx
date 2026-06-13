@@ -1,4 +1,6 @@
-import { Maximize2, MonitorUp } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
+import { Check, Copy, ExternalLink, Maximize2, MonitorUp } from 'lucide-react';
+import { buildMixerOutputUrl } from '../../../lib/pgmOutputSync';
 import type { VideoAspectRatio } from '../../../types/mixer';
 import type { OverlayType, StreamQuality } from '../../../types/device';
 import type { LayerSettings } from '../../../types/mixer';
@@ -30,6 +32,7 @@ interface SettingsPanelProps {
   layers: LayerSettings;
   onSetGlobalOverlay: (overlay: OverlayType) => void;
   onPatchLayers: (partial: Partial<LayerSettings>) => void;
+  accessCode?: string;
 }
 
 const ratios: VideoAspectRatio[] = ['16:9', '9:16', '4:3', '1:1'];
@@ -67,8 +70,31 @@ export function SettingsPanel({
   layers,
   onSetGlobalOverlay,
   onPatchLayers,
+  accessCode,
   compact = false,
 }: SettingsPanelProps & { compact?: boolean }) {
+  const [copiedUrl, setCopiedUrl] = useState(false);
+
+  const programOutputUrl = useMemo(
+    () => (accessCode ? buildMixerOutputUrl(accessCode) : ''),
+    [accessCode],
+  );
+
+  const copyProgramOutputUrl = useCallback(async () => {
+    if (!programOutputUrl) return;
+    try {
+      await navigator.clipboard.writeText(programOutputUrl);
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2000);
+    } catch {
+      /* ignore */
+    }
+  }, [programOutputUrl]);
+
+  const openProgramOutputWindow = useCallback(() => {
+    if (!programOutputUrl) return;
+    window.open(programOutputUrl, 'cloudcast-mixer-output', 'noopener,noreferrer,width=1280,height=720');
+  }, [programOutputUrl]);
   const handleMonitorTool = (overlay: OverlayType) => {
     onSetGlobalOverlay(overlay);
     if (overlay === 'crosshair') {
@@ -217,6 +243,36 @@ export function SettingsPanel({
               Recording is on the Video Out column (right). Cloud upload requires Pro or Pro Master.
             </FeatureHint>
           </div>
+          {programOutputUrl && (
+            <div className="mt-3 rounded border border-emerald-500/25 bg-emerald-950/20 p-2.5">
+              <p className="text-[10px] font-bold tracking-wider text-emerald-300">PROGRAM OUTPUT URL</p>
+              <p className="mt-1 text-[9px] leading-snug text-mixer-muted">
+                Open on a projector PC, tablet, or TV — mirrors PGM exactly (sources, graphics, Display Feed, and audio).
+                Works before ON AIR or RTMP streaming. No operator controls.
+              </p>
+              <code className="mt-2 block truncate rounded bg-black/40 px-2 py-1.5 text-[9px] text-emerald-200">
+                {programOutputUrl}
+              </code>
+              <div className="mt-2 flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  onClick={() => void copyProgramOutputUrl()}
+                  className="inline-flex items-center gap-1 rounded border border-white/15 px-2 py-1 text-[9px] font-bold hover:border-emerald-500/40"
+                >
+                  {copiedUrl ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                  {copiedUrl ? 'COPIED' : 'COPY URL'}
+                </button>
+                <button
+                  type="button"
+                  onClick={openProgramOutputWindow}
+                  className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-600/20 px-2 py-1 text-[9px] font-bold text-emerald-100 hover:bg-emerald-600/40"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  OPEN OUTPUT
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       </div>
 

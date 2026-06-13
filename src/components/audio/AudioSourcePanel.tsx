@@ -95,6 +95,12 @@ export function AudioSourcePanel({
               </option>
             ))}
           </select>
+          {usbDevices.length === 0 && (
+            <p className="studiolive-source-panel__hint">
+              No paired USB devices yet — add one from the USB Audio Inputs panel above, or pair from
+              CloudCast Mobile with device type USB Audio.
+            </p>
+          )}
         </label>
       )}
 

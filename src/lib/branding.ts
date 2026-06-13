@@ -1,7 +1,8 @@
 import darkLogo from '../assets/logos/cloudcast-regal-dark.png';
 import darkHeaderLogo from '../assets/logos/cloudcast-regal-dark-header.png';
 import lightLogo from '../assets/logos/cloudcast-regal-light.png';
-import type { ConnectionMode, PlanTier, UserProfile } from '../types/plans';
+import type { ConnectionMode, PlanTier, ProductPlanTier, UserProfile } from '../types/plans';
+import { isUniversalPlanTier } from '../types/plans';
 import type { MixerSession } from '../types/session';
 import { resolvePlanTotalChannels } from './planLimits';
 
@@ -30,10 +31,15 @@ export const CONNECTION_MODE_SHORT: Record<ConnectionMode, string> = {
   regal: 'REGAL HD+',
 };
 
-export const PLAN_STREAM_QUALITY: Record<PlanTier, string> = {
+export const PLAN_STREAM_QUALITY: Record<ProductPlanTier, string> = {
   free: 'Standard',
   pro: 'HD streaming',
   pro_master: 'UHD streaming',
+};
+
+export const UNIVERSAL_STREAM_QUALITY: Record<'universal_essential' | 'universal_studio' | 'universal', string> = {
+  universal_essential: 'All products · HD',
+  universal_studio: 'All products · UHD video',
   universal: 'All products · UHD',
 };
 
@@ -63,13 +69,26 @@ export const PLAN_FEATURE_OVERRIDES: Partial<Record<PlanTier, string[]>> = {
     'Multi-stream + multiple YouTube accounts',
     '100GB cloud storage for video recordings',
   ],
+  universal_essential: [
+    'Video Mixer + Audio Mixer + Symphony + Replay + Regal Prism + Regal Display',
+    'Pro tier on every broadcast product',
+    '5 video inputs · 8ch audio · 16-track DAW · 1080p VP',
+    'Audio ↔ Video bridge included',
+    'Regal Cloud HD streaming',
+  ],
+  universal_studio: [
+    'Video Mixer + Audio Mixer + Symphony + Replay + Regal Prism + Regal Display',
+    'Pro Master on Video, Audio & Replay · Pro on Symphony & Prism',
+    '11 video inputs · 16ch audio · 32-track DAW · 2-camera VP',
+    'Audio ↔ Video bridge · Regal Cloud UHD',
+    'Best value for growing productions',
+  ],
   universal: [
-    'Video Mixer + Audio Mixer + Symphony + Replay',
+    'Video Mixer + Audio Mixer + Symphony + Replay + Regal Prism + Regal Display',
     'Pro Master features on every broadcast product',
-    '16-channel audio · 11 video inputs · 32-track DAW · 16 replay banks',
-    'Regal Cloud UHD · multi-stream',
-    '100GB cloud storage',
-    'One subscription for the full CloudCast suite',
+    '16-channel audio · 11 video inputs · 32-track DAW · 4K VP',
+    'Regal Cloud UHD · multi-stream · 100GB storage',
+    'Priority support · one subscription for the full suite',
   ],
 };
 
@@ -88,7 +107,8 @@ export function connectionModeShort(mode: ConnectionMode | string): string {
 }
 
 export function streamQualityForPlan(planId: PlanTier): string {
-  return PLAN_STREAM_QUALITY[planId];
+  if (isUniversalPlanTier(planId)) return UNIVERSAL_STREAM_QUALITY[planId];
+  return PLAN_STREAM_QUALITY[planId as ProductPlanTier];
 }
 
 export function displayFeaturesForPlan(planId: PlanTier, fallback: string[]): string[] {

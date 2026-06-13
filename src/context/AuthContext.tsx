@@ -14,7 +14,7 @@ import { fetchAdminAccess } from '../lib/adminService';
 import type { AdminAccess } from '../types/admin';
 import type { PlanTier, SubscriptionPlan, UserProfile } from '../types/plans';
 import type { CloudCastProductId } from '../types/products';
-import { buildEntitlementsFromProfile } from '../lib/productEntitlements';
+import { buildEntitlementsFromProfile, isUniversalPlan } from '../lib/productEntitlements';
 
 interface AuthContextValue {
   user: User | null;
@@ -142,15 +142,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateProductPlan = useCallback(
     async (product: CloudCastProductId | 'universal', planId: PlanTier) => {
-      const effectiveProduct = product === 'instant_replay' ? 'video_mixer' : product;
+      const effectiveProduct =
+        product === 'instant_replay' || product === 'regal_display' ? 'video_mixer' : product;
       const { error } = await getSupabase().rpc('update_user_product_plan', {
         p_product: effectiveProduct,
         p_plan_id: planId,
       });
       if (error) {
-        if (effectiveProduct === 'video_mixer' || product === 'universal' || planId === 'universal') {
+        if (effectiveProduct === 'video_mixer' || product === 'universal' || isUniversalPlan(planId)) {
           const { error: legacyError } = await getSupabase().rpc('update_user_plan', {
-            p_plan_id: planId === 'universal' ? 'pro_master' : planId,
+            p_plan_id: isUniversalPlan(planId) ? 'pro_master' : planId,
           });
           if (legacyError) throw legacyError;
         } else {

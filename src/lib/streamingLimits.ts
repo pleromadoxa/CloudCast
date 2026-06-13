@@ -4,6 +4,7 @@ import type { StreamPlanLimits, StreamPlatform } from '../types/streaming';
 export function resolveStreamLimits(planId: PlanTier | null | undefined): StreamPlanLimits {
   switch (planId) {
     case 'pro':
+    case 'universal_essential':
       return {
         maxConcurrentStreams: 3,
         maxYouTubeDestinations: 3,
@@ -12,6 +13,7 @@ export function resolveStreamLimits(planId: PlanTier | null | undefined): Stream
         allowsMultiplePlatforms: true,
       };
     case 'pro_master':
+    case 'universal_studio':
     case 'universal':
       return {
         maxConcurrentStreams: 5,

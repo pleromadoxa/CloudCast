@@ -1,6 +1,6 @@
 import { cn } from '../../lib/utils';
 
-type PhysicalButtonVariant = 'neutral' | 'solo' | 'mute' | 'nc' | 'gate' | 'learn' | 'hpf' | 'pgm';
+type PhysicalButtonVariant = 'neutral' | 'solo' | 'mute' | 'nc' | 'gate' | 'learn' | 'hpf' | 'pgm' | 'peak' | 'power';
 
 export function MixerPhysicalButton({
   label,

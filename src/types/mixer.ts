@@ -29,9 +29,15 @@ export interface DisplaySettings {
 
 export type ChromaFillSource = 'preset' | 'camera';
 
+export type KeyType = 'chroma' | 'luma';
+
 export interface KeySettings {
+  /** Chroma (green/blue) or luma (black/dark) keying. */
+  keyType: KeyType;
   color: string;
   tolerance: number;
+  /** Luma key threshold — pixels darker than this are keyed out (0–100). */
+  lumaThreshold: number;
   enabled: boolean;
   /** Preset canvas background or aux camera fill. */
   fillSource: ChromaFillSource;

@@ -7,6 +7,7 @@ import {
   Clapperboard,
   Check,
   Cloud,
+  CreditCard,
   Download,
   HardDrive,
   KeyRound,
@@ -26,11 +27,14 @@ import {
   streamQualityForPlan,
 } from '../lib/branding';
 import { redeemCoupon } from '../lib/couponService';
+import { CLOUDCAST_PRODUCTS, UNIVERSAL_PLAN_FROM_CENTS } from '../config/products';
 import {
-  PLAN_IP_CAMERA_SLOTS,
-  PLAN_RECORDING_STORAGE_GB,
-  PLAN_TOTAL_CHANNELS,
-} from '../lib/planLimits';
+  isUniversalPlan,
+  listProductSubscriptions,
+  resolveProductPlan,
+  universalTierLabel,
+} from '../lib/productEntitlements';
+import { PLAN_IP_CAMERA_SLOTS, recordingStorageGbForPlan, resolvePlanTotalChannels } from '../lib/planLimits';
 import { formatBytes, formatGbFromBytes } from '../lib/formatBytes';
 import {
   fetchAccountDashboard,
@@ -63,8 +67,11 @@ import type { StreamDestination } from '../types/streaming';
 import { STREAM_PLATFORM_LABELS } from '../types/streaming';
 import { PLAN_LABELS, formatPrice } from '../types/plans';
 import { MobileAppsSection } from '../components/products/MobileAppsSection';
-import { CLOUDCAST_PRODUCTS, UNIVERSAL_PLAN_PRICE_CENTS } from '../config/products';
-import { listProductSubscriptions } from '../lib/productEntitlements';
+import {
+  fetchStripeBillingEnabled,
+  fetchStripeBillingSummary,
+  openStripeBillingPortal,
+} from '../lib/stripeService';
 import { cn } from '../lib/utils';
 
 export function ProfilePage() {
@@ -86,15 +93,26 @@ export function ProfilePage() {
   const [redeeming, setRedeeming] = useState(false);
   const [couponMessage, setCouponMessage] = useState<string | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
+  const [stripeEnabled, setStripeEnabled] = useState(false);
+  const [openingPortal, setOpeningPortal] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
+  const [stripeSubs, setStripeSubs] = useState<Array<{
+    product: string;
+    plan_id: string;
+    status: string;
+    current_period_end: string | null;
+    cancel_at_period_end: boolean;
+  }>>([]);
   const [sendingReset, setSendingReset] = useState(false);
   const [resetSent, setResetSent] = useState(false);
 
   const subscriptions = listProductSubscriptions(profile);
-  const isUniversal = profile?.plan_id === 'universal' || profile?.entitlements?.universal;
+  const isUniversal = profile ? isUniversalPlan(profile.plan_id) || profile.entitlements?.universal : false;
   const planId = profile?.plan_id ?? 'free';
-  const quotaGb = PLAN_RECORDING_STORAGE_GB[planId];
+  const videoPlan = resolveProductPlan(profile, 'video_mixer');
+  const quotaGb = recordingStorageGbForPlan(planId);
   const hasCloudStorage = quotaGb > 0;
-  const streamLimits = resolveStreamLimits(planId);
+  const streamLimits = resolveStreamLimits(videoPlan);
 
   const loadAccountData = useCallback(async () => {
     setLoading(true);
@@ -128,6 +146,25 @@ export function ProfilePage() {
   useEffect(() => {
     void loadAccountData();
   }, [loadAccountData]);
+
+  useEffect(() => {
+    fetchStripeBillingEnabled().then(setStripeEnabled);
+    fetchStripeBillingSummary().then((summary) => {
+      if (summary?.subscriptions) setStripeSubs(summary.subscriptions);
+    });
+  }, [profile?.plan_id]);
+
+  const handleOpenBillingPortal = async () => {
+    setOpeningPortal(true);
+    setBillingError(null);
+    try {
+      await openStripeBillingPortal();
+    } catch (err) {
+      setBillingError(err instanceof Error ? err.message : 'Could not open billing portal.');
+    } finally {
+      setOpeningPortal(false);
+    }
+  };
 
   const handleSaveName = async () => {
     if (!fullName.trim()) return;
@@ -331,9 +368,9 @@ export function ProfilePage() {
           </p>
           {isUniversal ? (
             <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
-              <p className="font-bold text-amber-200">CloudCast Universal</p>
+              <p className="font-bold text-amber-200">{universalTierLabel(planId)}</p>
               <p className="mt-1 text-xs text-mixer-muted">
-                {formatPrice(UNIVERSAL_PLAN_PRICE_CENTS)} · all products included
+                All six products · from {formatPrice(UNIVERSAL_PLAN_FROM_CENTS)} on other tiers
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 {CLOUDCAST_PRODUCTS.map((product) => (
@@ -381,6 +418,48 @@ export function ProfilePage() {
             </Link>
           )}
         </section>
+
+        {stripeEnabled && (
+          <section className="mb-6 rounded-xl border border-white/10 bg-mixer-panel p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-mixer-muted">
+                  <CreditCard className="h-4 w-4" />
+                  Billing & subscriptions
+                </h2>
+                <p className="mt-1 text-xs text-mixer-muted">
+                  Manage payment method, invoices, upgrades, and cancellations in Stripe.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={openingPortal}
+                onClick={() => { void handleOpenBillingPortal(); }}
+                className="rounded bg-white/10 px-4 py-2 text-xs font-bold tracking-wider hover:bg-white/15 disabled:opacity-50"
+              >
+                {openingPortal ? <Loader2 className="h-4 w-4 animate-spin" /> : 'MANAGE BILLING'}
+              </button>
+            </div>
+            {billingError && <p className="mt-3 text-xs text-mixer-red">{billingError}</p>}
+            {stripeSubs.length > 0 && (
+              <ul className="mt-4 space-y-2 text-xs text-mixer-muted">
+                {stripeSubs.map((sub) => (
+                  <li key={sub.product} className="flex flex-wrap items-center gap-2 rounded border border-white/10 bg-black/30 px-3 py-2">
+                    <span className="font-bold text-white">{sub.product.replace(/_/g, ' ')}</span>
+                    <span>{PLAN_LABELS[sub.plan_id as keyof typeof PLAN_LABELS] ?? sub.plan_id}</span>
+                    <span className="text-mixer-muted">· {sub.status}</span>
+                    {sub.current_period_end && (
+                      <span>
+                        · renews {new Date(sub.current_period_end).toLocaleDateString()}
+                        {sub.cancel_at_period_end ? ' (canceling)' : ''}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
 
         <MobileAppsSection className="mb-6" />
 
@@ -536,9 +615,9 @@ export function ProfilePage() {
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg border border-white/10 bg-black/40 p-4">
               <p className="text-[10px] font-bold tracking-wider text-mixer-muted">VIDEO INPUTS</p>
-              <p className="mt-1 text-xl font-bold">{PLAN_TOTAL_CHANNELS[planId]}</p>
+              <p className="mt-1 text-xl font-bold">{resolvePlanTotalChannels(videoPlan)}</p>
               <p className="mt-1 text-[10px] text-mixer-muted">
-                {PLAN_IP_CAMERA_SLOTS[planId] > 0 ? 'Includes IP camera URL' : 'Mobile cameras only'}
+                {PLAN_IP_CAMERA_SLOTS[videoPlan] > 0 ? 'Includes IP camera URL' : 'Mobile cameras only'}
               </p>
             </div>
             <div className="rounded-lg border border-white/10 bg-black/40 p-4">

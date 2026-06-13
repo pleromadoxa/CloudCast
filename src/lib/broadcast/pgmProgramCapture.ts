@@ -21,12 +21,18 @@ export interface PgmProgramCaptureOptions {
   fadeToBlackLevel?: number;
 }
 
+function isDomSnapshotExcluded(node: HTMLElement): boolean {
+  if (node instanceof HTMLVideoElement || node instanceof HTMLCanvasElement) return true;
+  return Boolean(node.closest('[data-pgm-graphics]'));
+}
+
 /** Composites the visible PGM monitor (video, chroma, PiP, graphics) into a MediaStream. */
 export class PgmProgramCapture {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private raf = 0;
   private stopping = false;
+  private domSnapshotCanvas: HTMLCanvasElement | null = null;
   private overlayCanvas: HTMLCanvasElement | null = null;
   private fadeLevel = 0;
 
@@ -57,8 +63,27 @@ export class PgmProgramCapture {
     }
 
     const graphicsEl = container.querySelector('[data-pgm-graphics]') as HTMLElement | null;
+    let lastDomCapture = 0;
     let lastGfxCapture = 0;
+    let domCapturing = false;
     let gfxCapturing = false;
+
+    const captureDom = async () => {
+      if (domCapturing) return;
+      domCapturing = true;
+      try {
+        const c = await toCanvas(container, {
+          pixelRatio: 1,
+          cacheBust: true,
+          filter: (node) => !isDomSnapshotExcluded(node as HTMLElement),
+        });
+        this.domSnapshotCanvas = c;
+      } catch {
+        /* DOM snapshot is best-effort (display feed, placeholders, status text) */
+      } finally {
+        domCapturing = false;
+      }
+    };
 
     const captureGraphics = async () => {
       if (!graphicsEl || gfxCapturing) return;
@@ -87,6 +112,10 @@ export class PgmProgramCapture {
 
       this.ctx.fillStyle = '#000';
       this.ctx.fillRect(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+
+      if (this.domSnapshotCanvas) {
+        this.ctx.drawImage(this.domSnapshotCanvas, 0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+      }
 
       for (const canvas of container.querySelectorAll('canvas')) {
         if (!isDrawableCanvas(canvas)) continue;
@@ -125,14 +154,20 @@ export class PgmProgramCapture {
         this.ctx.fillRect(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT);
       }
 
-      if (Date.now() - lastGfxCapture > 200) {
-        lastGfxCapture = Date.now();
+      const now = Date.now();
+      if (now - lastDomCapture > 200) {
+        lastDomCapture = now;
+        void captureDom();
+      }
+      if (now - lastGfxCapture > 200) {
+        lastGfxCapture = now;
         void captureGraphics();
       }
 
       this.raf = requestAnimationFrame(paint);
     };
 
+    void captureDom();
     void captureGraphics();
     paint();
 
@@ -146,8 +181,16 @@ export class PgmProgramCapture {
   stop() {
     this.stopping = true;
     cancelAnimationFrame(this.raf);
+    this.domSnapshotCanvas = null;
     this.overlayCanvas = null;
   }
+}
+
+/** PGM monitor is mounted and has layout — capture can mirror whatever is on program out. */
+export function hasPgmOutputReady(container: HTMLElement | null): boolean {
+  if (!container) return false;
+  const r = container.getBoundingClientRect();
+  return r.width > 4 && r.height > 4;
 }
 
 export function hasPgmVideoSignal(container: HTMLElement | null): boolean {

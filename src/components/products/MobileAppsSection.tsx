@@ -12,13 +12,17 @@ const PRODUCT_ACCENTS: Record<CloudCastProductId, { border: string; badge: strin
   audio_mixer: { border: 'border-blue-500/25', badge: 'text-blue-400' },
   symphony_studio: { border: 'border-purple-500/25', badge: 'text-purple-400' },
   instant_replay: { border: 'border-emerald-500/25', badge: 'text-emerald-400' },
+  regal_display: { border: 'border-violet-500/25', badge: 'text-violet-400' },
+  regal_prism: { border: 'border-amber-500/25', badge: 'text-amber-400' },
 };
 
 const MOBILE_LABELS: Record<CloudCastProductId, string> = {
-  video_mixer: 'CloudCast Video Mobile',
-  audio_mixer: 'CloudCast Audio Mobile',
+  video_mixer: 'CloudCast Mobile',
+  audio_mixer: 'CloudCast Mobile',
   symphony_studio: 'CloudCast Symphony Mobile',
   instant_replay: 'CloudCast Replay Mobile',
+  regal_display: 'CloudCast Mobile',
+  regal_prism: 'Regal Prism Eye',
 };
 
 export function MobileAppsSection({ className }: { className?: string }) {
@@ -88,7 +92,7 @@ export function MobileAppsSection({ className }: { className?: string }) {
         Mobile apps
       </div>
       <p className="mt-2 text-sm text-mixer-muted">
-        Download the Android companion app for each product. Pair with your dashboard access code after install.
+        Download CloudCast Mobile — one Android app pairs to both Video and Audio Mixer using the same access code.
       </p>
 
       {error && <p className="mt-3 text-sm text-mixer-red">{error}</p>}

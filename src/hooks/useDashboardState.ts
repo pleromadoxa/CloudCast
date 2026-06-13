@@ -73,8 +73,10 @@ const DEFAULT_CONTROLS: DashboardControls = {
     opacity: 100,
   },
   key: {
+    keyType: 'chroma',
     color: '#00ff00',
     tolerance: 40,
+    lumaThreshold: 28,
     enabled: false,
     fillSource: 'preset',
     backgroundId: 'gradient-broadcast',
@@ -309,7 +311,7 @@ export function useDashboardState(devices: Device[]) {
   const setOutputMode = useCallback((mode: OutputMode) => {
     setControls((prev) => {
       let subDeviceId = prev.subDeviceId;
-      if (mode === 'pip') {
+      if (mode === 'pip' || mode === 'key') {
         const mainId = prev.pgmDeviceId ?? prev.pstDeviceId;
         subDeviceId = resolvePipSubDeviceId(devices, mainId, prev.subDeviceId);
       }

@@ -1,0 +1,19 @@
+User-agent: *
+Allow: /
+Allow: /products/
+Allow: /for/
+Allow: /pricing
+Allow: /login
+Allow: /legal/
+
+Disallow: /hub
+Disallow: /profile
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /audio
+Disallow: /replay
+Disallow: /display
+Disallow: /symphony
+Disallow: /prism
+
+Sitemap: https://cloudcast.live/sitemap.xml

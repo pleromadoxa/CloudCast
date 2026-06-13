@@ -171,7 +171,7 @@ export function AudioConnectionDebugPanel() {
           </div>
 
           {liveDevices.length === 0 ? (
-            <p className="studiolive-debug__empty">No paired devices — share your access code with CloudCast Audio Mobile.</p>
+            <p className="studiolive-debug__empty">No paired devices — pair CloudCast Mobile with your access code (same code as Video Mixer).</p>
           ) : (
             <div className="studiolive-debug__table-wrap">
               <table className="studiolive-debug__table">

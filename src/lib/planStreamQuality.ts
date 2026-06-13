@@ -1,12 +1,13 @@
 import type { StreamQuality } from '../types/device';
 import type { ConnectionMode, PlanTier } from '../types/plans';
+import { isUniversalPlanTier } from '../types/plans';
 
 /** User-facing ingest/playback tier for Regal Cloud. */
 export type RegalQualityTier = 'standard' | 'hd' | 'uhd';
 
 export function regalQualityTierForPlan(planId: PlanTier): RegalQualityTier {
-  if (planId === 'pro_master' || planId === 'universal') return 'uhd';
-  if (planId === 'pro') return 'hd';
+  if (planId === 'pro_master' || planId === 'universal' || planId === 'universal_studio') return 'uhd';
+  if (planId === 'pro' || planId === 'universal_essential') return 'hd';
   return 'standard';
 }
 
@@ -24,11 +25,13 @@ export function defaultStreamQualityForSession(
   connectionMode: ConnectionMode,
 ): StreamQuality {
   if (connectionMode === 'mesh') return 'medium';
-  if (planId === 'pro_master' || planId === 'universal') return 'high';
-  if (planId === 'pro') return 'high';
+  if (planId === 'pro_master' || planId === 'universal' || planId === 'universal_studio') return 'high';
+  if (planId === 'pro' || planId === 'universal_essential') return 'high';
   return 'auto';
 }
 
 export function planUsesRegalCloud(planId: PlanTier, connectionMode: ConnectionMode): boolean {
-  return connectionMode === 'regal' && (planId === 'pro' || planId === 'pro_master' || planId === 'universal');
+  if (connectionMode !== 'regal') return false;
+  if (isUniversalPlanTier(planId)) return true;
+  return planId === 'pro' || planId === 'pro_master';
 }

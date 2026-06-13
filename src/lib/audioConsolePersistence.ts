@@ -5,6 +5,8 @@ const STORAGE_KEY = 'cloudcast-audio-console-v1';
 
 export type PersistedAudioConsole = Pick<
   AudioConsoleState,
+  | 'consoleEnabled'
+  | 'peakHoldEnabled'
   | 'masterVolume'
   | 'masterMuted'
   | 'monitorMuted'
@@ -95,6 +97,8 @@ export function captureSceneSnapshot(state: AudioConsoleState): ConsoleSceneSnap
 
 export function pickPersistedConsole(state: AudioConsoleState): PersistedAudioConsole {
   return {
+    consoleEnabled: state.consoleEnabled,
+    peakHoldEnabled: state.peakHoldEnabled,
     masterVolume: state.masterVolume,
     masterMuted: state.masterMuted,
     monitorMuted: state.monitorMuted,

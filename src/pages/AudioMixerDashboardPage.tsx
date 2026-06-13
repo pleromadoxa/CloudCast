@@ -1,16 +1,4 @@
-import { CloudCastProvider } from '../context/CloudCastContext';
-import { PgmAudioProvider } from '../context/PgmAudioContext';
-import { MixerErrorBoundary } from '../components/error/MixerErrorBoundary';
-import { AudioMixerLayout } from '../components/audio/AudioMixerLayout';
-
+/** Audio Mixer UI is rendered by ProductionHost to share the live CloudCast session. */
 export function AudioMixerDashboardPage() {
-  return (
-    <MixerErrorBoundary>
-      <CloudCastProvider productType="audio">
-        <PgmAudioProvider localPlayback={false}>
-          <AudioMixerLayout />
-        </PgmAudioProvider>
-      </CloudCastProvider>
-    </MixerErrorBoundary>
-  );
+  return null;
 }

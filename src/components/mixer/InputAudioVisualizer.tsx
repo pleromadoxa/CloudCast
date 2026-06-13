@@ -18,6 +18,8 @@ interface InputAudioVisualizerProps {
   compact?: boolean;
   layout?: VisualizerLayout;
   size?: VisualizerSize;
+  /** When false, only the waveform canvas is shown (no L/R bars below). */
+  showMeters?: boolean;
   className?: string;
 }
 
@@ -188,6 +190,7 @@ export function InputAudioVisualizer({
   compact = false,
   layout = 'stack',
   size,
+  showMeters = true,
   className,
 }: InputAudioVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -324,7 +327,9 @@ export function InputAudioVisualizer({
         )}
       </div>
 
-      <div className="flex min-w-0 items-end justify-center gap-2">{meterBars}</div>
+      {showMeters && (
+        <div className="flex min-w-0 items-end justify-center gap-2">{meterBars}</div>
+      )}
     </div>
   );
 }

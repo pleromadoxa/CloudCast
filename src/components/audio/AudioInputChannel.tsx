@@ -5,6 +5,7 @@ import { isRealDevice } from '../../types/device';
 import type { AudioInputSource } from '../../types/audio';
 import { AUDIO_SOURCE_LABELS } from '../../types/audio';
 import { unlockDashboardAudio } from '../../lib/audioOutput';
+import { isDeviceLinkedOnSession } from '../../lib/deviceConnection';
 import { cn } from '../../lib/utils';
 import { InputLiveMeter } from '../mixer/InputLiveMeter';
 
@@ -27,7 +28,8 @@ function statusLabel(
   if (locked) return { text: 'LOCKED', tone: 'locked' };
   if (!isRealDevice(device)) return { text: 'EMPTY', tone: 'empty' };
   if (device.status === 'live') return { text: 'LIVE', tone: 'live' };
-  if (device.status === 'connecting') return { text: 'LINK', tone: 'connecting' };
+  if (isDeviceLinkedOnSession(device)) return { text: 'LINK', tone: 'live' };
+  if (device.status === 'connecting') return { text: 'WAIT', tone: 'connecting' };
   if (device.status === 'error') return { text: 'ERR', tone: 'error' };
   return { text: 'OFF', tone: 'offline' };
 }
@@ -43,6 +45,7 @@ export function AudioInputChannel({
   muted,
   solo,
   onMix,
+  mixerEnabled = true,
   audioSource,
   getAudioSourceForDevice,
   linkedUsbAudio,
@@ -62,6 +65,7 @@ export function AudioInputChannel({
   muted: boolean;
   solo: boolean;
   onMix: boolean;
+  mixerEnabled?: boolean;
   audioSource: AudioInputSource;
   getAudioSourceForDevice: (id: string) => AudioInputSource;
   linkedUsbAudio: Record<string, string | null>;
@@ -74,7 +78,7 @@ export function AudioInputChannel({
   const Icon = inputIcon(device);
   const status = statusLabel(device, locked);
   const empty = !isRealDevice(device);
-  const meterEnabled = live && !muted && onMix;
+  const meterEnabled = live && !muted && onMix && mixerEnabled;
 
   return (
     <article

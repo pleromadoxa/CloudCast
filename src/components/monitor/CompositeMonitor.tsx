@@ -269,6 +269,7 @@ export function CompositeMonitor({
                     showLabel={false}
                     className="absolute inset-0"
                     onVideoRef={setKeyMainVideo}
+                    displayFeedLive={isPgm}
                   />
                   {keySettings.fillSource === 'camera' && subDevice && (
                     <StreamPlayer
@@ -313,6 +314,7 @@ export function CompositeMonitor({
                 onVideoRef={isPgm ? handleVideoRef : undefined}
                 onBusPlaybackStream={isPgm ? handleBusPlaybackStream : undefined}
                 enableSpeakerPlayback={!isPgm && !sameAsPgm}
+                displayFeedLive={isPgm}
               />
             )}
 

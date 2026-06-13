@@ -1,0 +1,26 @@
+{
+  "name": "CloudCast by Quantum Regal",
+  "short_name": "CloudCast",
+  "description": "Professional browser-based broadcast tools — video mixer, audio console, virtual production, instant replay, worship display, and online DAW.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060606",
+  "theme_color": "#e11d48",
+  "orientation": "any",
+  "lang": "en-US",
+  "categories": ["productivity", "entertainment", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

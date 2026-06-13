@@ -6,6 +6,9 @@ import { PlatformBroadcastBanner } from '../admin/PlatformBroadcastBanner';
 import { CloudCastLogo } from '../brand/CloudCastLogo';
 import { CLOUDCAST_NAV_LOGO } from '../../lib/branding';
 import { cn } from '../../lib/utils';
+import { CLOUDCAST_PRODUCTS } from '../../config/products';
+import { productLandingPath } from '../../config/productLanding';
+import { SOLUTION_PAGES, solutionPath } from '../../config/solutions';
 import { LEGAL_NAV, SITE_LEGAL } from '../../config/siteLegal';
 import { useAuth } from '../../context/AuthContext';
 
@@ -82,22 +85,48 @@ export function MarketingLayout() {
 
       <Outlet />
 
-      <footer className="border-t border-white/5 py-10">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 sm:flex-row">
-          <p className="text-xs text-mixer-muted">
+      <footer className="border-t border-white/5 py-12">
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="grid gap-8 sm:grid-cols-3">
+            <div>
+              <p className="text-xs font-bold tracking-wider text-white">Products</p>
+              <div className="mt-3 flex flex-col gap-2">
+                {CLOUDCAST_PRODUCTS.map((p) => (
+                  <Link key={p.id} to={productLandingPath(p.id)} className="text-xs text-mixer-muted hover:text-white">
+                    {p.name}
+                  </Link>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-bold tracking-wider text-white">Solutions</p>
+              <div className="mt-3 flex flex-col gap-2">
+                {SOLUTION_PAGES.map((s) => (
+                  <Link key={s.slug} to={solutionPath(s.slug)} className="text-xs capitalize text-mixer-muted hover:text-white">
+                    {s.slug.replace('-', ' ')}
+                  </Link>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-bold tracking-wider text-white">Company</p>
+              <div className="mt-3 flex flex-col gap-2">
+                <Link to="/pricing" className="text-xs text-mixer-muted hover:text-white">Pricing</Link>
+                <Link to="/products/guide" className="text-xs text-mixer-muted hover:text-white">Product guide</Link>
+                {user ? (
+                  <Link to="/profile" className="text-xs text-mixer-muted hover:text-white">Profile</Link>
+                ) : (
+                  <Link to="/login" className="text-xs text-mixer-muted hover:text-white">Sign in</Link>
+                )}
+                {LEGAL_NAV.slice(0, 3).map(({ to, label }) => (
+                  <Link key={to} to={to} className="text-xs text-mixer-muted hover:text-white">{label}</Link>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p className="mt-10 text-center text-xs text-mixer-muted">
             © {new Date().getFullYear()} {SITE_LEGAL.brandLine}. {SITE_LEGAL.tagline}.
           </p>
-          <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-mixer-muted sm:justify-end">
-            <Link to="/pricing" className="hover:text-white">Pricing</Link>
-            {user ? (
-              <Link to="/profile" className="hover:text-white">Profile</Link>
-            ) : (
-              <Link to="/login" className="hover:text-white">Sign in</Link>
-            )}
-            {LEGAL_NAV.slice(0, 4).map(({ to, label }) => (
-              <Link key={to} to={to} className="hover:text-white">{label}</Link>
-            ))}
-          </div>
         </div>
       </footer>
     </div>

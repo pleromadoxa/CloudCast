@@ -144,11 +144,21 @@ Deno.serve(async (req: Request) => {
   }
 
   if (!endpoints) {
-    endpoints = await createLiveInput(streamConfig, {
-      session_id: String(session.id),
-      device_id: deviceId,
-      label: String(device.label ?? deviceId),
-    }, planId);
+    try {
+      endpoints = await createLiveInput(streamConfig, {
+        session_id: String(session.id),
+        device_id: deviceId,
+        label: String(device.label ?? deviceId),
+      }, planId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create live input";
+      const status = /authorization|not authorized|forbidden/i.test(message) ? 502 : 500;
+      return json(status, {
+        error: "Regal Cloud ingest provisioning failed",
+        detail: message,
+        hint: "Ensure CLOUDFLARE_API_TOKEN has Account → Stream → Edit for this account.",
+      });
+    }
   }
 
   await admin

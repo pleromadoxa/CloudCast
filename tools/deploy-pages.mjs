@@ -126,7 +126,7 @@ async function main() {
 ✓ Frontend deployed.
 
   Worker URL:  https://cloudcast.<your-subdomain>.workers.dev  (see wrangler output above)
-  Production:  https://cloudcast.pro  (after zone is on this Cloudflare account — npm run setup:dns)
+  Production:  https://cloudcast.live  (after zone is on this Cloudflare account — npm run setup:dns)
 
   The app runs on the "cloudcast" Worker with SPA routing — not a separate Pages CNAME.
   Backend: npm run deploy:cloudflare  (R2 + Stream edge functions)

@@ -25,7 +25,7 @@ run('npm run setup:r2', 'R2 bucket + CORS');
 console.log(`
 Next steps:
   1. Enable R2 if not already: https://dash.cloudflare.com/?to=/:account/r2
-  2. Point cloudcast.pro DNS to Cloudflare (orange cloud / proxied)
+  2. Point cloudcast.live DNS to Cloudflare (orange cloud / proxied)
   3. Deploy frontend: npm run deploy:pages
   4. Deploy backend:  npm run deploy:cloudflare  (R2 + Stream edge functions)
   5. Attach custom domain: npm run setup:dns

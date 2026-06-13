@@ -1,6 +1,9 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, Building2, Camera, Clapperboard, Cloud, LayoutGrid, Music2, Radio, SlidersHorizontal, Smartphone, Tv, Video, Zap } from 'lucide-react';
+import { ArrowRight, Building2, Camera, Clapperboard, Cloud, Gem, LayoutGrid, MonitorPlay, Music2, Radio, SlidersHorizontal, Smartphone, Tv, Video, Zap } from 'lucide-react';
 import { CLOUDCAST_PRODUCTS } from '../config/products';
+import { productLandingPath } from '../config/productLanding';
+import { SOLUTION_PAGES, solutionPath } from '../config/solutions';
+import { HomeFaq } from '../components/marketing/HomeFaq';
 import { SITE_LEGAL } from '../config/siteLegal';
 import type { CloudCastProduct } from '../types/products';
 
@@ -9,6 +12,8 @@ const PRODUCT_ICONS = {
   audio_mixer: SlidersHorizontal,
   symphony_studio: Music2,
   instant_replay: Clapperboard,
+  regal_display: MonitorPlay,
+  regal_prism: Gem,
 } as const;
 
 function productAccentClass(accent: CloudCastProduct['accent'], part: 'icon' | 'card') {
@@ -26,6 +31,11 @@ function productAccentClass(accent: CloudCastProduct['accent'], part: 'icon' | '
     return part === 'icon'
       ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
       : 'hover:border-emerald-500/30';
+  }
+  if (accent === 'amber') {
+    return part === 'icon'
+      ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+      : 'hover:border-amber-500/30';
   }
   return part === 'icon'
     ? 'border-mixer-red/30 bg-mixer-red/10 text-mixer-red'
@@ -135,7 +145,7 @@ export function LandingPage() {
               return (
                 <Link
                   key={product.id}
-                  to={product.pricingPath}
+                  to={productLandingPath(product.id)}
                   className={`group rounded-xl border border-white/10 bg-mixer-panel p-8 transition-colors ${productAccentClass(product.accent, 'card')}`}
                 >
                   <div className="flex items-start gap-4">
@@ -164,9 +174,9 @@ export function LandingPage() {
               </div>
               <div>
                 <h3 className="text-lg font-bold">CloudCast Universal</h3>
-                <p className="mt-1 text-xs uppercase tracking-wider text-amber-200/80">All broadcast products · $119/mo</p>
+                <p className="mt-1 text-xs uppercase tracking-wider text-amber-200/80">Six products · from $59/mo</p>
                 <p className="mt-3 text-sm leading-relaxed text-mixer-muted">
-                  One subscription for Video Mixer, Audio Mixer, Symphony, and Replay with Pro Master features on every product.
+                  Essential, Studio, or Master — every tier includes Video Mixer, Audio Mixer, Symphony, Replay, Regal Display, and Regal Prism.
                 </p>
               </div>
             </div>
@@ -322,6 +332,34 @@ export function LandingPage() {
           </div>
         </div>
       </section>
+
+      <section className="border-y border-white/5 px-6 py-20">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-12 text-center">
+            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Solutions by industry</h2>
+            <p className="mx-auto mt-3 max-w-2xl text-sm text-mixer-muted">
+              CloudCast replaces hardware OB gear for churches, sports leagues, news desks, and corporate events.
+            </p>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {SOLUTION_PAGES.map((solution) => (
+              <Link
+                key={solution.slug}
+                to={solutionPath(solution.slug)}
+                className="group rounded-xl border border-white/10 bg-mixer-panel p-6 transition-colors hover:border-mixer-red/30"
+              >
+                <h3 className="font-bold capitalize group-hover:text-mixer-red">{solution.slug.replace('-', ' ')}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-mixer-muted">{solution.headline}</p>
+                <span className="mt-4 inline-flex items-center gap-1 text-xs font-bold tracking-wider text-mixer-muted group-hover:text-white">
+                  LEARN MORE <ArrowRight className="h-3 w-3" />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <HomeFaq />
 
       <section className="border-t border-white/5 bg-[#0a0a0a] px-6 py-16 text-center">
         <h2 className="text-xl font-bold">Ready to go live?</h2>

@@ -1,4 +1,5 @@
 import { useCloudCast } from '../../context/CloudCastContext';
+import { useAudioStreamResolver } from '../../context/AudioStreamResolverContext';
 import { useAudioMixerMeters } from '../../context/AudioMixerEngineContext';
 import { resolveAudioStreamDeviceId } from '../../lib/audioSettings';
 import type { AudioInputSource } from '../../types/audio';
@@ -34,9 +35,10 @@ export function InputLiveMeter({
   className,
 }: InputLiveMeterProps) {
   const { getMeshStream, meshStreams } = useCloudCast();
+  const resolveStream = useAudioStreamResolver();
   const mixerMeters = useAudioMixerMeters();
   const streamId = resolveAudioStreamDeviceId(deviceId, getAudioSourceForDevice, linkedUsbAudio);
-  const stream = getMeshStream(streamId);
+  const stream = resolveStream?.(streamId) ?? getMeshStream(streamId);
   const processedAnalyser = mixerMeters?.getChannelAnalyser(deviceId) ?? null;
   const streamRevision = useStreamAudioRevision(stream);
 

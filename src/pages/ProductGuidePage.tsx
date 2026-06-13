@@ -6,8 +6,9 @@ import {
   ChevronRight,
   Clapperboard,
   DollarSign,
-  LayoutGrid,
+  Gem,
   Lightbulb,
+  MonitorPlay,
   Music2,
   PlayCircle,
   Shield,
@@ -18,9 +19,9 @@ import {
 import { CLOUDCAST_PRODUCTS, getProduct } from '../config/products';
 import {
   PRODUCT_GUIDE_SECTIONS,
-  UNIVERSAL_VALUE_SUMMARY,
   WHY_CLOUDCAST_POINTS,
 } from '../config/productGuideContent';
+import { UniversalPlanCard } from '../components/products/ProductCard';
 import { SITE_LEGAL } from '../config/siteLegal';
 import type { CloudCastProduct, CloudCastProductId } from '../types/products';
 import { cn } from '../lib/utils';
@@ -30,6 +31,8 @@ const PRODUCT_ICONS = {
   audio_mixer: SlidersHorizontal,
   symphony_studio: Music2,
   instant_replay: Clapperboard,
+  regal_display: MonitorPlay,
+  regal_prism: Gem,
 } as const;
 
 const NAV_ITEMS: { id: CloudCastProductId | 'why' | 'universal'; label: string }[] = [
@@ -61,6 +64,14 @@ function accentStyles(accent: CloudCastProduct['accent']) {
       bg: 'bg-emerald-500/10',
       text: 'text-emerald-400',
       badge: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
+    };
+  }
+  if (accent === 'amber') {
+    return {
+      border: 'border-amber-500/30',
+      bg: 'bg-amber-500/10',
+      text: 'text-amber-400',
+      badge: 'border-amber-500/40 bg-amber-500/15 text-amber-300',
     };
   }
   return {
@@ -333,40 +344,10 @@ export function ProductGuidePage() {
           <SectionHeading
             eyebrow="BEST VALUE"
             title="CloudCast Universal"
-            description="One subscription for every broadcast product with Pro Master features on Video, Audio, Symphony, and Replay."
+            description="Three bundle tiers — Essential, Studio, and Master — covering all six CloudCast products with Pro or Pro Master features matched to your production scale."
           />
-          <div className="mt-10 rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-mixer-panel p-8">
-            <div className="flex flex-wrap items-start justify-between gap-6">
-              <div>
-                <div className="flex items-center gap-3">
-                  <LayoutGrid className="h-8 w-8 text-amber-400" />
-                  <div>
-                    <h3 className="text-2xl font-bold">{UNIVERSAL_VALUE_SUMMARY.headline}</h3>
-                    <p className="mt-1 text-sm text-amber-200/80">{UNIVERSAL_VALUE_SUMMARY.savingsNote}</p>
-                  </div>
-                </div>
-                <ul className="mt-6 space-y-2">
-                  {UNIVERSAL_VALUE_SUMMARY.bullets.map((bullet) => (
-                    <li key={bullet} className="flex items-start gap-2 text-sm text-mixer-muted">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-                      {bullet}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="text-center sm:text-right">
-                <p className="text-4xl font-bold text-white">
-                  {UNIVERSAL_VALUE_SUMMARY.price}
-                  <span className="text-lg font-normal text-mixer-muted">/mo</span>
-                </p>
-                <Link
-                  to="/pricing?product=universal"
-                  className="mt-4 inline-flex items-center gap-2 rounded bg-amber-500 px-5 py-2.5 text-xs font-bold tracking-wider text-black hover:bg-amber-400"
-                >
-                  VIEW UNIVERSAL PLAN <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </div>
-            </div>
+          <div className="mt-10">
+            <UniversalPlanCard hideHeader />
           </div>
         </div>
       </section>

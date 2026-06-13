@@ -13,18 +13,20 @@ import { SIGNALING_EVENTS } from '../lib/constants';
 import { pcConfigForMode } from '../lib/meshConfig';
 import { releaseAllWhepPool } from '../lib/whepStreamPool';
 import { connectAudioIngressWhep, releaseAllAudioIngressWhep, useAudioIngressStreams } from '../lib/audioIngress';
-import { hasUsableAudio } from '../lib/streamAudioHub';
+import { streamHasActiveMedia } from '../lib/streamAudioHub';
 import { releaseAllIpCameraPool } from '../lib/ipCameraStreamPool';
 import { holdSignalingLeader } from '../lib/tabLeader';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   clearStoredSession,
+  getPairingSessionProduct,
   loadStoredSession,
   saveStoredSession,
   type SessionProduct,
 } from '../lib/sessionStorage';
 import {
   DEVICE_STATUS_SWEEP_MS,
+  deviceHasCloudPlayback,
   isDashboardPresenceKey,
   isMeshStreamPresent,
   presenceDeviceIds,
@@ -33,6 +35,8 @@ import {
 import {
   buildSessionChannelConfig,
   getDashboardPresenceKey,
+  removeRealtimeChannel,
+  removeSessionChannelByName,
   resolveRealtimeChannelName,
 } from '../lib/realtimeChannel';
 import {
@@ -49,7 +53,6 @@ import {
 } from '../lib/signalingQueue';
 import {
   fetchPairedDevices,
-  getOrCreateAudioOwnerSession,
   getOrCreateOwnerSession,
   pairedRowToDevice,
   regenerateAccessCode,
@@ -59,6 +62,8 @@ import {
   updatePairedDeviceStatus,
 } from '../lib/sessionService';
 import { useAuth } from '../context/AuthContext';
+import { resolveProductPlan } from '../lib/productEntitlements';
+import { normalizeConnectionMode } from '../lib/branding';
 import type { ConnectionMode } from '../types/plans';
 import type { Device } from '../types/device';
 import { createEmptyAudioSlot, createEmptySlot } from '../types/device';
@@ -122,11 +127,17 @@ function buildSlotDevices(
 export function CloudCastProvider({
   children,
   productType = 'video',
+  audioMixerActive = false,
 }: {
   children: ReactNode;
   productType?: SessionProduct;
+  /** Keep audio ingress alive while the audio console runs off-route inside ProductionHost. */
+  audioMixerActive?: boolean;
 }) {
-  const { profile } = useAuth();
+  const { profile, user, loading: authLoading } = useAuth();
+  const audioIngressEnabled = productType === 'audio' || audioMixerActive;
+  const audioIngressEnabledRef = useRef(audioIngressEnabled);
+  audioIngressEnabledRef.current = audioIngressEnabled;
   const initialSlotCount = productType === 'audio' ? AUDIO_MIXER_MAX_CHANNELS : 2;
   const emptySlot = productType === 'audio' ? createEmptyAudioSlot : createEmptySlot;
   const [session, setSession] = useState<MixerSession | null>(null);
@@ -169,12 +180,23 @@ export function CloudCastProvider({
   const lastRecoverAtRef = useRef(0);
   const connectRealtimeRef = useRef<(s: MixerSession) => void>(() => {});
   const subscribeDbChangesRef = useRef<(s: MixerSession) => void>(() => {});
+  const signalingTeardownRef = useRef(Promise.resolve());
+  const dbTeardownRef = useRef(Promise.resolve());
+  const connectRealtimeChainRef = useRef(Promise.resolve());
+  const subscribeDbChainRef = useRef(Promise.resolve());
   const lastMeshReofferAtRef = useRef(0);
+  const initSessionInflightRef = useRef<Promise<void> | null>(null);
   const connectingSinceRef = useRef(new Map<string, number>());
   sessionRef.current = session;
   isSignalingLeaderRef.current = isSignalingLeader;
 
-  const connectionMode: ConnectionMode = session?.connectionMode ?? 'mesh';
+  const connectionMode: ConnectionMode =
+    productType === 'audio'
+      ? 'mesh'
+      : normalizeConnectionMode(session?.connectionMode ?? 'mesh');
+
+  /** Session plan connection mode — used for Regal Cloud WHEP fallback on the audio dashboard. */
+  const sessionConnectionMode: ConnectionMode = normalizeConnectionMode(session?.connectionMode ?? 'mesh');
 
   const getMeshStream = useCallback(
     (deviceId: string) => meshStreams.get(deviceId) ?? null,
@@ -197,6 +219,25 @@ export function CloudCastProvider({
     setSignalingEvents((prev) => [event, ...prev].slice(0, 100));
   }, []);
 
+  const resolvePeerState = useCallback((deviceId: string) => {
+    return peerConnections.current.get(deviceId)?.connectionState;
+  }, []);
+
+  const buildDeviceReconcileContext = useCallback(
+    (device: Device, online: Set<string>, nowMs: number) => ({
+      presenceOnline: online.has(device.deviceId),
+      hasMeshStream: isMeshStreamPresent(meshStreamsRef.current.get(device.deviceId)),
+      peerState: resolvePeerState(device.deviceId),
+      connectingSinceMs: connectingSinceRef.current.get(device.deviceId) ?? null,
+      nowMs,
+      videoTransport:
+        sessionRef.current?.connectionMode === 'regal'
+          ? ('cloud' as const)
+          : ('mesh' as const),
+    }),
+    [resolvePeerState],
+  );
+
   const loadDevicesImmediate = useCallback(async (s: MixerSession) => {
     if (loadDevicesInflightRef.current) return loadDevicesInflightRef.current;
 
@@ -207,13 +248,10 @@ export function CloudCastProvider({
       const slotCount =
         productType === 'audio' ? AUDIO_MIXER_MAX_CHANNELS : s.maxDevices;
       const merged = buildSlotDevices(rows, slotCount, productType).map((d) => {
-        const reconciled = reconcileDeviceConnectivity(d, {
-          presenceOnline: online.has(d.deviceId),
-          hasMeshStream: isMeshStreamPresent(meshStreamsRef.current.get(d.deviceId)),
-          peerState: peerConnections.current.get(d.deviceId)?.connectionState,
-          connectingSinceMs: connectingSinceRef.current.get(d.deviceId) ?? null,
-          nowMs,
-        });
+        const reconciled = reconcileDeviceConnectivity(
+          d,
+          buildDeviceReconcileContext(d, online, nowMs),
+        );
         if (
           reconciled.status === 'connecting' &&
           !connectingSinceRef.current.has(reconciled.deviceId)
@@ -237,7 +275,7 @@ export function CloudCastProvider({
         loadDevicesInflightRef.current = null;
       }
     }
-  }, [productType]);
+  }, [productType, buildDeviceReconcileContext]);
 
   const scheduleLoadDevices = useCallback(
     (s: MixerSession) => {
@@ -342,7 +380,8 @@ export function CloudCastProvider({
 
       const syncStatus = () => {
         setMeshStream(deviceId, stream);
-        if (productType === 'audio' && !hasUsableAudio(stream)) {
+        const requireAudio = productType === 'audio';
+        if (!streamHasActiveMedia(stream, { requireAudio })) {
           markDeviceConnecting(deviceId);
           return;
         }
@@ -363,7 +402,8 @@ export function CloudCastProvider({
   const requestMeshReoffer = useCallback(
     (reason = 'dashboard-reconnect') => {
       if (!isSignalingLeaderRef.current || !channelRef.current) return;
-      if (sessionRef.current?.connectionMode !== 'mesh') return;
+      const mode = sessionRef.current?.connectionMode ?? 'mesh';
+      if (mode !== 'mesh' && productType !== 'audio') return;
 
       const now = Date.now();
       if (now - lastMeshReofferAtRef.current < MESH_REOFFER_COOLDOWN_MS) return;
@@ -375,7 +415,7 @@ export function CloudCastProvider({
         reason,
       });
     },
-    [broadcast],
+    [broadcast, productType],
   );
 
   const pruneDeadMeshStreams = useCallback(() => {
@@ -394,10 +434,6 @@ export function CloudCastProvider({
     return pruned;
   }, []);
 
-  const resolvePeerState = useCallback((deviceId: string) => {
-    return peerConnections.current.get(deviceId)?.connectionState;
-  }, []);
-
   const applyPresenceSnapshot = useCallback(
     (channel?: RealtimeChannel | null) => {
       pruneDeadMeshStreams();
@@ -408,13 +444,7 @@ export function CloudCastProvider({
 
       setDevices((prev) => {
         const next = prev.map((d) =>
-          reconcileDeviceConnectivity(d, {
-            presenceOnline: online.has(d.deviceId),
-            hasMeshStream: isMeshStreamPresent(meshStreamsRef.current.get(d.deviceId)),
-            peerState: resolvePeerState(d.deviceId),
-            connectingSinceMs: connectingSinceRef.current.get(d.deviceId) ?? null,
-            nowMs,
-          }),
+          reconcileDeviceConnectivity(d, buildDeviceReconcileContext(d, online, nowMs)),
         );
 
         next.forEach((d, index) => {
@@ -431,13 +461,22 @@ export function CloudCastProvider({
           }
         });
 
-        if (channel && sessionRef.current?.connectionMode === 'mesh') {
-          missingLiveStream = next.some(
-            (d) =>
-              online.has(d.deviceId) &&
-              d.status === 'live' &&
-              !isMeshStreamPresent(meshStreamsRef.current.get(d.deviceId)),
-          );
+        if (channel && sessionRef.current) {
+          const needsMesh =
+            sessionRef.current.connectionMode === 'mesh' || productType === 'audio';
+          const videoTransport =
+            sessionRef.current.connectionMode === 'regal' ? 'cloud' : 'mesh';
+          missingLiveStream = needsMesh && next.some((d) => {
+            if (d.deviceId.startsWith('slot-') || !online.has(d.deviceId)) return false;
+            if (isMeshStreamPresent(meshStreamsRef.current.get(d.deviceId))) return false;
+            if (deviceHasCloudPlayback(d, videoTransport) && d.status === 'live') return false;
+            const peerState = resolvePeerState(d.deviceId);
+            if (d.status === 'live') return true;
+            return (
+              d.status === 'connecting' &&
+              (!peerState || peerState === 'failed' || peerState === 'closed')
+            );
+          });
         }
 
         return next;
@@ -447,7 +486,7 @@ export function CloudCastProvider({
         requestMeshReoffer('missing-mesh-stream');
       }
     },
-    [pruneDeadMeshStreams, syncDeviceStatusToDb, requestMeshReoffer, resolvePeerState],
+    [pruneDeadMeshStreams, syncDeviceStatusToDb, requestMeshReoffer, buildDeviceReconcileContext, resolvePeerState, productType],
   );
 
   const schedulePresenceSnapshot = useCallback(
@@ -500,15 +539,13 @@ export function CloudCastProvider({
       realtimeRetryTimerRef.current = null;
     }
 
-    if (isSupabaseConfigured()) {
-      if (channelRef.current) {
-        getSupabase().removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-    } else {
-      channelRef.current?.unsubscribe();
-      channelRef.current = null;
-    }
+    const previousChannel = channelRef.current;
+    channelRef.current = null;
+    signalingTeardownRef.current = signalingTeardownRef.current
+      .then(() => removeRealtimeChannel(previousChannel))
+      .catch((err) => {
+        console.warn('[CloudCast] Signaling channel teardown failed:', err);
+      });
 
     if (!options?.preservePeers) {
       if (loadDevicesTimerRef.current) {
@@ -557,12 +594,13 @@ export function CloudCastProvider({
 
     if (dbChannelRef.current) {
       dbChannelEpochRef.current += 1;
-      if (isSupabaseConfigured()) {
-        getSupabase().removeChannel(dbChannelRef.current);
-      } else {
-        dbChannelRef.current.unsubscribe();
-      }
+      const previousDbChannel = dbChannelRef.current;
       dbChannelRef.current = null;
+      dbTeardownRef.current = dbTeardownRef.current
+        .then(() => removeRealtimeChannel(previousDbChannel))
+        .catch((err) => {
+          console.warn('[CloudCast] DB channel teardown failed:', err);
+        });
     }
     dbSessionIdRef.current = null;
 
@@ -578,49 +616,78 @@ export function CloudCastProvider({
       setSessionLoading(false);
       return;
     }
-
-    setSessionLoading(true);
-    setError(null);
-
-    try {
-      const stored = loadStoredSession(productType);
-      const createSession =
-        productType === 'audio' ? getOrCreateAudioOwnerSession : getOrCreateOwnerSession;
-      let active: MixerSession;
-
-      if (stored) {
-        if (profile?.id && stored.ownerId && stored.ownerId !== profile.id) {
-          clearStoredSession(productType);
-          active = await createSession();
-        } else {
-          try {
-            active = await restoreMixerSession(stored.sessionId, stored.accessCode);
-            active = await syncMixerSessionPlan(active.sessionId, active.accessCode);
-          } catch {
-            clearStoredSession(productType);
-            active = await createSession();
-          }
-        }
-      } else {
-        active = await createSession();
-      }
-
-      saveStoredSession(
-        {
-          sessionId: active.sessionId,
-          accessCode: active.accessCode,
-          ownerId: profile?.id,
-        },
-        productType,
-      );
-      setSession(active);
-      await loadDevicesImmediate(active);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to initialize session');
-    } finally {
+    if (!user) {
+      setSession(null);
       setSessionLoading(false);
+      return;
     }
-  }, [loadDevicesImmediate, productType, profile?.id]);
+
+    if (initSessionInflightRef.current) {
+      await initSessionInflightRef.current;
+      return;
+    }
+
+    const run = (async () => {
+      setSessionLoading(true);
+      setError(null);
+
+      try {
+        const pairingProduct = getPairingSessionProduct();
+        let stored = loadStoredSession(pairingProduct);
+        if (!stored) {
+          const legacyAudio = loadStoredSession('audio');
+          if (legacyAudio) stored = legacyAudio;
+        }
+
+        let active: MixerSession;
+
+        if (stored) {
+          if (profile?.id && stored.ownerId && stored.ownerId !== profile.id) {
+            clearStoredSession(pairingProduct);
+            clearStoredSession('audio');
+            active = await getOrCreateOwnerSession();
+          } else {
+            try {
+              active = await restoreMixerSession(stored.sessionId, stored.accessCode);
+              active = await syncMixerSessionPlan(active.sessionId, active.accessCode);
+            } catch {
+              clearStoredSession(pairingProduct);
+              clearStoredSession('audio');
+              active = await getOrCreateOwnerSession();
+            }
+          }
+        } else {
+          active = await getOrCreateOwnerSession();
+        }
+
+        saveStoredSession(
+          {
+            sessionId: active.sessionId,
+            accessCode: active.accessCode,
+            ownerId: profile?.id ?? user.id,
+          },
+          pairingProduct,
+        );
+        clearStoredSession('audio');
+        setSession(active);
+        void loadDevicesImmediate(active);
+      } catch (err) {
+        setSession(null);
+        setError(err instanceof Error ? err.message : 'Failed to initialize session');
+      } finally {
+        setSessionLoading(false);
+      }
+    })();
+
+    initSessionInflightRef.current = run;
+    try {
+      await run;
+    } finally {
+      if (initSessionInflightRef.current === run) {
+        initSessionInflightRef.current = null;
+      }
+    }
+  }, [loadDevicesImmediate, profile?.id, user]);
 
   const resolveSignalingPeerKey = useCallback(
     (payload: { from?: string; deviceId?: string }) =>
@@ -824,6 +891,7 @@ export function CloudCastProvider({
   const createPeerConnection = useCallback(
     (peerKey: string, deviceId: string) => {
       const mode = sessionRef.current?.connectionMode ?? 'mesh';
+      const pcMode = productType === 'audio' ? 'mesh' : mode;
       const streamDeviceId = deviceId || peerKey;
 
       if (peerConnections.current.has(peerKey) || peerConnections.current.has(streamDeviceId)) {
@@ -832,7 +900,7 @@ export function CloudCastProvider({
         removeMeshStream(streamDeviceId);
       }
 
-      const pc = new RTCPeerConnection(pcConfigForMode(mode));
+      const pc = new RTCPeerConnection(pcConfigForMode(pcMode));
 
       if (productType === 'audio') {
         try {
@@ -872,6 +940,7 @@ export function CloudCastProvider({
 
         if (pc.connectionState === 'connected') {
           clearPeerDisconnectTimer(streamDeviceId);
+          sendDeviceAck(peerKey, streamDeviceId);
           if (!isMeshStreamPresent(meshStreamsRef.current.get(streamDeviceId))) {
             absorbPeerMedia(pc, streamDeviceId);
           }
@@ -1038,20 +1107,26 @@ export function CloudCastProvider({
 
   const connectRealtime = useCallback(
     (s: MixerSession) => {
-      const hadActivePeers =
-        peerConnections.current.size > 0 || meshStreamsRef.current.size > 0;
+      connectRealtimeChainRef.current = connectRealtimeChainRef.current
+        .then(async () => {
+          const hadActivePeers =
+            peerConnections.current.size > 0 || meshStreamsRef.current.size > 0;
 
-      teardownSignalingChannel({ preservePeers: true });
+          teardownSignalingChannel({ preservePeers: true });
+          await signalingTeardownRef.current;
+          await removeSessionChannelByName(s.sessionId, s.realtimeChannel);
 
-      const channelName = resolveRealtimeChannelName(s.sessionId, s.realtimeChannel);
-      const dashboardPresenceKey = getDashboardPresenceKey(s.sessionId);
-      dashboardPresenceKeyRef.current = dashboardPresenceKey;
-      const supabase = getSupabase();
+          const subscribeEpoch = signalingEpochRef.current;
+          if (sessionRef.current?.sessionId !== s.sessionId) return;
 
-      const channel = supabase.channel(channelName, buildSessionChannelConfig(dashboardPresenceKey));
-      const subscribeEpoch = signalingEpochRef.current;
+          const channelName = resolveRealtimeChannelName(s.sessionId, s.realtimeChannel);
+          const dashboardPresenceKey = getDashboardPresenceKey(s.sessionId);
+          dashboardPresenceKeyRef.current = dashboardPresenceKey;
+          const supabase = getSupabase();
 
-      channel
+          const channel = supabase.channel(channelName, buildSessionChannelConfig(dashboardPresenceKey));
+
+          channel
         .on('broadcast', { event: SIGNALING_EVENTS.OFFER }, ({ payload }) => {
           const p = payload as OfferPayload;
           appendEvent({ event: 'offer', payload: p });
@@ -1091,7 +1166,7 @@ export function CloudCastProvider({
         .on('broadcast', { event: SIGNALING_EVENTS.STREAM_READY }, ({ payload }) => {
           const p = payload as StreamReadyPayload;
           appendEvent({ event: 'stream-ready', payload: p });
-          if (productType === 'audio' && p.deviceId && p.whepUrl) {
+          if (audioIngressEnabledRef.current && p.deviceId && p.whepUrl) {
             connectAudioIngressWhep(p.deviceId, p.whepUrl, {
               onStream: bindIngressStream,
               onConnecting: markDeviceConnecting,
@@ -1143,8 +1218,21 @@ export function CloudCastProvider({
             (newPresences as { deviceId?: string }[])?.[0]?.deviceId?.trim() || key;
           if (joinedId) {
             clearPresenceLeaveTimer(joinedId);
-            if (!meshStreamsRef.current.has(joinedId)) {
+            const hasStream = isMeshStreamPresent(meshStreamsRef.current.get(joinedId));
+            if (!hasStream) {
               markDeviceConnecting(joinedId);
+            }
+            if (isSignalingLeaderRef.current) {
+              const pc = resolvePeerConnection(joinedId, joinedId);
+              if (pc?.connectionState === 'connected') {
+                sendDeviceAck(joinedId, joinedId, { force: hasStream });
+              } else if (
+                !pc ||
+                pc.connectionState === 'failed' ||
+                pc.connectionState === 'closed'
+              ) {
+                requestMeshReoffer('device-presence-join');
+              }
             }
           }
           if (sessionRef.current) scheduleLoadDevices(sessionRef.current);
@@ -1214,7 +1302,20 @@ export function CloudCastProvider({
           }
         }, REALTIME_PUSH_TIMEOUT_MS);
 
-      channelRef.current = channel;
+          if (
+            signalingEpochRef.current !== subscribeEpoch ||
+            sessionRef.current?.sessionId !== s.sessionId
+          ) {
+            await removeRealtimeChannel(channel);
+            return;
+          }
+
+          channelRef.current = channel;
+        })
+        .catch((err) => {
+          console.error('[CloudCast] Realtime connect failed:', err);
+          setError(err instanceof Error ? err.message : 'Realtime connection failed');
+        });
     },
     [
       appendEvent,
@@ -1224,6 +1325,8 @@ export function CloudCastProvider({
       queueIceCandidate,
       resolveSignalingPeerKey,
       resolvePeerConnection,
+      sendDeviceAck,
+      requestMeshReoffer,
       removePeerConnection,
       applyPresenceSnapshot,
       markDeviceOffline,
@@ -1235,8 +1338,6 @@ export function CloudCastProvider({
       teardownSignalingChannel,
       broadcast,
       loadDevicesImmediate,
-      requestMeshReoffer,
-      productType,
       bindIngressStream,
       markDeviceConnecting,
     ],
@@ -1254,52 +1355,71 @@ export function CloudCastProvider({
         return;
       }
 
-      dbChannelEpochRef.current += 1;
-      const subscribeEpoch = dbChannelEpochRef.current;
+      subscribeDbChainRef.current = subscribeDbChainRef.current
+        .then(async () => {
+          dbChannelEpochRef.current += 1;
+          const subscribeEpoch = dbChannelEpochRef.current;
 
-      if (dbChannelRef.current && isSupabaseConfigured()) {
-        getSupabase().removeChannel(dbChannelRef.current);
-      } else {
-        dbChannelRef.current?.unsubscribe();
-      }
-      dbChannelRef.current = null;
+          const previousDbChannel = dbChannelRef.current;
+          dbChannelRef.current = null;
+          dbTeardownRef.current = dbTeardownRef.current
+            .then(() => removeRealtimeChannel(previousDbChannel))
+            .catch((err) => {
+              console.warn('[CloudCast] DB channel teardown failed:', err);
+            });
+          await dbTeardownRef.current;
 
-      dbSessionIdRef.current = s.sessionId;
+          if (dbChannelEpochRef.current !== subscribeEpoch) return;
+          if (sessionRef.current?.sessionId !== s.sessionId) return;
 
-      const channel = getSupabase()
-        .channel(`db-paired-${s.sessionId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'paired_devices',
-            filter: `session_id=eq.${s.sessionId}`,
-          },
-          () => {
-            if (sessionRef.current) scheduleLoadDevices(sessionRef.current);
-          },
-        )
-        .subscribe((status) => {
-          if (dbChannelRef.current !== channel || dbChannelEpochRef.current !== subscribeEpoch) {
-            return;
-          }
-          if (status === 'SUBSCRIBED') return;
+          dbSessionIdRef.current = s.sessionId;
+
+          const channel = getSupabase()
+            .channel(`db-paired-${s.sessionId}`)
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'paired_devices',
+                filter: `session_id=eq.${s.sessionId}`,
+              },
+              () => {
+                if (sessionRef.current) scheduleLoadDevices(sessionRef.current);
+              },
+            )
+            .subscribe((status) => {
+              if (dbChannelRef.current !== channel || dbChannelEpochRef.current !== subscribeEpoch) {
+                return;
+              }
+              if (status === 'SUBSCRIBED') return;
+              if (
+                status !== 'CHANNEL_ERROR' &&
+                status !== 'TIMED_OUT' &&
+                status !== 'CLOSED'
+              ) {
+                return;
+              }
+              if (!sessionRef.current) return;
+              dbSessionIdRef.current = null;
+              window.setTimeout(() => {
+                if (sessionRef.current) subscribeDbChangesRef.current(sessionRef.current);
+              }, realtimeRetryDelayMs(1, true));
+            }, REALTIME_PUSH_TIMEOUT_MS);
+
           if (
-            status !== 'CHANNEL_ERROR' &&
-            status !== 'TIMED_OUT' &&
-            status !== 'CLOSED'
+            dbChannelEpochRef.current !== subscribeEpoch ||
+            sessionRef.current?.sessionId !== s.sessionId
           ) {
+            await removeRealtimeChannel(channel);
             return;
           }
-          if (!sessionRef.current) return;
-          dbSessionIdRef.current = null;
-          window.setTimeout(() => {
-            if (sessionRef.current) subscribeDbChangesRef.current(sessionRef.current);
-          }, realtimeRetryDelayMs(1, true));
-        }, REALTIME_PUSH_TIMEOUT_MS);
 
-      dbChannelRef.current = channel;
+          dbChannelRef.current = channel;
+        })
+        .catch((err) => {
+          console.error('[CloudCast] DB realtime subscribe failed:', err);
+        });
     },
     [scheduleLoadDevices, isDbChannelHealthy],
   );
@@ -1346,7 +1466,7 @@ export function CloudCastProvider({
           accessCode: updated.accessCode,
           ownerId: profile?.id,
         },
-        productType,
+        getPairingSessionProduct(),
       );
       setSession(updated);
     } catch (err) {
@@ -1354,7 +1474,7 @@ export function CloudCastProvider({
     } finally {
       setIsRegenerating(false);
     }
-  }, [session, profile?.id, broadcast, productType]);
+  }, [session, profile?.id, broadcast]);
 
   const unpairDevice = useCallback(
     async (deviceId: string) => {
@@ -1378,15 +1498,17 @@ export function CloudCastProvider({
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
     void initSession();
-  }, [initSession]);
+  }, [initSession, authLoading]);
 
   useEffect(() => {
     if (!session || !profile?.id) return;
-    const stored = loadStoredSession(productType);
+    const pairingProduct = getPairingSessionProduct();
+    const stored = loadStoredSession(pairingProduct);
     if (!stored) return;
     if (stored.ownerId && stored.ownerId !== profile.id) {
-      clearStoredSession(productType);
+      clearStoredSession(pairingProduct);
       teardownRealtime();
       void initSession();
       return;
@@ -1398,10 +1520,10 @@ export function CloudCastProvider({
           accessCode: stored.accessCode,
           ownerId: profile.id,
         },
-        productType,
+        pairingProduct,
       );
     }
-  }, [session, profile?.id, initSession, teardownRealtime, productType]);
+  }, [session, profile?.id, initSession, teardownRealtime]);
 
   useEffect(() => {
     let releaseLeader = () => {};
@@ -1419,8 +1541,8 @@ export function CloudCastProvider({
   }, [isSignalingLeader, requestMeshReoffer]);
 
   useAudioIngressStreams({
-    enabled: productType === 'audio',
-    connectionMode,
+    enabled: audioIngressEnabled,
+    connectionMode: sessionConnectionMode,
     devices,
     onStream: bindIngressStream,
     onConnecting: markDeviceConnecting,
@@ -1433,10 +1555,13 @@ export function CloudCastProvider({
 
   useEffect(() => {
     if (!session || !profile) return;
-    if (
-      session.maxDevices === profile.plan.max_total_channels &&
-      session.planId === profile.plan_id
-    ) {
+    // Audio mixer shares the video pairing session — plan sync runs from the video dashboard.
+    if (productType === 'audio') return;
+
+    const productPlanId = resolveProductPlan(profile, 'video_mixer');
+    const expectedMaxDevices = profile.plan.max_total_channels;
+
+    if (session.maxDevices === expectedMaxDevices && session.planId === productPlanId) {
       return;
     }
 
@@ -1448,7 +1573,15 @@ export function CloudCastProvider({
       .catch(() => {
         /* ignore — init path handles hard failures */
       });
-  }, [profile?.plan_id, profile?.plan.max_total_channels, session?.sessionId, session?.accessCode, loadDevicesImmediate]);
+  }, [
+    profile,
+    productType,
+    session?.sessionId,
+    session?.accessCode,
+    session?.maxDevices,
+    session?.planId,
+    loadDevicesImmediate,
+  ]);
 
   useEffect(() => {
     if (!session?.sessionId || !session?.accessCode) return;
@@ -1484,6 +1617,17 @@ export function CloudCastProvider({
       if (!isDbChannelHealthy()) {
         subscribeDbChangesRef.current(sessionRef.current);
       }
+
+      applyPresenceSnapshot(channelRef.current);
+      if (isSignalingLeaderRef.current && channelRef.current) {
+        const online = presenceDeviceIds(channelRef.current);
+        const needsReoffer = [...online].some((deviceId) => {
+          if (isMeshStreamPresent(meshStreamsRef.current.get(deviceId))) return false;
+          const peerState = peerConnections.current.get(deviceId)?.connectionState;
+          return !peerState || peerState === 'failed' || peerState === 'closed';
+        });
+        if (needsReoffer) requestMeshReoffer('session-recover');
+      }
     };
 
     const onVisible = () => {
@@ -1499,7 +1643,7 @@ export function CloudCastProvider({
       window.clearInterval(healthTimer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [session, isSessionChannelHealthy, isDbChannelHealthy, scheduleRealtimeReconnect]);
+  }, [session, isSessionChannelHealthy, isDbChannelHealthy, scheduleRealtimeReconnect, applyPresenceSnapshot, requestMeshReoffer]);
 
   const contextValue = useMemo<CloudCastContextValue>(
     () => ({

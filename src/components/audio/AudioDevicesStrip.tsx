@@ -1,12 +1,14 @@
 import { Battery, Signal, Wifi } from 'lucide-react';
 import type { Device } from '../../types/device';
 import { isRealDevice } from '../../types/device';
+import { isDeviceLinkedOnSession } from '../../lib/deviceConnection';
 import { cn } from '../../lib/utils';
 
-function statusMeta(status: Device['status']): { tone: string; label: string } {
-  if (status === 'live') return { tone: 'live', label: 'LIVE' };
-  if (status === 'connecting') return { tone: 'connecting', label: 'LINK' };
-  if (status === 'error') return { tone: 'error', label: 'ERR' };
+function statusMeta(device: Device): { tone: string; label: string } {
+  if (device.status === 'live') return { tone: 'live', label: 'LIVE' };
+  if (isDeviceLinkedOnSession(device)) return { tone: 'live', label: 'LINK' };
+  if (device.status === 'connecting') return { tone: 'connecting', label: 'WAIT' };
+  if (device.status === 'error') return { tone: 'error', label: 'ERR' };
   return { tone: 'offline', label: 'OFF' };
 }
 
@@ -27,7 +29,7 @@ export function AudioDevicesStrip({
     return (
       <div className="studiolive-devices-strip studiolive-devices-strip--empty">
         <p className="text-[10px] text-sky-200/50">
-          No paired inputs — share your access code with CloudCast Audio Mobile
+          No paired inputs — pair CloudCast Mobile with your access code (same code as Video Mixer)
         </p>
       </div>
     );
@@ -38,7 +40,7 @@ export function AudioDevicesStrip({
       {live.map((device, index) => {
         const label = channelLabels[device.deviceId] || device.label;
         const selected = selectedChannel === index;
-        const meta = statusMeta(device.status);
+        const meta = statusMeta(device);
         const slot = device.slotNumber ?? index + 1;
 
         return (
@@ -50,7 +52,8 @@ export function AudioDevicesStrip({
               'studiolive-device-chip',
               selected && 'studiolive-device-chip--selected',
               device.status === 'live' && 'studiolive-device-chip--live',
-              device.status === 'connecting' && 'studiolive-device-chip--connecting',
+              isDeviceLinkedOnSession(device) && 'studiolive-device-chip--live',
+              device.status === 'connecting' && !isDeviceLinkedOnSession(device) && 'studiolive-device-chip--connecting',
             )}
           >
             <span
