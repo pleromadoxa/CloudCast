@@ -313,6 +313,36 @@ export function buildEmail(template: string, payload: TemplatePayload): { subjec
       };
     }
 
+    case "video_ops_digest": {
+      const snapshotCount = Number(payload.snapshot_count_7d ?? 0);
+      const auditCount = Number(payload.audit_count_7d ?? 0);
+      const operator = String(payload.latest_operator ?? "—");
+      const pst = String(payload.latest_pst ?? "—");
+      const pgm = String(payload.latest_pgm ?? "—");
+      const onAir = Boolean(payload.latest_on_air);
+      const recentAudit = Array.isArray(payload.recent_audit) ? payload.recent_audit : [];
+      const auditLines = recentAudit
+        .slice(0, 5)
+        .map((row: Record<string, unknown>) =>
+          `<li style="margin:0 0 6px;color:#bbb;font-size:13px;">${String(row.event_type ?? "event")} · ${String(row.label ?? row.device_id ?? "—")}</li>`
+        )
+        .join("");
+      return {
+        subject: "CloudCast Video Mixer ops digest",
+        html: layout("Video ops digest", `
+          <p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#bbb;">
+            Last 7 days: <strong style="color:#fff;">${snapshotCount}</strong> program snapshots,
+            <strong style="color:#fff;">${auditCount}</strong> audit events.
+          </p>
+          <p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#bbb;">
+            Latest: ${operator} · PST ${pst} · PGM ${pgm} · ${onAir ? "ON AIR" : "Off air"}
+          </p>
+          ${auditLines ? `<ul style="margin:0 0 12px;padding-left:18px;">${auditLines}</ul>` : ""}
+          ${btn(`${base}/`, "OPEN VIDEO MIXER")}
+        `),
+      };
+    }
+
     default:
       return {
         subject: "CloudCast by Quantum Regal",
@@ -357,6 +387,15 @@ export const EMAIL_TEMPLATE_SAMPLES: Record<string, TemplatePayload> = {
     latest_master_volume: 78,
     latest_scene: "B",
     recent_audit: [{ event_type: "scene_recall", scene_id: "B" }],
+  },
+  video_ops_digest: {
+    snapshot_count_7d: 10,
+    audit_count_7d: 36,
+    latest_operator: "TD Operator",
+    latest_pst: "Cam 2",
+    latest_pgm: "Cam 1",
+    latest_on_air: true,
+    recent_audit: [{ event_type: "take", label: "Cam 2" }],
   },
 };
 

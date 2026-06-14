@@ -1,5 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Device, DeviceStatus } from '../types/device';
+import { isRealDevice } from '../types/device';
 
 /** Mobile heartbeats every 15s — treat active slots as stale shortly after. */
 export const DEVICE_HEARTBEAT_STALE_MS = 22_000;
@@ -12,6 +13,8 @@ export type VideoTransport = 'mesh' | 'cloud';
 export interface DeviceReconcileContext {
   presenceOnline: boolean;
   hasMeshStream: boolean;
+  /** Mesh carries video (not audio-only bridge on Regal Cloud). */
+  hasMeshVideo?: boolean;
   peerState?: RTCPeerConnectionState;
   connectingSinceMs?: number | null;
   nowMs?: number;
@@ -99,6 +102,66 @@ export function isDeviceLinkedOnSession(device: Device): boolean {
   return Boolean(device.isOnline || device.connectionState === 'connected');
 }
 
+/** UI-facing connection phase (distinct from DB `DeviceStatus`). */
+export type DeviceConnectionDisplay =
+  | 'offline'
+  | 'pairing'
+  | 'connecting'
+  | 'connected'
+  | 'live';
+
+export const DEVICE_CONNECTION_LABELS: Record<DeviceConnectionDisplay, string> = {
+  offline: 'OFFLINE',
+  pairing: 'PAIRING',
+  connecting: 'CONNECTING',
+  connected: 'CONNECTED',
+  live: 'LIVE',
+};
+
+export interface DeviceConnectionDisplayOptions {
+  presenceOnline?: boolean;
+  /** True when preview has usable video (or full live picture). */
+  hasActiveStream?: boolean;
+  /** True when WHEP or mesh carries video — false for audio-only mesh bridge on Regal Cloud. */
+  hasVideoStream?: boolean;
+}
+
+/**
+ * Derive the operator-facing connection label for a paired device.
+ * - pairing: slot paired, phone not on the session channel yet
+ * - connecting: on channel, WebRTC / WHEP handshake in progress
+ * - connected: linked on session, waiting for Go Live
+ * - live: active feed on the mixer
+ */
+export function deriveDeviceConnectionDisplay(
+  device: Device,
+  options?: DeviceConnectionDisplayOptions,
+): DeviceConnectionDisplay {
+  if (device.status === 'error') return 'offline';
+
+  if (options?.hasActiveStream) return 'live';
+
+  if (isDeviceLinkedOnSession(device)) {
+    const awaitingCloudVideo =
+      Boolean(device.whepUrl?.trim()) && options?.hasVideoStream === false;
+    if (awaitingCloudVideo) return 'connecting';
+    return 'connected';
+  }
+
+  if (device.status === 'connecting') {
+    const onChannel = options?.presenceOnline ?? device.isOnline;
+    const peerNegotiating =
+      device.connectionState === 'connecting' || device.connectionState === 'new';
+
+    if (!onChannel && !peerNegotiating) return 'pairing';
+    return 'connecting';
+  }
+
+  if (isRealDevice(device) && device.status === 'offline') return 'offline';
+
+  return 'offline';
+}
+
 export function isDeviceHeartbeatStale(
   lastSeenAt: string | undefined,
   status: DeviceStatus,
@@ -124,15 +187,27 @@ export function reconcileDeviceConnectivity(
   const nowMs = context.nowMs ?? Date.now();
   const now = new Date(nowMs).toISOString();
   const meshActive = context.hasMeshStream;
+  const meshVideo = context.hasMeshVideo ?? false;
   const { presenceOnline, peerState, connectingSinceMs, videoTransport } = context;
   const cloudPlayback = deviceHasCloudPlayback(device, videoTransport);
 
-  if (meshActive) {
+  if (meshActive && (videoTransport === 'mesh' || meshVideo)) {
     return {
       ...device,
       status: 'live',
       isOnline: true,
       connectionState: 'connected',
+      lastSeenAt: now,
+    };
+  }
+
+  /** Regal Cloud: mesh audio bridge is linked — not live picture until WHEP or mesh video. */
+  if (meshActive && cloudPlayback && !meshVideo) {
+    return {
+      ...device,
+      status: 'connecting',
+      isOnline: true,
+      connectionState: peerState ?? 'connected',
       lastSeenAt: now,
     };
   }

@@ -25,10 +25,10 @@ function mockStream(liveVideo = true): MediaStream {
 }
 
 describe('replayIngress', () => {
-  it('prefers mesh over whep', () => {
+  it('prefers whep over mesh on regal plan', () => {
     const mesh = mockStream(true);
     const whep = mockStream(true);
-    expect(resolveReplayDeviceStream('cam-1', () => mesh, () => whep)).toBe(mesh);
+    expect(resolveReplayDeviceStream('cam-1', () => mesh, () => whep)).toBe(whep);
   });
 
   it('uses whep when mesh unavailable on regal plan', () => {

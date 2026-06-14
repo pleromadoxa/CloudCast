@@ -33,7 +33,7 @@ import { DisplayControlDeck } from './DisplayControlDeck';
 import { AccessCodePanel } from '../session/AccessCodePanel';
 import { cn } from '../../lib/utils';
 import { ProgramPresetToolbar } from '../presets/ProgramPresetToolbar';
-import { PRODUCTION_OFFSCREEN_STYLE, productionShellClass } from '../../lib/productionShell';
+import { productionShellClass } from '../../lib/productionShell';
 
 interface DisplayLayoutProps {
   /** Off-screen render while Display Feed stays live on another route */
@@ -130,7 +130,6 @@ export function DisplayLayout({ hidden = false }: DisplayLayoutProps) {
       className={cn(
         productionShellClass(hidden, 'flex h-full min-h-0 flex-col bg-mixer-bg'),
       )}
-      style={hidden ? PRODUCTION_OFFSCREEN_STYLE : undefined}
       aria-hidden={hidden}
     >
       {!hidden && (

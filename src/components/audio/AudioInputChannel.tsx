@@ -5,7 +5,7 @@ import { isRealDevice } from '../../types/device';
 import type { AudioInputSource } from '../../types/audio';
 import { AUDIO_SOURCE_LABELS } from '../../types/audio';
 import { unlockDashboardAudio } from '../../lib/audioOutput';
-import { isDeviceLinkedOnSession } from '../../lib/deviceConnection';
+import { deriveDeviceConnectionDisplay, DEVICE_CONNECTION_LABELS } from '../../lib/deviceConnection';
 import { cn } from '../../lib/utils';
 import { InputLiveMeter } from '../mixer/InputLiveMeter';
 
@@ -24,14 +24,16 @@ function sourceShortLabel(source: AudioInputSource): string {
 function statusLabel(
   device: Device,
   locked: boolean,
-): { text: string; tone: 'empty' | 'locked' | 'offline' | 'connecting' | 'live' | 'error' } {
+): { text: string; tone: 'empty' | 'locked' | 'offline' | 'connecting' | 'connected' | 'live' | 'error' } {
   if (locked) return { text: 'LOCKED', tone: 'locked' };
   if (!isRealDevice(device)) return { text: 'EMPTY', tone: 'empty' };
-  if (device.status === 'live') return { text: 'LIVE', tone: 'live' };
-  if (isDeviceLinkedOnSession(device)) return { text: 'LINK', tone: 'live' };
-  if (device.status === 'connecting') return { text: 'WAIT', tone: 'connecting' };
+  const display = deriveDeviceConnectionDisplay(device);
+  if (display === 'live') return { text: DEVICE_CONNECTION_LABELS.live, tone: 'live' };
+  if (display === 'connected') return { text: DEVICE_CONNECTION_LABELS.connected, tone: 'connected' };
+  if (display === 'connecting') return { text: DEVICE_CONNECTION_LABELS.connecting, tone: 'connecting' };
+  if (display === 'pairing') return { text: DEVICE_CONNECTION_LABELS.pairing, tone: 'connecting' };
   if (device.status === 'error') return { text: 'ERR', tone: 'error' };
-  return { text: 'OFF', tone: 'offline' };
+  return { text: DEVICE_CONNECTION_LABELS.offline, tone: 'offline' };
 }
 
 export function AudioInputChannel({
@@ -89,6 +91,7 @@ export function AudioInputChannel({
         empty && 'studiolive-channel--empty',
         status.tone === 'live' && live && 'studiolive-channel--live',
         status.tone === 'connecting' && 'studiolive-channel--connecting',
+        status.tone === 'connected' && 'studiolive-channel--connected',
         solo && 'studiolive-channel--solo',
         muted && live && 'studiolive-channel--muted',
         onMix && live && 'studiolive-channel--on-mix',

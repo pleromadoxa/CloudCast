@@ -2985,6 +2985,15 @@ body {
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
+.studiolive-channel__led--connected {
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.45);
+}
+
+.studiolive-channel--connected {
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.25);
+}
+
 .studiolive-channel__led--live {
   background: #34d399;
   box-shadow: 0 0 8px rgba(52, 211, 153, 0.75);
@@ -3699,6 +3708,70 @@ body {
   padding: 0.5rem;
 }
 
+.device-connection-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 0.2rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+}
+
+.device-connection-badge--compact {
+  font-size: 7px;
+  padding: 0.05rem 0.25rem;
+}
+
+.device-connection-badge__dot {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+.device-connection-badge--offline {
+  color: #94a3b8;
+}
+.device-connection-badge--offline .device-connection-badge__dot {
+  background: #64748b;
+}
+
+.device-connection-badge--pairing {
+  color: #fcd34d;
+}
+.device-connection-badge--pairing .device-connection-badge__dot {
+  background: #fbbf24;
+  animation: studiolive-led-blink 1s ease-in-out infinite;
+}
+
+.device-connection-badge--connecting {
+  color: #fde68a;
+}
+.device-connection-badge--connecting .device-connection-badge__dot {
+  background: #fbbf24;
+  animation: studiolive-led-blink 0.8s ease-in-out infinite;
+}
+
+.device-connection-badge--connected {
+  color: #6ee7b7;
+}
+.device-connection-badge--connected .device-connection-badge__dot {
+  background: #22c55e;
+}
+
+.device-connection-badge--live {
+  color: #fca5a5;
+}
+.device-connection-badge--live .device-connection-badge__dot {
+  background: #ef4444;
+  animation: studiolive-led-blink 1.2s ease-in-out infinite;
+}
+
 .studiolive-device-chip {
   display: flex;
   align-items: center;
@@ -3744,6 +3817,14 @@ body {
   border-radius: 9999px;
   background: #475569;
   flex-shrink: 0;
+}
+
+.studiolive-device-chip__led--connected {
+  background: #22c55e;
+}
+
+.studiolive-device-chip__status--connected {
+  color: #6ee7b7;
 }
 
 .studiolive-device-chip__led--live {
@@ -4058,6 +4139,134 @@ body {
   border-radius: 0.5rem;
   background: rgb(2 6 23 / 0.6);
   overflow: hidden;
+}
+
+/* ── Collapsible enterprise sidebar (video / audio / replay) ── */
+.enterprise-sidebar-layout {
+  min-height: 0;
+}
+
+.enterprise-sidebar-layout__main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.enterprise-sidebar {
+  flex-direction: column;
+  align-self: stretch;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.enterprise-sidebar__header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+  background: rgb(2 6 23 / 0.85);
+  padding: 0.45rem 0.55rem;
+}
+
+.enterprise-sidebar__title {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.enterprise-sidebar__collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  padding: 0.25rem;
+  color: #64748b;
+  transition: color 0.15s, background 0.15s;
+}
+
+.enterprise-sidebar__collapse:hover {
+  background: rgb(255 255 255 / 0.06);
+  color: #e2e8f0;
+}
+
+.enterprise-sidebar__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.enterprise-sidebar-rail {
+  flex-direction: column;
+  align-items: stretch;
+  width: 2rem;
+}
+
+.enterprise-sidebar-rail__btn {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  border: 1px solid rgb(14 165 233 / 0.15);
+  border-radius: 0.5rem;
+  background: rgb(2 6 23 / 0.6);
+  padding: 0.65rem 0.25rem;
+  color: #64748b;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.enterprise-sidebar-rail__btn:hover {
+  border-color: rgb(14 165 233 / 0.35);
+  background: rgb(15 23 42 / 0.8);
+  color: #e2e8f0;
+}
+
+.enterprise-sidebar-rail__label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.enterprise-sidebar--audio .enterprise-sidebar__header {
+  background: #020617;
+  border-bottom-color: rgb(14 165 233 / 0.15);
+}
+
+.enterprise-sidebar--replay {
+  border-color: rgb(16 185 129 / 0.2);
+  background: rgb(4 8 6 / 0.85);
+}
+
+.enterprise-sidebar--replay .enterprise-sidebar__header {
+  background: rgb(4 8 6 / 0.95);
+  border-bottom-color: rgb(255 255 255 / 0.06);
+}
+
+.enterprise-sidebar--replay .enterprise-sidebar-rail__btn,
+.enterprise-sidebar-layout:has(.enterprise-sidebar--replay) .enterprise-sidebar-rail__btn {
+  border-color: rgb(16 185 129 / 0.2);
+}
+
+.audio-mixer-shell .studiolive-enterprise-sidebar--audio {
+  max-height: 100%;
+  align-self: stretch;
+  background: #020617;
+  border-color: rgb(14 165 233 / 0.22);
 }
 
 .studiolive-enterprise-panel {
@@ -4688,6 +4897,36 @@ body {
   background: rgba(6, 12, 24, 0.72);
 }
 
+.studiolive-host-usb--compact {
+  margin: 0;
+  padding: 0.35rem 0.75rem;
+  border-radius: 0;
+  border: none;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.12);
+  background: rgba(6, 12, 24, 0.45);
+}
+
+.studiolive-host-usb__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  min-width: 0;
+}
+
+.studiolive-host-usb__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(186, 230, 253, 0.9);
+  white-space: nowrap;
+}
+
 .studiolive-host-usb__header {
   display: flex;
   align-items: center;
@@ -4705,6 +4944,11 @@ body {
   background: rgba(14, 165, 233, 0.08);
 }
 
+.studiolive-host-usb__refresh--inline {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .studiolive-host-usb__hint {
   margin-top: 0.35rem;
   font-size: 9px;
@@ -4720,23 +4964,26 @@ body {
 }
 
 .studiolive-host-usb__select {
-  flex: 1 1 12rem;
+  flex: 1 1 8rem;
   min-width: 0;
+  max-width: 14rem;
 }
 
 .studiolive-host-usb__add {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.35rem 0.65rem;
-  border-radius: 0.35rem;
-  font-size: 9px;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.3rem;
+  font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #e0f2fe;
   background: linear-gradient(180deg, rgba(14, 165, 233, 0.35), rgba(2, 132, 199, 0.25));
   border: 1px solid rgba(56, 189, 248, 0.35);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .studiolive-host-usb__add:disabled,
@@ -4746,14 +4993,35 @@ body {
 }
 
 .studiolive-host-usb__meta {
-  margin-top: 0.35rem;
   font-size: 8px;
   color: #475569;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.studiolive-host-usb__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 10rem;
+  padding: 0.15rem 0.3rem;
+  border-radius: 9999px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  font-size: 8px;
+  color: #cbd5e1;
+}
+
+.studiolive-host-usb__chip-remove {
+  display: inline-flex;
+  color: #f87171;
+  padding: 0.05rem;
+  flex-shrink: 0;
 }
 
 .studiolive-host-usb__error {
-  margin-top: 0.35rem;
-  font-size: 9px;
+  margin-top: 0.25rem;
+  font-size: 8px;
   color: #f87171;
 }
 

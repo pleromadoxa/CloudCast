@@ -7,7 +7,7 @@ import type { Device, StreamQuality } from '../../../types/device';
 import type { AudioInputSource } from '../../../types/audio';
 import { AUDIO_SOURCE_LABELS } from '../../../types/audio';
 import { isAudioOnlyDevice, isRealDevice, isVideoDevice } from '../../../types/device';
-import { isDeviceLinkedOnSession } from '../../../lib/deviceConnection';
+import { deriveDeviceConnectionDisplay, DEVICE_CONNECTION_LABELS, isDeviceLinkedOnSession } from '../../../lib/deviceConnection';
 import { cn, formatRelativeTime } from '../../../lib/utils';
 
 interface DevicesPanelProps {
@@ -34,22 +34,19 @@ const AUDIO_SOURCES: AudioInputSource[] = ['camera', 'capture_card', 'usb_audio'
 const QUALITIES: StreamQuality[] = ['auto', 'high', 'medium', 'low'];
 
 function statusLabel(device: Device): string {
-  if (device.status === 'live') return 'live';
-  if (isDeviceLinkedOnSession(device)) return 'linked';
-  if (device.status === 'connecting') return 'connecting';
-  return device.status;
+  return DEVICE_CONNECTION_LABELS[deriveDeviceConnectionDisplay(device)].toLowerCase();
 }
 
 function StatusDot({ device }: { device: Device }) {
-  const linked = isDeviceLinkedOnSession(device);
+  const display = deriveDeviceConnectionDisplay(device);
   return (
     <span
       className={cn(
         'inline-block h-1.5 w-1.5 shrink-0 rounded-full',
-        (device.status === 'live' || linked) && 'bg-mixer-green',
-        device.status === 'live' && 'animate-pulse',
-        device.status === 'connecting' && !linked && 'bg-mixer-yellow',
-        device.status === 'offline' && 'bg-mixer-muted',
+        (display === 'live' || display === 'connected') && 'bg-mixer-green',
+        display === 'live' && 'animate-pulse',
+        (display === 'connecting' || display === 'pairing') && 'bg-mixer-yellow animate-pulse',
+        display === 'offline' && 'bg-mixer-muted',
         device.status === 'error' && 'bg-mixer-red',
       )}
     />

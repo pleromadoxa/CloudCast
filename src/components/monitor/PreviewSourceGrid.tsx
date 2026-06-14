@@ -6,6 +6,10 @@ import { unlockDashboardAudio } from '../../lib/audioOutput';
 import { previewGridStyle } from '../../lib/previewGridLayout';
 import { cn } from '../../lib/utils';
 import { StreamPlayer } from '../stream/StreamPlayer';
+import { DeviceConnectionBadge } from '../device/DeviceConnectionBadge';
+import { isMeshStreamActive } from '../../lib/deviceConnection';
+import { hasUsableAudio, hasUsableVideo } from '../../lib/streamAudioHub';
+import { useCloudCast } from '../../context/CloudCastContext';
 
 interface PreviewSourceGridProps {
   devices: Device[];
@@ -38,6 +42,7 @@ function PreviewTile({
   onSelectSource,
   onCutToSource,
   className,
+  getMeshStream,
 }: {
   device: Device | null;
   index: number;
@@ -53,9 +58,15 @@ function PreviewTile({
   onSelectSource: (deviceId: string) => void;
   onCutToSource?: (deviceId: string) => void;
   className?: string;
+  getMeshStream?: (deviceId: string) => MediaStream | null;
 }) {
   const ready = device && isRealDevice(device);
   const label = device ? device.label : `INPUT ${index + 1}`;
+  const meshStream = device && getMeshStream ? getMeshStream(device.deviceId) : null;
+  const hasActiveStream = Boolean(
+    meshStream &&
+      (isMeshStreamActive(meshStream) || hasUsableVideo(meshStream) || hasUsableAudio(meshStream)),
+  );
 
   return (
     <div
@@ -111,6 +122,12 @@ function PreviewTile({
         </button>
       )}
 
+      {device && isRealDevice(device) && (
+        <div className="pointer-events-none absolute left-1 top-1 z-20">
+          <DeviceConnectionBadge device={device} hasActiveStream={hasActiveStream} compact />
+        </div>
+      )}
+
       <div
         className={cn(
           'pointer-events-none absolute bottom-0 left-0 right-0 flex items-center justify-between px-1.5 py-0.5 text-[8px] font-bold tracking-wider',
@@ -144,6 +161,7 @@ export function PreviewSourceGrid({
   onSelectSource,
   onCutToSource,
 }: PreviewSourceGridProps) {
+  const { getMeshStream } = useCloudCast();
   const slots = Array.from({ length: Math.max(slotCount, devices.length, 2) }, (_, i) => devices[i] ?? null);
 
   if (viewMode === 'focus' && pstDeviceId) {
@@ -169,6 +187,7 @@ export function PreviewSourceGrid({
           onSelectSource={onSelectSource}
           onCutToSource={onCutToSource}
           className="min-h-0 flex-[2]"
+          getMeshStream={getMeshStream}
         />
         {others.length > 0 && (
           <div className="grid min-h-0 flex-1 grid-cols-4 gap-0.5">
@@ -190,6 +209,7 @@ export function PreviewSourceGrid({
                 onToggleViewAudioMute={onToggleViewAudioMute}
                 onSelectSource={onSelectSource}
                 onCutToSource={onCutToSource}
+                getMeshStream={getMeshStream}
               />
             ))}
           </div>
@@ -221,6 +241,7 @@ export function PreviewSourceGrid({
           onToggleViewAudioMute={onToggleViewAudioMute}
           onSelectSource={onSelectSource}
           onCutToSource={onCutToSource}
+          getMeshStream={getMeshStream}
         />
       ))}
     </div>

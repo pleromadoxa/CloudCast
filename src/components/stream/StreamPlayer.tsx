@@ -4,7 +4,8 @@ import { useWhepStream } from '../../hooks/useWhepStream';
 import { useIpCameraStream } from '../../hooks/useIpCameraStream';
 import { useMeshStream } from '../../hooks/useMeshStream';
 import { useCloudCast } from '../../context/CloudCastContext';
-import { isMeshStreamActive } from '../../lib/deviceConnection';
+import { isMeshStreamActive, deriveDeviceConnectionDisplay, DEVICE_CONNECTION_LABELS } from '../../lib/deviceConnection';
+import { hybridVideoActive, resolveHybridAudioStream, resolveHybridVideoStream, activeHybridVideoSource } from '../../lib/deviceIngress';
 import type { Device, OverlayType, StreamQuality } from '../../types/device';
 import { isRealDevice } from '../../types/device';
 import { isIpCameraDevice } from '../../lib/ipCameraDevice';
@@ -14,8 +15,10 @@ import { detectIpStreamKind } from '../../lib/ipCameraUrl';
 import { DisplayFeedPlayer } from '../display/DisplayFeedPlayer';
 import { DisplayFeedVideoCapture } from '../display/DisplayFeedVideoCapture';
 import { PrismFeedPlayer } from '../prism/PrismFeedPlayer';
+import { DeviceConnectionBadge } from '../device/DeviceConnectionBadge';
 import { cn } from '../../lib/utils';
 import { ensureAudioOutputReady } from '../../lib/audioOutput';
+import { hasUsableAudio, hasUsableVideo } from '../../lib/streamAudioHub';
 import { useStreamSpeakerPlayback } from '../../hooks/useStreamSpeakerPlayback';
 import { SignalPlaceholder } from './SignalPlaceholder';
 import { VideoOverlay } from '../overlays/VideoOverlay';
@@ -65,52 +68,21 @@ export function StreamPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const audibleRef = useRef<HTMLVideoElement>(null);
   const { connectionMode, devices, getMeshStream } = useCloudCast();
-  const useMesh = connectionMode === 'mesh' && !(device && isIpCameraDevice(device));
   const isIpCam = Boolean(device && isIpCameraDevice(device));
+  const useMeshOnly = connectionMode === 'mesh' && !isIpCam;
+  const useHybridRegal = connectionMode === 'regal' && !isIpCam;
   const ipStreamKind = isIpCam && device?.whepUrl ? detectIpStreamKind(device.whepUrl) : null;
-  const meshFeed =
-    useMesh && device && isRealDevice(device) ? getMeshStream(device.deviceId) : null;
-  const hasMeshFeed = isMeshStreamActive(meshFeed);
-  const usesRegalVideo = !useMesh && !isIpCam;
-  const regalWhepReady = usesRegalVideo && Boolean(device?.whepUrl?.trim());
-  const regalAwaitingWhep = usesRegalVideo && device?.status === 'live' && !regalWhepReady;
   const channelSessionActive = Boolean(
     device &&
       isRealDevice(device) &&
       (device.status === 'live' || device.status === 'connecting'),
   );
-  const isPairedOnline = Boolean(
-    device &&
-      isRealDevice(device) &&
-      !hasMeshFeed &&
-      !regalWhepReady &&
-      device.status !== 'offline' &&
-      channelSessionActive &&
-      (device.status === 'connecting' ||
-        device.isOnline ||
-        device.connectionState === 'connected' ||
-        device.connectionState === 'connecting'),
-  );
-  const isLinkNegotiating = Boolean(
-    isPairedOnline &&
-      device &&
-      device.status === 'connecting' &&
-      !device.isOnline &&
-      device.connectionState !== 'connected',
-  );
-  const isStreaming = Boolean(
-    device &&
-      isRealDevice(device) &&
-      (hasMeshFeed ||
-        (isIpCam && Boolean(device.whepUrl)) ||
-        (regalWhepReady && device.status === 'live')),
-  );
+  const meshEnabled = channelSessionActive && !isIpCam && Boolean(device && isRealDevice(device));
+  const regalWhepReady = useHybridRegal && Boolean(device?.whepUrl?.trim());
   const whepEnabled =
     regalWhepReady &&
-    (device?.status === 'live' || device?.status === 'connecting') &&
+    channelSessionActive &&
     (!isIpCam || ipStreamKind === 'whep');
-  const ipCamEnabled = isIpCam && isStreaming && ipStreamKind != null && ipStreamKind !== 'whep' && ipStreamKind !== 'unsupported';
-  const meshEnabled = useMesh && channelSessionActive && !isIpCam;
 
   const whep = useWhepStream({
     deviceId: device?.deviceId ?? 'none',
@@ -119,12 +91,15 @@ export function StreamPlayer({
     quality,
   });
 
+  const mesh = useMeshStream(device?.deviceId ?? 'none', meshEnabled, connectionMode);
+  const meshFeed = device && isRealDevice(device) ? mesh.stream ?? getMeshStream(device.deviceId) : null;
+
   const audioDevice = audioDeviceId
     ? devices.find((d) => d.deviceId === audioDeviceId) ?? null
     : null;
+  const audioMeshEnabled = Boolean(audioDevice && isRealDevice(audioDevice));
   const audioWhepEnabled =
-    !useMesh && Boolean(audioDevice?.whepUrl) && Boolean(audioDevice && isRealDevice(audioDevice));
-  const audioMeshEnabled = useMesh && Boolean(audioDevice && isRealDevice(audioDevice));
+    useHybridRegal && Boolean(audioDevice?.whepUrl) && Boolean(audioDevice && isRealDevice(audioDevice));
 
   const audioWhep = useWhepStream({
     deviceId: audioDevice?.deviceId ?? 'none-audio',
@@ -134,20 +109,93 @@ export function StreamPlayer({
   });
   const audioMesh = useMeshStream(audioDevice?.deviceId ?? 'none-audio', audioMeshEnabled && Boolean(audioDeviceId), connectionMode);
 
-  const mesh = useMeshStream(device?.deviceId ?? 'none', meshEnabled, connectionMode);
+  const ipCamEnabled =
+    isIpCam &&
+    channelSessionActive &&
+    Boolean(device?.whepUrl) &&
+    ipStreamKind != null &&
+    ipStreamKind !== 'whep' &&
+    ipStreamKind !== 'unsupported';
 
   const ipCam = useIpCameraStream({
     url: device?.whepUrl ?? null,
     enabled: ipCamEnabled,
   });
 
-  const stream = ipCamEnabled ? ipCam.stream : useMesh ? mesh.stream : whep.stream;
-  const waitingForMeshStream = meshEnabled && !mesh.stream;
-  const audioStream = audioDeviceId ? (useMesh ? audioMesh.stream : audioWhep.stream) : null;
-  const playbackStream = audioStream ?? stream;
+  const hybridVideo = useHybridRegal
+    ? resolveHybridVideoStream(meshFeed, whep.stream)
+    : null;
+  const stream = ipCamEnabled
+    ? ipCam.stream
+    : useMeshOnly
+      ? mesh.stream
+      : useHybridRegal
+        ? hybridVideo
+        : whep.stream;
+
+  const hasMeshFeed = Boolean(
+    meshFeed &&
+      (isMeshStreamActive(meshFeed) || hasUsableVideo(meshFeed) || hasUsableAudio(meshFeed)),
+  );
+  const hasPreviewableMedia = Boolean(
+    stream && (hasUsableVideo(stream) || hasUsableAudio(stream)),
+  );
+  const hasHybridVideo = useHybridRegal
+    ? hybridVideoActive(meshFeed, whep.stream)
+    : hasMeshFeed || hasPreviewableMedia;
+  const regalAwaitingWhep =
+    useHybridRegal && device?.status === 'live' && !regalWhepReady && !hasHybridVideo;
+  const isPairedOnline = Boolean(
+    device &&
+      isRealDevice(device) &&
+      !hasHybridVideo &&
+      !regalWhepReady &&
+      device.status !== 'offline' &&
+      channelSessionActive &&
+      (device.status === 'connecting' ||
+        device.isOnline ||
+        device.connectionState === 'connected' ||
+        device.connectionState === 'connecting'),
+  );
+  const isStreaming = Boolean(
+    device &&
+      isRealDevice(device) &&
+      (hasHybridVideo ||
+        (useMeshOnly && (hasMeshFeed || hasPreviewableMedia)) ||
+        (useHybridRegal && hasPreviewableMedia) ||
+        (isIpCam && Boolean(device.whepUrl) && ipCam.stream)),
+  );
+  const waitingForMeshStream =
+    useMeshOnly && meshEnabled && !meshFeed && !hasPreviewableMedia;
+  const waitingForRegalCloud =
+    useHybridRegal && regalWhepReady && !hasHybridVideo && !hasPreviewableMedia;
+  const usingMeshFallback =
+    useHybridRegal && hasHybridVideo && activeHybridVideoSource(meshFeed, whep.stream) === 'mesh';
+  const hybridAudio = useHybridRegal && !audioDeviceId
+    ? resolveHybridAudioStream(meshFeed, whep.stream)
+    : null;
+  const audioStream = audioDeviceId
+    ? useHybridRegal
+      ? resolveHybridAudioStream(audioMesh.stream, audioWhep.stream)
+      : useMeshOnly
+        ? audioMesh.stream
+        : audioWhep.stream
+    : null;
+  const playbackStream = audioStream ?? hybridAudio ?? stream;
   const level = audioMuted ? 0 : Math.min(1, Math.max(0, volume));
   const isMonitorPlayback = !onAudibleRef && !onBusPlaybackStream && enableSpeakerPlayback;
   useStreamSpeakerPlayback(playbackStream, isMonitorPlayback, level);
+
+  useEffect(() => {
+    if (!useHybridRegal || !device?.deviceId || hasHybridVideo) return;
+    if (whep.error || whep.connectionState === 'failed') {
+      window.dispatchEvent(
+        new CustomEvent('cloudcast:request-mesh-reoffer', {
+          detail: { deviceId: device.deviceId, reason: 'whep-fallback' },
+        }),
+      );
+    }
+  }, [useHybridRegal, device?.deviceId, hasHybridVideo, whep.error, whep.connectionState]);
 
   const bindAudibleElement = useCallback(
     (el: HTMLVideoElement | null) => {
@@ -180,8 +228,12 @@ export function StreamPlayer({
     onBusPlaybackStream(playbackStream);
     return () => onBusPlaybackStream(null);
   }, [onBusPlaybackStream, playbackStream]);
-  const connectionState = ipCamEnabled ? ipCam.connectionState : useMesh ? mesh.connectionState : whep.connectionState;
-  const error = ipCamEnabled ? ipCam.error : useMesh ? null : whep.error;
+  const connectionState = ipCamEnabled
+    ? ipCam.connectionState
+    : useMeshOnly
+      ? mesh.connectionState
+      : whep.connectionState;
+  const error = ipCamEnabled ? ipCam.error : useMeshOnly ? null : whep.error;
   const reconnect = ipCamEnabled ? ipCam.reconnect : whep.reconnect;
 
   useEffect(() => {
@@ -214,20 +266,17 @@ export function StreamPlayer({
   }
 
   if (isDisplayFeedDevice(device)) {
-    if (onVideoRef) {
-      return (
-        <DisplayFeedVideoCapture
-          live={displayFeedLive}
-          compact={compact}
-          showLabel={showLabel}
-          className={cn('relative h-full w-full overflow-hidden bg-black', className)}
-          onVideoRef={onVideoRef}
-        />
-      );
-    }
     return (
       <div className={cn('relative h-full w-full overflow-hidden bg-black', className)} style={style}>
-        <DisplayFeedPlayer live={displayFeedLive} compact={compact} showLabel={showLabel} />
+        <DisplayFeedPlayer live={displayFeedLive} compact={compact} showLabel={showLabel} className="absolute inset-0" />
+        {onVideoRef && (
+          <DisplayFeedVideoCapture
+            live={displayFeedLive}
+            showLabel={false}
+            onVideoRef={onVideoRef}
+            className="pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0"
+          />
+        )}
       </div>
     );
   }
@@ -244,9 +293,25 @@ export function StreamPlayer({
     !isStreaming &&
     !isPairedOnline &&
     !regalAwaitingWhep &&
-    ((!isIpCam && !useMesh && !device.whepUrl && device.status === 'offline') ||
+    ((!useMeshOnly && !useHybridRegal && !device.whepUrl && device.status === 'offline') ||
+      (useMeshOnly && !stream && device.status === 'offline') ||
       (isIpCam && !device.whepUrl) ||
-      (useMesh && !stream && device.status === 'offline'));
+      (useHybridRegal && !stream && device.status === 'offline'));
+
+  const connectionDisplay = deriveDeviceConnectionDisplay(device, {
+    hasActiveStream: isStreaming,
+    hasVideoStream: hasHybridVideo,
+  });
+  const connectionLabel = DEVICE_CONNECTION_LABELS[connectionDisplay];
+  const showConnectionOverlay =
+    !hasPreviewableMedia &&
+    !isStreaming &&
+    (connectionDisplay === 'pairing' ||
+      connectionDisplay === 'connecting' ||
+      connectionDisplay === 'connected' ||
+      regalAwaitingWhep ||
+      waitingForMeshStream ||
+      waitingForRegalCloud);
 
   return (
     <div className={cn('relative h-full w-full overflow-hidden bg-black', className)} style={style}>
@@ -258,32 +323,71 @@ export function StreamPlayer({
         </div>
       )}
 
-      {isPairedOnline && !isStreaming ? (
+      <div className="absolute left-1 top-1 z-30">
+        <DeviceConnectionBadge
+          device={device}
+          hasActiveStream={isStreaming}
+          hasVideoStream={hasHybridVideo}
+          compact={compact}
+        />
+      </div>
+
+      {showConnectionOverlay ? (
         <div
           className={cn(
             'flex h-full flex-col items-center justify-center gap-1',
-            isLinkNegotiating ? 'text-mixer-muted' : 'text-mixer-green',
+            connectionDisplay === 'connecting' || connectionDisplay === 'pairing'
+              ? 'text-mixer-muted'
+              : connectionDisplay === 'connected'
+                ? 'text-mixer-green'
+                : 'text-mixer-muted',
           )}
         >
-          {isLinkNegotiating ? (
+          {connectionDisplay === 'connecting' || connectionDisplay === 'pairing' || regalAwaitingWhep || waitingForMeshStream || waitingForRegalCloud ? (
             <>
-              <Loader2 className={cn('animate-spin', compact ? 'h-4 w-4' : 'h-6 w-6')} />
-              {!compact && <span className="text-[10px] tracking-wide">Connecting…</span>}
+              {error ? (
+                <AlertCircle className={cn('text-mixer-red', compact ? 'h-4 w-4' : 'h-6 w-6')} />
+              ) : (
+                <Loader2 className={cn('animate-spin', compact ? 'h-4 w-4' : 'h-6 w-6')} />
+              )}
+              {!compact && (
+                <span className="text-[10px] tracking-wide">
+                  {regalAwaitingWhep
+                    ? 'Connecting cloud feed…'
+                    : waitingForRegalCloud
+                      ? 'Connecting Regal Cloud…'
+                      : usingMeshFallback && !compact
+                        ? 'Regal Cloud fallback · mesh'
+                        : useHybridRegal && device.whepUrl && !hasHybridVideo
+                          ? 'Connecting Regal Cloud…'
+                          : error
+                            ? error
+                            : connectionLabel}
+                </span>
+              )}
+              {error && !compact && (
+                <button type="button" onClick={reconnect} className="mixer-btn px-2 py-0.5 text-[10px]">
+                  RETRY
+                </button>
+              )}
             </>
-          ) : (
+          ) : connectionDisplay === 'connected' ? (
             <>
               <span className={cn('font-bold tracking-wider', compact ? 'text-[8px]' : 'text-xs')}>
-                CONNECTED
+                {connectionLabel}
               </span>
               {!compact && <span className="text-[10px] text-mixer-muted">Waiting for Go Live</span>}
             </>
-          )}
+          ) : null}
         </div>
       ) : showOffline ? (
         <SignalPlaceholder variant="offline" compact={compact} />
-      ) : regalAwaitingWhep ||
-        waitingForMeshStream ||
-        (!useMesh && (connectionState === 'connecting' || connectionState === 'reconnecting')) ? (
+      ) : !useMeshOnly &&
+        (regalAwaitingWhep ||
+          waitingForRegalCloud ||
+          waitingForMeshStream ||
+          connectionState === 'connecting' ||
+          connectionState === 'reconnecting') ? (
         <div className="flex h-full flex-col items-center justify-center gap-1 text-mixer-muted">
           <Loader2 className={cn('animate-spin', compact ? 'h-4 w-4' : 'h-8 w-8')} />
           {!compact && connectionState === 'reconnecting' && (

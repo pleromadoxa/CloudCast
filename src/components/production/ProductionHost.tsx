@@ -1,6 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNetworkOptional } from '../../context/NetworkContext';
 import { useProduction } from '../../context/ProductionContext';
@@ -16,9 +15,22 @@ import { PrismLayout } from '../prism/PrismLayout';
 import { ReplayLayout } from '../replay/ReplayLayout';
 import { ReplayPgmOverlay } from '../replay/ReplayPgmOverlay';
 import { MixerErrorBoundary } from '../error/MixerErrorBoundary';
+import { RegalCloudBootScreen, useRegalCloudBootVisible } from '../system/RegalCloudBootScreen';
 import { cn } from '../../lib/utils';
 import { ProgramPresetGate } from '../presets/ProgramPresetGate';
-import { PRODUCTION_OFFSCREEN_STYLE } from '../../lib/productionShell';
+import { ProductionShellNav } from './ProductionShellNav';
+import { CLOUDCAST_PRODUCTS } from '../../config/products';
+import { isRegalCloudBootDoneThisSession } from '../../lib/regalCloudBoot';
+
+type ProductionConsoleId = 'video' | 'audio' | 'replay' | 'display' | 'prism';
+
+const INITIAL_MOUNTED_CONSOLES: Record<ProductionConsoleId, boolean> = {
+  video: false,
+  audio: false,
+  replay: false,
+  display: false,
+  prism: false,
+};
 
 /**
  * Keeps mixer, display, prism, audio, and replay sessions alive while the user
@@ -26,9 +38,9 @@ import { PRODUCTION_OFFSCREEN_STYLE } from '../../lib/productionShell';
  * every console is idle and the user leaves production dashboards.
  */
 export function ProductionHost() {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const { pathname } = useLocation();
-  const { isOnAir, audioConsoleActive, replayConsoleActive, setAudioConsoleActive, setReplayConsoleActive } =
+  const { isOnAir, audioConsoleActive, setAudioConsoleActive, setReplayConsoleActive } =
     useProduction();
   const { isOnline } = useNetworkOptional();
   const prismFeed = usePrismFeedOptional();
@@ -39,17 +51,76 @@ export function ProductionHost() {
   const onDisplay = pathname === '/display';
   const onPrism = pathname === '/prism';
   const onAudio = pathname === '/audio';
+  const onHub = pathname === '/hub';
   const prismFeedLive = Boolean(prismFeed?.isLive);
   const displayFeedLive = Boolean(displayFeed?.isLive);
-  const audioMixerActive = onAudio || audioConsoleActive;
-  const replayConsoleActiveNow = onReplay || replayConsoleActive;
-
   const onProductionRoute = onDashboard || onReplay || onDisplay || onPrism || onAudio;
+
+  const productionProductLabel = CLOUDCAST_PRODUCTS.find((product) => {
+    if (onDashboard && product.id === 'video_mixer') return true;
+    if (onAudio && product.id === 'audio_mixer') return true;
+    if (onReplay && product.id === 'instant_replay') return true;
+    if (onDisplay && product.id === 'regal_display') return true;
+    if (onPrism && product.id === 'regal_prism') return true;
+    return false;
+  })?.name;
+
+  const [shellWarm, setShellWarm] = useState(false);
+  const [visitedConsoles, setVisitedConsoles] = useState(INITIAL_MOUNTED_CONSOLES);
+
+  useEffect(() => {
+    if (onProductionRoute) setShellWarm(true);
+  }, [onProductionRoute]);
+
   const keepAlive = Boolean(
-    !loading &&
-      (onProductionRoute || isOnAir || prismFeedLive || displayFeedLive) &&
+    user &&
+      (onProductionRoute ||
+        (onHub && shellWarm) ||
+        isOnAir ||
+        prismFeedLive ||
+        displayFeedLive) &&
       (user || (!isOnline && onProductionRoute)),
   );
+
+  useLayoutEffect(() => {
+    if (!keepAlive) {
+      setVisitedConsoles(INITIAL_MOUNTED_CONSOLES);
+      return;
+    }
+    setVisitedConsoles((prev) => {
+      const next = {
+        video: prev.video || onDashboard,
+        audio: prev.audio || onAudio,
+        replay: prev.replay || onReplay,
+        display: prev.display || onDisplay || displayFeedLive,
+        prism: prev.prism || onPrism || prismFeedLive,
+      };
+      if (
+        next.video === prev.video &&
+        next.audio === prev.audio &&
+        next.replay === prev.replay &&
+        next.display === prev.display &&
+        next.prism === prev.prism
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, [keepAlive, onDashboard, onAudio, onReplay, onDisplay, onPrism, displayFeedLive, prismFeedLive]);
+
+  const mountedConsoles = useMemo(
+    () => ({
+      video: visitedConsoles.video || onDashboard,
+      audio: visitedConsoles.audio || onAudio,
+      replay: visitedConsoles.replay || onReplay,
+      display: visitedConsoles.display || onDisplay || displayFeedLive,
+      prism: visitedConsoles.prism || onPrism || prismFeedLive,
+    }),
+    [visitedConsoles, onDashboard, onAudio, onReplay, onDisplay, onPrism, displayFeedLive, prismFeedLive],
+  );
+
+  const audioMixerActive = onAudio || audioConsoleActive || mountedConsoles.audio;
+  const shellOffscreen = keepAlive && !onProductionRoute;
 
   useEffect(() => {
     if (keepAlive) return;
@@ -67,27 +138,12 @@ export function ProductionHost() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [keepAlive]);
 
-  if (loading && onProductionRoute) {
-    return (
-      <div className="fixed inset-0 z-40 flex items-center justify-center bg-mixer-bg">
-        <Loader2 className="h-8 w-8 animate-spin text-mixer-red" />
-      </div>
-    );
-  }
+  const waitingForAuth = Boolean((loading || (user && !profile && isOnline)) && onProductionRoute);
+  const showBoot = useRegalCloudBootVisible(waitingForAuth, {
+    enforceMinOnReady: onProductionRoute && !isRegalCloudBootDoneThisSession(),
+  });
 
   if (!keepAlive) return null;
-
-  const hiddenWhileReplay = onReplay && !onDashboard && !onDisplay && !onPrism && !onAudio;
-  const hiddenWhileDisplay = onDisplay && !onDashboard && !onReplay && !onPrism && !onAudio;
-  const hiddenWhilePrism = onPrism && !onDashboard && !onReplay && !onDisplay && !onAudio;
-  const hiddenWhileAudio = onAudio && !onDashboard && !onReplay && !onDisplay && !onPrism;
-  const hiddenWhileOffDashboard = !onDashboard && !onReplay && !onDisplay && !onPrism && !onAudio;
-  const hiddenPrismFeed = prismFeedLive && !onPrism;
-  const hiddenDisplayFeed = displayFeedLive && !onDisplay;
-  const hiddenAudioConsole = audioMixerActive && !onAudio;
-  const hiddenReplayConsole = replayConsoleActiveNow && !onReplay;
-  const hideDashboard =
-    hiddenWhileReplay || hiddenWhileDisplay || hiddenWhilePrism || hiddenWhileAudio;
 
   return (
     <>
@@ -95,44 +151,44 @@ export function ProductionHost() {
       <div
         className={cn(
           'fixed inset-0 z-40 flex h-full w-full flex-col bg-mixer-bg',
-          hiddenWhileOffDashboard && 'pointer-events-none opacity-0',
+          shellOffscreen && 'pointer-events-none hidden',
         )}
-        style={hiddenWhileOffDashboard ? PRODUCTION_OFFSCREEN_STYLE : undefined}
-        aria-hidden={hiddenWhileOffDashboard}
+        aria-hidden={shellOffscreen}
       >
-        <MixerErrorBoundary>
-          <CloudCastProvider audioMixerActive={audioMixerActive}>
-            <PgmAudioProvider>
-              <DisplayFeedSyncBridge enabled={displayFeedLive || onDisplay} />
-              <ReplayPgmOverlay />
-              {replayConsoleActiveNow && (
-                <ReplayLayout hidden={hiddenReplayConsole} />
-              )}
-              {(onDisplay || displayFeedLive) && (
-                <DisplayLayout hidden={hiddenDisplayFeed} />
-              )}
-              {(onPrism || hiddenPrismFeed) && <PrismLayout hidden={hiddenPrismFeed} />}
-              {audioMixerActive && (
-                <PgmAudioProvider localPlayback={false}>
-                  <AudioMixerLayout hidden={hiddenAudioConsole} />
-                </PgmAudioProvider>
-              )}
-              {keepAlive && (
-                <div
-                  className={cn(
-                    'flex h-full min-h-0 flex-col',
-                    (!onDashboard || hideDashboard) && 'pointer-events-none absolute opacity-0',
-                  )}
-                  style={!onDashboard || hideDashboard ? PRODUCTION_OFFSCREEN_STYLE : undefined}
-                  aria-hidden={!onDashboard || hideDashboard}
-                >
-                  <DashboardLayout />
-                </div>
-              )}
-            </PgmAudioProvider>
-          </CloudCastProvider>
-        </MixerErrorBoundary>
+        {onProductionRoute && <ProductionShellNav />}
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          <MixerErrorBoundary>
+            <CloudCastProvider audioMixerActive={audioMixerActive}>
+              <PgmAudioProvider>
+                <DisplayFeedSyncBridge enabled={displayFeedLive || onDisplay} />
+                <ReplayPgmOverlay />
+                {mountedConsoles.replay && <ReplayLayout hidden={!onReplay} />}
+                {mountedConsoles.display && <DisplayLayout hidden={!onDisplay} />}
+                {mountedConsoles.prism && <PrismLayout hidden={!onPrism} />}
+                {mountedConsoles.audio && (
+                  <PgmAudioProvider localPlayback={false}>
+                    <AudioMixerLayout hidden={!onAudio} />
+                  </PgmAudioProvider>
+                )}
+                {mountedConsoles.video && (
+                  <div
+                    className={cn(
+                      'absolute inset-0 min-h-0 flex flex-col overflow-hidden',
+                      onDashboard ? 'z-10' : 'pointer-events-none hidden z-0',
+                    )}
+                    aria-hidden={!onDashboard}
+                  >
+                    <DashboardLayout active={onDashboard} />
+                  </div>
+                )}
+              </PgmAudioProvider>
+            </CloudCastProvider>
+          </MixerErrorBoundary>
+        </div>
       </div>
+      {showBoot && onProductionRoute && (
+        <RegalCloudBootScreen fullscreen productLabel={productionProductLabel} />
+      )}
     </>
   );
 }

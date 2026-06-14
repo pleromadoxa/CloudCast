@@ -38,6 +38,7 @@ import type { PrismProductionMode } from '../../lib/prism/virtualSets';
 import type { PrismSceneRecord } from '../../types/prismFeed';
 import { sceneExtendedState, sceneToKeySettings } from '../../lib/prism/prismSceneService';
 import { setNodeEnabled } from '../../lib/prism/nodeGraph';
+import { productionShellClass } from '../../lib/productionShell';
 import { cn } from '../../lib/utils';
 
 const VirtualScene = lazy(() => import('./VirtualScene').then((m) => ({ default: m.VirtualScene })));
@@ -211,16 +212,13 @@ export function PrismLayout({ hidden = false }: PrismLayoutProps) {
     { id: 'output', label: 'Output', icon: MonitorPlay },
   ];
 
-  const shellClass = hidden
-    ? 'pointer-events-none fixed opacity-0'
-    : 'flex h-[100dvh] flex-col';
+  const shellClass = productionShellClass(
+    hidden,
+    'flex h-[100dvh] flex-col bg-[#050508] text-white',
+  );
 
   return (
-    <div
-      className={cn(shellClass, 'bg-[#050508] text-white')}
-      style={hidden ? { left: -10000, top: 0, width: '100%', height: '100%' } : undefined}
-      aria-hidden={hidden}
-    >
+    <div className={shellClass} aria-hidden={hidden}>
       {!hidden && (
         <header className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-2">
           <div className="flex items-center gap-4">

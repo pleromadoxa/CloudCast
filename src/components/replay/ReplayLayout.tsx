@@ -51,15 +51,12 @@ import type { ReplayCloudClip, ReplayClipLocal, ReplayRundownItem, ReplaySourceK
 import { formatBytes } from '../../lib/formatBytes';
 import { cn } from '../../lib/utils';
 import { AccessCodePanel } from '../session/AccessCodePanel';
-import { ReplayAuditPanel } from './ReplayAuditPanel';
-import { ReplayDebugPanel } from './ReplayDebugPanel';
+import { EnterpriseSidebarLayout } from '../layout/EnterpriseSidebarLayout';
 import { ReplayExportPresetsPanel } from './ReplayExportPresetsPanel';
 import { ReplayOperatorLockBanner } from './ReplayOperatorLockBanner';
 import { ReplayQuotaBanner } from './ReplayQuotaBanner';
 import { ReplayRundownPanel } from './ReplayRundownPanel';
 import { ReplaySessionSyncPanel } from './ReplaySessionSyncPanel';
-import { ReplayBufferSnapshotPanel, ReplayRundownSharePanel } from './ReplayPhase6Panels';
-import { ReplayLifecyclePanel, ReplayOpsDigestPanel, ReplayShowLibraryPanel } from './ReplayPhase7Panels';
 import { useReplayBufferResilience } from '../../hooks/useReplayBufferResilience';
 import { useReplayBufferSnapshotPublisher } from '../../hooks/useReplayBufferSnapshot';
 import { useReplayOperatorLocks } from '../../hooks/useReplayOperatorLocks';
@@ -76,28 +73,8 @@ import {
   type ReplayRundownTemplate,
 } from '../../lib/replayRundownTemplates';
 import { fetchReplayExportPresets, resolveDefaultPreset, type ReplayExportPreset } from '../../lib/replayExportPresets';
-import {
-  fetchLatestReplayBufferSnapshot,
-  requestStorageQuotaEmailCheck,
-  snapshotAgeMinutes,
-  type ReplayBufferSnapshot,
-} from '../../lib/replayBufferSnapshot';
-import { importRundownByShareCode, publishRundownShareCode } from '../../lib/replayRundownShare';
-import { fetchReplayShowLibrary, promoteRundownToLibrary, type ReplayShowLibraryEntry } from '../../lib/replayRundownLibrary';
-import {
-  enqueueReplayOpsDigest,
-  fetchReplayOpsDigestPrefs,
-  saveReplayOpsDigestPrefs,
-  type ReplayOpsDigestPrefs,
-} from '../../lib/replayOpsDigest';
-import {
-  applyReplayLifecyclePolicy,
-  fetchReplayClipsByLifecycle,
-  fetchReplayLifecyclePrefs,
-  saveReplayLifecyclePrefs,
-  type ReplayLifecyclePrefs,
-} from '../../lib/replayClipLifecycle';
-import { PRODUCTION_OFFSCREEN_STYLE, productionShellClass } from '../../lib/productionShell';
+import { requestStorageQuotaEmailCheck } from '../../lib/replayBufferSnapshot';
+import { productionShellClass } from '../../lib/productionShell';
 
 const PLAYBACK_RATES = [0.25, 0.5, 1, 1.5, 2] as const;
 
@@ -149,11 +126,6 @@ export function ReplayLayout({ hidden = false }: ReplayLayoutProps) {
   const [rundownDraft, setRundownDraft] = useState<number[]>([]);
   const [remoteSync, setRemoteSync] = useState<ReplaySessionSyncPayload | null>(null);
   const [rundownTemplates, setRundownTemplates] = useState<ReplayRundownTemplate[]>([]);
-  const [bufferSnapshot, setBufferSnapshot] = useState<ReplayBufferSnapshot | null>(null);
-  const [showLibrary, setShowLibrary] = useState<ReplayShowLibraryEntry[]>([]);
-  const [opsDigestPrefs, setOpsDigestPrefs] = useState<ReplayOpsDigestPrefs | null>(null);
-  const [lifecyclePrefs, setLifecyclePrefs] = useState<ReplayLifecyclePrefs | null>(null);
-  const [archivedClipCount, setArchivedClipCount] = useState(0);
   const quotaEmailRequestedRef = useRef(false);
 
   useEffect(() => {
@@ -163,7 +135,7 @@ export function ReplayLayout({ hidden = false }: ReplayLayoutProps) {
     }
   }, [devices, selectedDeviceId, sourceKind]);
 
-  const { activeStream, pgmStream, error: sourceError, startScreenShare, stopScreen } = useReplaySource(
+  const { activeStream, error: sourceError, startScreenShare, stopScreen } = useReplaySource(
     cloudcast?.getMeshStream ?? (() => null),
     selectedDeviceId,
     sourceKind,
@@ -295,47 +267,6 @@ export function ReplayLayout({ hidden = false }: ReplayLayoutProps) {
     void refreshRundownTemplates();
   }, [refreshRundownTemplates]);
 
-  useEffect(() => {
-    if (!sessionId || !canCloud) {
-      setBufferSnapshot(null);
-      return;
-    }
-    void fetchLatestReplayBufferSnapshot(sessionId).then(setBufferSnapshot);
-  }, [sessionId, canCloud, buffer.isRecording, buffer.chunkCount]);
-
-  const refreshShowLibrary = useCallback(async () => {
-    if (!canCloud) {
-      setShowLibrary([]);
-      return;
-    }
-    try {
-      setShowLibrary(await fetchReplayShowLibrary());
-    } catch {
-      /* offline */
-    }
-  }, [canCloud]);
-
-  const refreshEnterprisePrefs = useCallback(async () => {
-    if (!canCloud) return;
-    try {
-      const [digest, lifecycle, archived] = await Promise.all([
-        fetchReplayOpsDigestPrefs(),
-        fetchReplayLifecyclePrefs(),
-        fetchReplayClipsByLifecycle('archived'),
-      ]);
-      setOpsDigestPrefs(digest);
-      setLifecyclePrefs(lifecycle);
-      setArchivedClipCount(archived.length);
-    } catch {
-      /* offline */
-    }
-  }, [canCloud]);
-
-  useEffect(() => {
-    void refreshShowLibrary();
-    void refreshEnterprisePrefs();
-  }, [refreshShowLibrary, refreshEnterprisePrefs]);
-
   const quotaAlert = useMemo(
     () =>
       evaluateReplayQuotaAlert(
@@ -403,112 +334,6 @@ export function ReplayLayout({ hidden = false }: ReplayLayoutProps) {
       await refreshRundownTemplates();
     },
     [refreshRundownTemplates],
-  );
-
-  const handlePublishRundownShare = useCallback(
-    async (templateId: string) => {
-      const code = await publishRundownShareCode(templateId);
-      void logReplayAudit({
-        eventType: 'rundown_shared',
-        sessionId,
-        label: code,
-        meta: { templateId },
-      });
-      return code;
-    },
-    [sessionId],
-  );
-
-  const handleImportRundownShare = useCallback(
-    async (code: string) => {
-      const imported = await importRundownByShareCode(code);
-      void logReplayAudit({
-        eventType: 'rundown_imported',
-        sessionId,
-        label: imported.name,
-        meta: { shareCode: code },
-      });
-      await refreshRundownTemplates();
-    },
-    [sessionId, refreshRundownTemplates],
-  );
-
-  const handlePromoteToShowLibrary = useCallback(
-    async (templateId: string, category: string) => {
-      const promoted = await promoteRundownToLibrary(templateId, category);
-      void logReplayAudit({
-        eventType: 'rundown_library_promoted',
-        sessionId,
-        label: promoted.name,
-        meta: { category, templateId },
-      });
-      await Promise.all([refreshRundownTemplates(), refreshShowLibrary()]);
-    },
-    [sessionId, refreshRundownTemplates, refreshShowLibrary],
-  );
-
-  const handleLoadLibraryEntry = useCallback(
-    (templateId: string) => {
-      const entry =
-        showLibrary.find((t) => t.id === templateId) ??
-        rundownTemplates.find((t) => t.id === templateId);
-      if (!entry) return;
-      const indices = resolveTemplateBankIndices(banks.banks, entry);
-      setRundownDraft(indices);
-      preview.setPlaybackRate(entry.playbackRate);
-      setStatus(`Loaded show library rundown "${entry.name}".`);
-    },
-    [showLibrary, rundownTemplates, banks.banks, preview.setPlaybackRate],
-  );
-
-  const handleSaveOpsDigestPrefs = useCallback(
-    async (enabled: boolean, frequency: ReplayOpsDigestPrefs['frequency']) => {
-      const saved = await saveReplayOpsDigestPrefs(enabled, frequency);
-      setOpsDigestPrefs(saved);
-    },
-    [],
-  );
-
-  const handleSendOpsDigest = useCallback(async () => {
-    const result = await enqueueReplayOpsDigest();
-    if (!result.queued && result.reason === 'rate_limited') {
-      setStatus('Ops digest was sent recently — try again in an hour.');
-      return;
-    }
-    void logReplayAudit({ eventType: 'ops_digest_sent', sessionId });
-    const prefs = await fetchReplayOpsDigestPrefs();
-    setOpsDigestPrefs(prefs);
-    setStatus('Ops digest email queued.');
-  }, [sessionId]);
-
-  const handleSaveLifecyclePrefs = useCallback(async (prefs: ReplayLifecyclePrefs) => {
-    const saved = await saveReplayLifecyclePrefs(prefs);
-    setLifecyclePrefs(saved);
-  }, []);
-
-  const handleApplyLifecyclePolicy = useCallback(async () => {
-    const result = await applyReplayLifecyclePolicy();
-    void logReplayAudit({
-      eventType: 'lifecycle_policy_applied',
-      sessionId,
-      meta: {
-        archivedCount: result.archivedCount,
-        deleteCandidates: result.deleteCandidateIds.length,
-      },
-    });
-    await Promise.all([refreshCloud(), refreshEnterprisePrefs()]);
-    return result;
-  }, [sessionId, refreshCloud, refreshEnterprisePrefs]);
-
-  const handlePurgeLifecycleCandidates = useCallback(
-    async (ids: string[]) => {
-      for (const id of ids) {
-        await deleteReplayClip(id);
-        void logReplayAudit({ eventType: 'clip_purged', sessionId, clipId: id });
-      }
-      await Promise.all([refreshCloud(), refreshEnterprisePrefs()]);
-    },
-    [sessionId, refreshCloud, refreshEnterprisePrefs],
   );
 
   useEffect(() => {
@@ -1017,7 +842,6 @@ export function ReplayLayout({ hidden = false }: ReplayLayoutProps) {
       className={cn(
         productionShellClass(hidden, 'replay-shell flex h-full min-h-0 flex-col overflow-hidden bg-[#040806] text-white'),
       )}
-      style={hidden ? PRODUCTION_OFFSCREEN_STYLE : undefined}
       aria-hidden={hidden}
     >
       {!hidden && (
@@ -1063,8 +887,13 @@ export function ReplayLayout({ hidden = false }: ReplayLayoutProps) {
 
       {canCloud && <ReplayQuotaBanner alert={quotaAlert} />}
 
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <section className="flex min-h-0 flex-1 flex-col border-b border-white/5 lg:border-b-0 lg:border-r">
+      <EnterpriseSidebarLayout
+        id="replay"
+        title="Banks"
+        variant="replay"
+        className="min-h-0 flex-1"
+        main={
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-b border-white/5 lg:border-b-0 lg:border-r">
           <div className="flex flex-wrap items-center gap-2 border-b border-white/5 px-3 py-2">
             <label className="text-[10px] font-bold uppercase tracking-wider text-mixer-muted">Source</label>
             <select
@@ -1211,9 +1040,10 @@ export function ReplayLayout({ hidden = false }: ReplayLayoutProps) {
             Shortcuts: I mark in · O mark out · Enter save · P push PGM · Space play · 1–9 banks
           </p>
         </section>
-
-        <aside className="flex w-full shrink-0 flex-col lg:w-96">
-          <div className="flex border-b border-white/5">
+        }
+        sidebar={
+        <>
+          <div className="flex shrink-0 border-b border-white/5">
             {(['banks', 'cloud'] as const).map((tab) => (
               <button
                 key={tab}
@@ -1369,45 +1199,6 @@ export function ReplayLayout({ hidden = false }: ReplayLayoutProps) {
                   onDeleteTemplate={(id) => { void handleDeleteRundownTemplate(id); }}
                   className="mt-1"
                 />
-                <ReplayRundownSharePanel
-                  canShare={canCloud}
-                  readOnly={operatorLocks.readOnly}
-                  templates={rundownTemplates.map((t) => ({ id: t.id, name: t.name }))}
-                  onPublishShare={handlePublishRundownShare}
-                  onImportShare={handleImportRundownShare}
-                />
-                <ReplayBufferSnapshotPanel
-                  snapshot={bufferSnapshot}
-                  ageMinutes={bufferSnapshot ? snapshotAgeMinutes(bufferSnapshot.capturedAt) : 0}
-                />
-                <ReplayShowLibraryPanel
-                  canUse={canCloud}
-                  readOnly={operatorLocks.readOnly}
-                  templates={rundownTemplates.map((t) => ({ id: t.id, name: t.name }))}
-                  libraryEntries={showLibrary.map((t) => ({
-                    id: t.id,
-                    name: t.name,
-                    category: t.libraryCategory,
-                    itemCount: t.items.length,
-                  }))}
-                  onPromote={handlePromoteToShowLibrary}
-                  onLoadLibrary={handleLoadLibraryEntry}
-                />
-                <ReplayOpsDigestPanel
-                  canUse={canCloud}
-                  prefs={opsDigestPrefs}
-                  onSavePrefs={handleSaveOpsDigestPrefs}
-                  onSendNow={handleSendOpsDigest}
-                />
-                <ReplayLifecyclePanel
-                  canUse={canCloud}
-                  readOnly={operatorLocks.readOnly}
-                  prefs={lifecyclePrefs}
-                  archivedCount={archivedClipCount}
-                  onSavePrefs={handleSaveLifecyclePrefs}
-                  onApplyPolicy={handleApplyLifecyclePolicy}
-                  onPurgeCandidates={handlePurgeLifecycleCandidates}
-                />
               </div>
             </>
           ) : (
@@ -1475,42 +1266,13 @@ export function ReplayLayout({ hidden = false }: ReplayLayoutProps) {
               </button>
             </div>
           )}
-        </aside>
-      </div>
-
-      <ReplayDebugPanel
-        connectionMode={connectionMode}
-        sourceKind={sourceKind}
-        selectedDeviceId={selectedDeviceId}
-        activeStream={activeStream}
-        pgmStream={pgmStream}
-        sourceError={sourceError}
-        buffer={{
-          isRecording: buffer.isRecording,
-          bufferSeconds: buffer.bufferSeconds,
-          maxSeconds: buffer.maxSeconds,
-          markInSec: buffer.markInSec,
-          markOutSec: buffer.markOutSec,
-          markTimecodeIn: buffer.markTimecodeIn,
-          markTimecodeOut: buffer.markTimecodeOut,
-          houseClockSmpte: buffer.houseClockSmpte,
-          chunkCount: buffer.chunkCount,
-          mimeType: buffer.mimeType,
-        }}
-        devices={cloudcast?.devices ?? []}
-        getMeshStream={cloudcast?.getMeshStream ?? (() => null)}
-        getWhepStream={getWhepStream}
-        replayOnPgm={Boolean(replayPush)}
-        replayOnPgmLabel={replayPush?.label ?? null}
-        cloudClipCount={cloudClips.length}
-        className="border-t border-emerald-500/15"
+        </>
+        }
       />
 
       {operatorLocks.readOnly && (
         <ReplaySessionSyncPanel remoteState={remoteSync} className="border-t border-emerald-500/15" />
       )}
-
-      <ReplayAuditPanel sessionId={sessionId} cloudClips={cloudClips} className="border-t border-emerald-500/15" />
 
       <footer className="flex shrink-0 items-center justify-between border-t border-emerald-500/15 bg-[#06100c] px-4 py-1.5 text-[9px] text-mixer-muted">
         <span className="flex items-center gap-1">

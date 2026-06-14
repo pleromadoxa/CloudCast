@@ -8,13 +8,13 @@ export interface UseMeshStreamResult {
   connectionState: RTCPeerConnectionState | 'idle';
 }
 
-export function useMeshStream(deviceId: string, enabled: boolean, mode: ConnectionMode): UseMeshStreamResult {
+export function useMeshStream(deviceId: string, enabled: boolean, _mode: ConnectionMode): UseMeshStreamResult {
   const { meshStreams } = useCloudCast();
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | 'idle'>('idle');
   const streamRef = useRef<MediaStream | null>(null);
 
   const stream =
-    enabled && mode === 'mesh' ? meshStreams.get(deviceId) ?? null : null;
+    enabled ? meshStreams.get(deviceId) ?? null : null;
 
   useEffect(() => {
     if (stream) {

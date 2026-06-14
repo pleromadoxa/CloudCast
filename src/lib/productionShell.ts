@@ -1,12 +1,10 @@
-import type { CSSProperties } from 'react';
+import { cn } from './utils';
 
-export const PRODUCTION_OFFSCREEN_STYLE: CSSProperties = {
-  left: -10000,
-  top: 0,
-  width: '100%',
-  height: '100%',
-};
-
+/** Shared stacking for production consoles kept alive inside ProductionHost. */
 export function productionShellClass(hidden: boolean, visibleClass: string): string {
-  return hidden ? 'pointer-events-none fixed opacity-0' : visibleClass;
+  const stack = 'absolute inset-0 min-h-0 overflow-hidden';
+  if (hidden) {
+    return cn(stack, 'pointer-events-none hidden z-0');
+  }
+  return cn(stack, 'z-10', visibleClass);
 }

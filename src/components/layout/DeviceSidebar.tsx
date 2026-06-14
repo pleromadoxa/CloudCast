@@ -8,6 +8,7 @@ import {
   Wifi,
 } from 'lucide-react';
 import type { Device } from '../../types/device';
+import { deriveDeviceConnectionDisplay, DEVICE_CONNECTION_LABELS } from '../../lib/deviceConnection';
 import { cn, formatRelativeTime } from '../../lib/utils';
 
 interface DeviceSidebarProps {
@@ -20,11 +21,12 @@ interface DeviceSidebarProps {
   onReconnect: () => void;
 }
 
-const statusConfig = {
-  live: { label: 'Live', color: 'text-live', dot: 'bg-live' },
-  offline: { label: 'Offline', color: 'text-offline', dot: 'bg-offline' },
-  connecting: { label: 'Connected', color: 'text-mixer-green', dot: 'bg-mixer-green' },
-  error: { label: 'Error', color: 'text-danger', dot: 'bg-danger' },
+const displayTone = {
+  offline: { color: 'text-offline', dot: 'bg-offline' },
+  pairing: { color: 'text-mixer-yellow', dot: 'bg-mixer-yellow animate-pulse' },
+  connecting: { color: 'text-mixer-yellow', dot: 'bg-mixer-yellow animate-pulse' },
+  connected: { color: 'text-mixer-green', dot: 'bg-mixer-green' },
+  live: { color: 'text-live', dot: 'bg-live animate-pulse' },
 };
 
 function DeviceCard({
@@ -38,7 +40,16 @@ function DeviceCard({
   onToggleSelect: () => void;
   onFocus: () => void;
 }) {
-  const status = statusConfig[device.status];
+  const display = deriveDeviceConnectionDisplay(device);
+  const status = {
+    label: DEVICE_CONNECTION_LABELS[display],
+    ...displayTone[display],
+  };
+  if (device.status === 'error') {
+    status.label = 'ERROR';
+    status.color = 'text-danger';
+    status.dot = 'bg-danger';
+  }
 
   return (
     <div

@@ -1,19 +1,17 @@
 import { Navigate, useLocation } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNetworkOptional } from '../../context/NetworkContext';
+import { RegalCloudBootScreen } from '../system/RegalCloudBootScreen';
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const { isOnline } = useNetworkOptional();
   const location = useLocation();
 
-  if (loading && isOnline) {
-    return (
-      <div className="flex h-full min-h-screen items-center justify-center bg-mixer-bg">
-        <Loader2 className="h-8 w-8 animate-spin text-mixer-red" />
-      </div>
-    );
+  const waitingForAuth = Boolean((loading || (user && !profile && isOnline)) && isOnline);
+
+  if (waitingForAuth) {
+    return <RegalCloudBootScreen />;
   }
 
   if (!user) {

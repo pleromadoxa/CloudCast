@@ -10,6 +10,8 @@ import { CloudCastLogo } from '../brand/CloudCastLogo';
 import { CLOUDCAST_NAV_LOGO } from '../../lib/branding';
 import { resolveProductPlan, canLinkAudioVideoMixers, canUseAudioFatChannel } from '../../lib/productEntitlements';
 import { useAudioConsoleState } from '../../hooks/useAudioConsoleState';
+import { peekWhepPoolSnapshot } from '../../lib/whepStreamPool';
+import { resolveHybridAudioStream } from '../../lib/deviceIngress';
 import { useAudioMixerEngine } from '../../hooks/useAudioMixerEngine';
 import { useAudioConsoleShortcuts } from '../../hooks/useAudioConsoleShortcuts';
 import { useLocalHostAudioInputs } from '../../hooks/useLocalHostAudioInputs';
@@ -24,71 +26,18 @@ import { VideoBridgePanel } from './VideoBridgePanel';
 import { AudioMixerEngineProvider } from '../../context/AudioMixerEngineContext';
 import { AudioStreamResolverProvider } from '../../context/AudioStreamResolverContext';
 import { AudioOperatorLockBanner } from './AudioOperatorLockBanner';
-import { AudioSessionSyncPanel } from './AudioSessionSyncPanel';
-import { AudioMixerDebugPanel } from './AudioMixerDebugPanel';
-import { AudioAuditPanel } from './AudioAuditPanel';
-import { AudioShowPresetsPanel } from './AudioShowPresetsPanel';
 import { usePgmBridgePublisher } from '../../lib/pgmBridgeTransport';
-import { AUDIO_MIXER_MAX_CHANNELS, audioChannelsForPlan } from '../../config/products';
+import { AUDIO_MIXER_MAX_CHANNELS } from '../../config/products';
 import { createEmptyAudioSlot, isRealDevice } from '../../types/device';
 import type { AudioInputSource } from '../../types/audio';
 import type { SceneId } from '../../lib/audioConsolePersistence';
-import { useAudioConsoleSnapshotPublisher } from '../../hooks/useAudioConsoleSnapshot';
-import { fetchAudioShowPresets, type AudioShowPreset } from '../../lib/audioShowPresets';
-import { fetchAudioShowLibrary, promoteAudioShowToLibrary, type AudioShowLibraryEntry } from '../../lib/audioShowLibrary';
-import { importAudioShowByShareCode, publishAudioShowShareCode } from '../../lib/audioShowShare';
-import {
-  enqueueAudioOpsDigest,
-  fetchAudioOpsDigestPrefs,
-  maybeSendScheduledAudioOpsDigest,
-  saveAudioOpsDigestPrefs,
-  type AudioOpsDigestPrefs,
-} from '../../lib/audioOpsDigest';
-import {
-  fetchLatestAudioConsoleSnapshot,
-  snapshotAgeMinutes,
-  type AudioConsoleSnapshot,
-} from '../../lib/audioConsoleSnapshot';
-import {
-  AudioConsoleSnapshotPanel,
-  AudioOpsDigestPanel,
-  AudioShowLibraryPanel,
-  AudioShowSharePanel,
-} from './AudioPhase2Panels';
 import { ProgramPresetToolbar } from '../presets/ProgramPresetToolbar';
-import { AudioSceneDiffPanel, AudioSceneRundownPanel } from './AudioPhase3Panels';
-import { AudioFxDiffPanel, AudioSceneRundownSharePanel } from './AudioPhase4Panels';
-import { AudioSceneBackupPanel, AudioSceneRundownLibraryPanel } from './AudioPhase5Panels';
-import {
-  AudioChannelInventoryPanel,
-  AudioConsoleLifecyclePanel,
-  AudioRundownRunSheetPanel,
-} from './AudioPhase6Panels';
-import {
-  applyAudioLifecyclePolicy,
-  fetchAudioLifecyclePrefs,
-  maybeApplyAudioLifecyclePolicy,
-  saveAudioLifecyclePrefs,
-  type AudioLifecyclePrefs,
-} from '../../lib/audioConsoleLifecycle';
-import {
-  AudioComplianceBundlePanel,
-  AudioComplianceExportPresetsPanel,
-} from './AudioPhase7Panels';
-import type { AudioComplianceExportPreset } from '../../lib/audioComplianceExportPresets';
-import { resolveDefaultComplianceExportPreset } from '../../lib/audioComplianceExportPresets';
-import { fetchAudioSceneRundownTemplates, type AudioSceneRundownItem } from '../../lib/audioSceneRundown';
-import { importSceneRundownByShareCode, publishSceneRundownShareCode } from '../../lib/audioSceneRundownShare';
-import {
-  fetchAudioSceneRundownLibrary,
-  promoteSceneRundownToLibrary,
-  type AudioSceneRundownLibraryEntry,
-} from '../../lib/audioSceneRundownLibrary';
-import { fetchAudioSceneBackups, upsertAudioSceneBackup, type AudioSceneBackupRow } from '../../lib/audioSceneBackup';
+import { useAudioConsoleSnapshotPublisher } from '../../hooks/useAudioConsoleSnapshot';
+import { upsertAudioSceneBackup } from '../../lib/audioSceneBackup';
 import { captureSceneSnapshot } from '../../lib/audioConsolePersistence';
-import { getFollowRundownMirrorPref, setFollowRundownMirrorPref } from '../../lib/audioFollowerPrefs';
+import { getFollowRundownMirrorPref } from '../../lib/audioFollowerPrefs';
 import { cn } from '../../lib/utils';
-import { PRODUCTION_OFFSCREEN_STYLE, productionShellClass } from '../../lib/productionShell';
+import { productionShellClass } from '../../lib/productionShell';
 
 interface AudioMixerLayoutProps {
   hidden?: boolean;
@@ -106,32 +55,14 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
   const [bridgeCode, setBridgeCode] = useState<string | null>(null);
   const [remoteSync, setRemoteSync] = useState<AudioSessionSyncPayload | null>(null);
   const [lastRecalledScene, setLastRecalledScene] = useState<string | null>(null);
-  const [showPresets, setShowPresets] = useState<AudioShowPreset[]>([]);
-  const [showLibrary, setShowLibrary] = useState<AudioShowLibraryEntry[]>([]);
-  const [consoleSnapshot, setConsoleSnapshot] = useState<AudioConsoleSnapshot | null>(null);
-  const [opsDigestPrefs, setOpsDigestPrefs] = useState<AudioOpsDigestPrefs | null>(null);
-  const [rundownSync, setRundownSync] = useState({
+  const [rundownSync] = useState({
     active: false,
     stepIndex: null as number | null,
     total: 0,
     scenes: [] as string[],
     currentScene: null as string | null,
   });
-  const [rundownTemplates, setRundownTemplates] = useState<Array<{ id: string; name: string }>>([]);
-  const [rundownLibrary, setRundownLibrary] = useState<AudioSceneRundownLibraryEntry[]>([]);
-  const [sceneBackups, setSceneBackups] = useState<AudioSceneBackupRow[]>([]);
-  const [rundownDraftLoad, setRundownDraftLoad] = useState<{
-    items: AudioSceneRundownItem[];
-    name: string;
-    token: number;
-  } | null>(null);
-  const [followRundownMirror, setFollowRundownMirror] = useState(() => getFollowRundownMirrorPref());
-  const [rundownDraft, setRundownDraft] = useState<AudioSceneRundownItem[]>([]);
-  const [rundownDraftName, setRundownDraftName] = useState('Scene rundown');
-  const [lifecyclePrefs, setLifecyclePrefs] = useState<AudioLifecyclePrefs | null>(null);
-  const [complianceExportPreset, setComplianceExportPreset] = useState<AudioComplianceExportPreset>(
-    () => resolveDefaultComplianceExportPreset([]),
-  );
+  const [followRundownMirror] = useState(() => getFollowRundownMirrorPref());
   const followerRundownSceneRef = useRef<string | null>(null);
   const bridgeConnectedRef = useRef(false);
 
@@ -175,8 +106,6 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
     onSetChannelLabel,
     onStoreScene,
     onRecallScene,
-    applyPersistedConfig,
-    buildPersistedConfig,
   } = useAudioConsoleState(devices);
 
   const maxHostUsbInputs = session?.maxUsbDevices ?? 2;
@@ -193,7 +122,13 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
   }, [devices, hostUsb.localDevices]);
 
   const resolveAudioStream = useCallback(
-    (deviceId: string) => hostUsb.localStreams.get(deviceId) ?? getMeshStream(deviceId),
+    (deviceId: string) => {
+      const local = hostUsb.localStreams.get(deviceId);
+      if (local) return local;
+      const mesh = getMeshStream(deviceId);
+      const whep = peekWhepPoolSnapshot(deviceId)?.stream ?? null;
+      return resolveHybridAudioStream(mesh, whep);
+    },
     [getMeshStream, hostUsb.localStreams],
   );
 
@@ -235,8 +170,6 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
     [mergedDevices],
   );
 
-  const storedSceneCount = useMemo(() => Object.keys(scenes).length, [scenes]);
-  const activeChannels = audioChannelsForPlan(planId);
   const liveInputCount = useMemo(
     () => mergedDevices.filter((d) => isRealDevice(d) && d.status !== 'offline').length,
     [mergedDevices],
@@ -245,118 +178,6 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
     () => Object.values(state.inputMuted).filter(Boolean).length,
     [state.inputMuted],
   );
-
-  const refreshRundownTemplates = useCallback(async () => {
-    if (!canCloud) {
-      setRundownTemplates([]);
-      return;
-    }
-    try {
-      const rows = await fetchAudioSceneRundownTemplates(sessionId);
-      setRundownTemplates(rows.map((row) => ({ id: row.id, name: row.name })));
-    } catch {
-      /* offline */
-    }
-  }, [canCloud, sessionId]);
-
-  const refreshRundownLibrary = useCallback(async () => {
-    if (!canCloud) {
-      setRundownLibrary([]);
-      return;
-    }
-    try {
-      setRundownLibrary(await fetchAudioSceneRundownLibrary());
-    } catch {
-      /* offline */
-    }
-  }, [canCloud]);
-
-  const refreshSceneBackups = useCallback(async () => {
-    if (!canCloud) {
-      setSceneBackups([]);
-      return;
-    }
-    try {
-      setSceneBackups(await fetchAudioSceneBackups(sessionId));
-    } catch {
-      /* offline */
-    }
-  }, [canCloud, sessionId]);
-
-  const refreshShowPresets = useCallback(async () => {
-    if (!canCloud) {
-      setShowPresets([]);
-      return;
-    }
-    try {
-      setShowPresets(await fetchAudioShowPresets(sessionId));
-    } catch {
-      /* offline */
-    }
-  }, [canCloud, sessionId]);
-
-  const refreshShowLibrary = useCallback(async () => {
-    if (!canCloud) {
-      setShowLibrary([]);
-      return;
-    }
-    try {
-      setShowLibrary(await fetchAudioShowLibrary());
-    } catch {
-      /* offline */
-    }
-  }, [canCloud]);
-
-  const refreshPhase2Prefs = useCallback(async () => {
-    if (!canCloud) return;
-    try {
-      setOpsDigestPrefs(await fetchAudioOpsDigestPrefs());
-      setLifecyclePrefs(await fetchAudioLifecyclePrefs());
-      if (sessionId) {
-        setConsoleSnapshot(await fetchLatestAudioConsoleSnapshot(sessionId));
-      }
-    } catch {
-      /* offline */
-    }
-  }, [canCloud, sessionId]);
-
-  useEffect(() => {
-    void refreshShowPresets();
-    void refreshShowLibrary();
-    void refreshPhase2Prefs();
-    void refreshRundownTemplates();
-    void refreshRundownLibrary();
-    void refreshSceneBackups();
-  }, [refreshShowPresets, refreshShowLibrary, refreshPhase2Prefs, refreshRundownTemplates, refreshRundownLibrary, refreshSceneBackups]);
-
-  useEffect(() => {
-    if (!canCloud || hidden) return;
-    void maybeSendScheduledAudioOpsDigest().then((result) => {
-      if (result.queued) {
-        void logAudioAudit({ eventType: 'scheduled_digest_sent', sessionId });
-        void fetchAudioOpsDigestPrefs().then(setOpsDigestPrefs);
-      }
-    });
-    void maybeApplyAudioLifecyclePolicy().then((result) => {
-      if (result.applied) {
-        void logAudioAudit({
-          eventType: 'auto_lifecycle_applied',
-          sessionId,
-          meta: {
-            prunedSnapshots: result.prunedSnapshotCount ?? 0,
-            prunedBackups: result.prunedBackupCount ?? 0,
-          },
-        });
-        void refreshSceneBackups();
-        if (sessionId) {
-          void fetchLatestAudioConsoleSnapshot(sessionId).then(setConsoleSnapshot).catch(() => {
-            /* offline */
-          });
-        }
-        void fetchAudioLifecyclePrefs().then(setLifecyclePrefs);
-      }
-    });
-  }, [canCloud, hidden, sessionId, refreshSceneBackups]);
 
   useAudioConsoleSnapshotPublisher({
     enabled: canCloud && Boolean(sessionId) && !hidden && !operatorLocks.readOnly,
@@ -373,19 +194,6 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
     mutedChannelCount,
     bridgeConnected,
   });
-
-  useEffect(() => {
-    if (!sessionId || !canCloud || !state.consoleEnabled) return;
-    void fetchLatestAudioConsoleSnapshot(sessionId).then(setConsoleSnapshot);
-  }, [
-    sessionId,
-    canCloud,
-    state.consoleEnabled,
-    state.masterVolume,
-    state.masterMuted,
-    mutedChannelCount,
-    bridgeConnected,
-  ]);
 
   useAudioSessionSyncPublisher(
     sessionId,
@@ -553,14 +361,12 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
       onStoreScene(sceneId);
       void logAudioAudit({ eventType: 'scene_store', sessionId, sceneId });
       if (canCloud) {
-        void upsertAudioSceneBackup({ sessionId, sceneId, snapshot })
-          .then(() => refreshSceneBackups())
-          .catch(() => {
-            /* non-blocking */
-          });
+        void upsertAudioSceneBackup({ sessionId, sceneId, snapshot }).catch(() => {
+          /* non-blocking */
+        });
       }
     },
-    [operatorLocks.readOnly, onStoreScene, sessionId, state, canCloud, refreshSceneBackups],
+    [operatorLocks.readOnly, onStoreScene, sessionId, state, canCloud],
   );
 
   const handleRecallScene = useCallback(
@@ -572,201 +378,6 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
     },
     [operatorLocks.readOnly, onRecallScene, sessionId],
   );
-
-  const handlePublishShowShare = useCallback(
-    async (presetId: string) => {
-      const code = await publishAudioShowShareCode(presetId);
-      void logAudioAudit({ eventType: 'show_shared', sessionId, label: code, meta: { presetId } });
-      return code;
-    },
-    [sessionId],
-  );
-
-  const handleImportShowShare = useCallback(
-    async (code: string) => {
-      const imported = await importAudioShowByShareCode(code);
-      void logAudioAudit({ eventType: 'show_imported', sessionId, label: imported.name, meta: { shareCode: code } });
-      await refreshShowPresets();
-    },
-    [sessionId, refreshShowPresets],
-  );
-
-  const handlePromoteShowLibrary = useCallback(
-    async (presetId: string, category: string) => {
-      const promoted = await promoteAudioShowToLibrary(presetId, category);
-      void logAudioAudit({
-        eventType: 'show_library_promoted',
-        sessionId,
-        label: promoted.name,
-        meta: { category, presetId },
-      });
-      await Promise.all([refreshShowPresets(), refreshShowLibrary()]);
-    },
-    [sessionId, refreshShowPresets, refreshShowLibrary],
-  );
-
-  const handleLoadLibraryPreset = useCallback(
-    (presetId: string) => {
-      const entry =
-        showLibrary.find((p) => p.id === presetId) ??
-        showPresets.find((p) => p.id === presetId);
-      if (!entry) return;
-      applyPersistedConfig(entry.config);
-      void logAudioAudit({ eventType: 'show_preset_loaded', sessionId, label: entry.name });
-    },
-    [showLibrary, showPresets, applyPersistedConfig, sessionId],
-  );
-
-  const handleSaveOpsDigestPrefs = useCallback(async (enabled: boolean, frequency: AudioOpsDigestPrefs['frequency']) => {
-    setOpsDigestPrefs(await saveAudioOpsDigestPrefs(enabled, frequency));
-  }, []);
-
-  const handleSendOpsDigest = useCallback(async () => {
-    const result = await enqueueAudioOpsDigest();
-    if (!result.queued && result.reason === 'rate_limited') {
-      throw new Error('Digest sent recently — try again in an hour.');
-    }
-    void logAudioAudit({ eventType: 'ops_digest_sent', sessionId });
-    setOpsDigestPrefs(await fetchAudioOpsDigestPrefs());
-  }, [sessionId]);
-
-  const handleRundownStart = useCallback(
-    (count: number, sceneIds: string[]) => {
-      setRundownSync({
-        active: true,
-        stepIndex: 0,
-        total: count,
-        scenes: sceneIds,
-        currentScene: null,
-      });
-      void logAudioAudit({ eventType: 'scene_rundown_start', sessionId, meta: { count, scenes: sceneIds } });
-    },
-    [sessionId],
-  );
-
-  const handleRundownAdvance = useCallback(
-    (sceneId: SceneId, index: number) => {
-      setRundownSync((prev) => ({
-        ...prev,
-        stepIndex: index,
-        currentScene: sceneId,
-      }));
-      void logAudioAudit({
-        eventType: 'scene_rundown_advance',
-        sessionId,
-        sceneId,
-        meta: { index },
-      });
-      setLastRecalledScene(sceneId);
-    },
-    [sessionId],
-  );
-
-  const resetRundownSync = useCallback(() => {
-    setRundownSync({
-      active: false,
-      stepIndex: null,
-      total: 0,
-      scenes: [],
-      currentScene: null,
-    });
-  }, []);
-
-  const handleRundownComplete = useCallback(() => {
-    resetRundownSync();
-    void logAudioAudit({ eventType: 'scene_rundown_complete', sessionId });
-  }, [resetRundownSync, sessionId]);
-
-  const handleRundownStop = useCallback(() => {
-    resetRundownSync();
-  }, [resetRundownSync]);
-
-  const handlePublishRundownShare = useCallback(
-    async (templateId: string) => {
-      const code = await publishSceneRundownShareCode(templateId);
-      void logAudioAudit({ eventType: 'rundown_shared', sessionId, label: code, meta: { templateId } });
-      return code;
-    },
-    [sessionId],
-  );
-
-  const handleImportRundownShare = useCallback(
-    async (code: string) => {
-      const imported = await importSceneRundownByShareCode(code);
-      void logAudioAudit({
-        eventType: 'rundown_imported',
-        sessionId,
-        label: imported.name,
-        meta: { shareCode: code },
-      });
-      await refreshRundownTemplates();
-      await refreshRundownLibrary();
-    },
-    [sessionId, refreshRundownTemplates, refreshRundownLibrary],
-  );
-
-  const handlePromoteRundownLibrary = useCallback(
-    async (templateId: string, category: string) => {
-      const promoted = await promoteSceneRundownToLibrary(templateId, category);
-      void logAudioAudit({
-        eventType: 'rundown_library_promoted',
-        sessionId,
-        label: promoted.name,
-        meta: { category },
-      });
-      await refreshRundownLibrary();
-      await refreshRundownTemplates();
-    },
-    [sessionId, refreshRundownLibrary, refreshRundownTemplates],
-  );
-
-  const handleRestoreSceneBackup = useCallback(
-    (sceneId: SceneId) => {
-      if (operatorLocks.readOnly) return;
-      const backup = sceneBackups.find((row) => row.sceneId === sceneId);
-      if (!backup) return;
-      applyPersistedConfig({
-        ...buildPersistedConfig(),
-        scenes: { ...scenes, [sceneId]: backup.snapshot },
-      });
-      setLastRecalledScene(sceneId);
-      void logAudioAudit({ eventType: 'scene_backup_restored', sessionId, sceneId });
-    },
-    [operatorLocks.readOnly, sceneBackups, applyPersistedConfig, buildPersistedConfig, scenes, sessionId],
-  );
-
-  const handleFollowRundownMirrorChange = useCallback((enabled: boolean) => {
-    setFollowRundownMirrorPref(enabled);
-    setFollowRundownMirror(enabled);
-    followerRundownSceneRef.current = null;
-  }, []);
-
-  const handleSaveLifecyclePrefs = useCallback(async (prefs: AudioLifecyclePrefs) => {
-    setLifecyclePrefs(await saveAudioLifecyclePrefs(prefs));
-  }, []);
-
-  const handleApplyLifecyclePolicy = useCallback(async () => {
-    const result = await applyAudioLifecyclePolicy();
-    void logAudioAudit({
-      eventType: 'lifecycle_policy_applied',
-      sessionId,
-      meta: { prunedSnapshots: result.prunedSnapshotCount, prunedBackups: result.prunedBackupCount },
-    });
-    await refreshSceneBackups();
-    if (sessionId) {
-      try {
-        setConsoleSnapshot(await fetchLatestAudioConsoleSnapshot(sessionId));
-      } catch {
-        /* offline */
-      }
-    }
-    return result;
-  }, [sessionId, refreshSceneBackups]);
-
-  const handleRundownDraftChange = useCallback((items: AudioSceneRundownItem[], name: string) => {
-    setRundownDraft(items);
-    setRundownDraftName(name);
-  }, []);
 
   useAudioConsoleShortcuts(
     state,
@@ -807,10 +418,7 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
     <AudioStreamResolverProvider resolveStream={resolveAudioStream}>
     <AudioMixerEngineProvider value={meters}>
     <div
-      className={cn(
-        productionShellClass(hidden, 'audio-mixer-shell flex h-full min-h-0 flex-col overflow-hidden'),
-      )}
-      style={hidden ? PRODUCTION_OFFSCREEN_STYLE : undefined}
+      className={cn(productionShellClass(hidden, 'audio-mixer-shell flex h-full min-h-0 flex-col overflow-hidden'))}
       aria-hidden={hidden}
     >
       {!hidden && (
@@ -859,16 +467,16 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
       </header>
       )}
 
-      <AudioOperatorLockBanner
-        active={Boolean(sessionId) && !hidden}
-        readOnly={operatorLocks.readOnly}
-        blockingHolder={operatorLocks.blockingHolder}
-        operatorLabel={operatorLabel}
-      />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <AudioOperatorLockBanner
+          active={Boolean(sessionId) && !hidden}
+          readOnly={operatorLocks.readOnly}
+          blockingHolder={operatorLocks.blockingHolder}
+          operatorLabel={operatorLabel}
+        />
 
-      <div className="min-h-0 flex-1 overflow-auto p-2 sm:p-3">
-        <AudioUnlockBanner />
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="min-h-0 flex-1 overflow-hidden p-2 sm:p-3">
+          <AudioUnlockBanner />
           <StudioLiveConsole
             devices={mergedDevices}
             planId={planId}
@@ -916,196 +524,6 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
               onRefresh: hostUsb.refreshDeviceList,
             }}
           />
-
-          {!hidden && (
-            <aside className="studiolive-enterprise-sidebar space-y-0">
-              {operatorLocks.readOnly && (
-                <AudioSessionSyncPanel
-                  remoteState={remoteSync}
-                  followRundownMirror={followRundownMirror}
-                  onFollowRundownMirrorChange={handleFollowRundownMirrorChange}
-                />
-              )}
-              <AudioShowPresetsPanel
-                canSave={canCloud}
-                readOnly={operatorLocks.readOnly}
-                sessionId={sessionId}
-                buildConfig={buildPersistedConfig}
-                onLoadConfig={applyPersistedConfig}
-                onSaved={(name) => {
-                  void logAudioAudit({ eventType: 'show_preset_saved', sessionId, label: name });
-                  void refreshShowPresets();
-                }}
-                onLoaded={(name) => {
-                  void logAudioAudit({ eventType: 'show_preset_loaded', sessionId, label: name });
-                }}
-              />
-              <AudioShowSharePanel
-                canShare={canCloud}
-                readOnly={operatorLocks.readOnly}
-                presets={showPresets.map((p) => ({ id: p.id, name: p.name }))}
-                onPublishShare={handlePublishShowShare}
-                onImportShare={handleImportShowShare}
-              />
-              <AudioShowLibraryPanel
-                canUse={canCloud}
-                readOnly={operatorLocks.readOnly}
-                presets={showPresets.map((p) => ({ id: p.id, name: p.name }))}
-                libraryEntries={showLibrary.map((p) => ({
-                  id: p.id,
-                  name: p.name,
-                  category: p.libraryCategory,
-                }))}
-                onPromote={handlePromoteShowLibrary}
-                onLoad={handleLoadLibraryPreset}
-              />
-              <AudioSceneRundownPanel
-                canUse={canCloud}
-                readOnly={operatorLocks.readOnly}
-                sessionId={sessionId}
-                storedScenes={scenes}
-                onRecallScene={handleRecallScene}
-                onRundownStart={handleRundownStart}
-                onRundownAdvance={handleRundownAdvance}
-                onRundownComplete={handleRundownComplete}
-                onRundownStop={handleRundownStop}
-                loadDraftRequest={rundownDraftLoad}
-                onDraftChange={handleRundownDraftChange}
-              />
-              <AudioRundownRunSheetPanel
-                canUse={canCloud}
-                draft={rundownDraft}
-                templateName={rundownDraftName}
-                onExport={() => {
-                  void logAudioAudit({ eventType: 'rundown_runsheet_exported', sessionId });
-                }}
-              />
-              <AudioSceneRundownSharePanel
-                canShare={canCloud}
-                readOnly={operatorLocks.readOnly}
-                templates={rundownTemplates}
-                onPublishShare={handlePublishRundownShare}
-                onImportShare={handleImportRundownShare}
-                onImported={() => {
-                  void refreshRundownTemplates();
-                  void refreshRundownLibrary();
-                }}
-              />
-              <AudioSceneRundownLibraryPanel
-                canUse={canCloud}
-                readOnly={operatorLocks.readOnly}
-                templates={rundownTemplates}
-                libraryEntries={rundownLibrary.map((entry) => ({
-                  id: entry.id,
-                  name: entry.name,
-                  category: entry.libraryCategory,
-                  items: entry.items,
-                }))}
-                onPromote={handlePromoteRundownLibrary}
-                onLoadItems={(items, name) => {
-                  setRundownDraftLoad({ items, name, token: Date.now() });
-                }}
-              />
-              <AudioSceneBackupPanel
-                canUse={canCloud}
-                readOnly={operatorLocks.readOnly}
-                backups={sceneBackups.map((row) => ({ sceneId: row.sceneId, updatedAt: row.updatedAt }))}
-                storedScenes={scenes}
-                onRestore={handleRestoreSceneBackup}
-              />
-              <AudioChannelInventoryPanel
-                canUse={canCloud}
-                devices={mergedDevices}
-                state={state}
-                getAudioSourceForDevice={getAudioSourceForDevice}
-                linkedUsb={linkedUsb}
-                sessionId={sessionId}
-                onExport={() => {
-                  void logAudioAudit({ eventType: 'channel_inventory_exported', sessionId });
-                }}
-              />
-              <AudioConsoleLifecyclePanel
-                canUse={canCloud}
-                readOnly={operatorLocks.readOnly}
-                prefs={lifecyclePrefs}
-                onSavePrefs={handleSaveLifecyclePrefs}
-                onApplyPolicy={handleApplyLifecyclePolicy}
-              />
-              <AudioComplianceExportPresetsPanel
-                canUse={canCloud}
-                readOnly={operatorLocks.readOnly}
-                onApply={setComplianceExportPreset}
-              />
-              <AudioComplianceBundlePanel
-                canUse={canCloud}
-                sessionId={sessionId}
-                operatorLabel={operatorLabel}
-                devices={mergedDevices}
-                state={state}
-                getAudioSourceForDevice={getAudioSourceForDevice}
-                linkedUsb={linkedUsb}
-                storedScenes={scenes}
-                rundownDraft={rundownDraft}
-                rundownName={rundownDraftName}
-                preset={complianceExportPreset}
-                onExport={() => {
-                  void logAudioAudit({ eventType: 'compliance_bundle_exported', sessionId });
-                }}
-              />
-              <AudioSceneDiffPanel
-                canUse={canCloud}
-                storedScenes={scenes}
-                onExport={() => {
-                  void logAudioAudit({ eventType: 'scene_diff_exported', sessionId });
-                }}
-              />
-              <AudioFxDiffPanel
-                canUse={canCloud}
-                storedScenes={scenes}
-                onExport={() => {
-                  void logAudioAudit({ eventType: 'fx_diff_exported', sessionId });
-                }}
-              />
-              <AudioConsoleSnapshotPanel
-                snapshot={consoleSnapshot}
-                ageMinutes={consoleSnapshot ? snapshotAgeMinutes(consoleSnapshot.capturedAt) : 0}
-              />
-              <AudioOpsDigestPanel
-                canUse={canCloud}
-                prefs={opsDigestPrefs}
-                onSavePrefs={handleSaveOpsDigestPrefs}
-                onSendNow={handleSendOpsDigest}
-              />
-              <AudioAuditPanel
-                sessionId={sessionId}
-                storedScenes={scenes}
-                onSceneManifestExport={() => {
-                  void logAudioAudit({ eventType: 'scene_manifest_exported', sessionId });
-                }}
-              />
-              <AudioMixerDebugPanel
-                connectionMode={session?.connectionMode ?? 'mesh'}
-                sessionId={sessionId}
-                engine={{
-                  consoleEnabled: state.consoleEnabled,
-                  masterMuted: state.masterMuted,
-                  monitorMuted: state.monitorMuted,
-                  masterVolume: state.masterVolume,
-                  activeChannels,
-                  liveInputCount,
-                  soloActive: Boolean(state.soloId),
-                }}
-                bridgeConnected={bridgeConnected}
-                canBridge={canBridge}
-                bridgeCode={bridgeCode}
-                devices={mergedDevices}
-                resolveStream={resolveAudioStream}
-                storedSceneCount={storedSceneCount}
-                operatorReadOnly={operatorLocks.readOnly}
-                fatChannelEnabled={canFatChannel}
-              />
-            </aside>
-          )}
         </div>
       </div>
     </div>

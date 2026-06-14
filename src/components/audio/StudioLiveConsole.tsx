@@ -19,12 +19,12 @@ import {
   type NoiseCancelSettings,
 } from '../../hooks/useAudioConsoleState';
 import { cn } from '../../lib/utils';
+import { deriveDeviceConnectionDisplay } from '../../lib/deviceConnection';
 import { DigitalConsoleScreen } from './DigitalConsoleScreen';
 import { MasterOutputPanel } from './MasterOutputPanel';
 import { AudioDevicesStrip } from './AudioDevicesStrip';
 import { AudioSourcePanel, collectUsbAudioDevices } from './AudioSourcePanel';
 import { HostUsbAudioPanel } from './HostUsbAudioPanel';
-import { AudioConnectionDebugPanel } from './AudioConnectionDebugPanel';
 import { AudioInputChannel } from './AudioInputChannel';
 import { FatChannelPanel } from './FatChannelPanel';
 
@@ -100,8 +100,11 @@ function channelDisplayLabel(device: Device, labels: Record<string, string>): st
 function channelStatusText(device: Device | undefined, locked: boolean): string {
   if (!device || !isRealDevice(device)) return 'Empty slot';
   if (locked) return 'Plan locked';
-  if (device.status === 'live') return 'Signal live';
-  if (device.status === 'connecting') return 'Connecting…';
+  const display = deriveDeviceConnectionDisplay(device);
+  if (display === 'live') return 'Live on air';
+  if (display === 'connected') return 'Connected — waiting for Go Live';
+  if (display === 'connecting') return 'Connecting…';
+  if (display === 'pairing') return 'Pairing…';
   if (device.status === 'error') return 'Stream error';
   return 'Offline';
 }
@@ -367,7 +370,6 @@ export function StudioLiveConsole({
         })}
       </div>
 
-      <AudioConnectionDebugPanel audioConsoleActive />
     </div>
   );
 }

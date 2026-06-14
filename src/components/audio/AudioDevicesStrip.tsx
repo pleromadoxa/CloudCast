@@ -1,15 +1,24 @@
 import { Battery, Signal, Wifi } from 'lucide-react';
 import type { Device } from '../../types/device';
 import { isRealDevice } from '../../types/device';
-import { isDeviceLinkedOnSession } from '../../lib/deviceConnection';
+import {
+  deriveDeviceConnectionDisplay,
+  DEVICE_CONNECTION_LABELS,
+} from '../../lib/deviceConnection';
 import { cn } from '../../lib/utils';
 
 function statusMeta(device: Device): { tone: string; label: string } {
-  if (device.status === 'live') return { tone: 'live', label: 'LIVE' };
-  if (isDeviceLinkedOnSession(device)) return { tone: 'live', label: 'LINK' };
-  if (device.status === 'connecting') return { tone: 'connecting', label: 'WAIT' };
-  if (device.status === 'error') return { tone: 'error', label: 'ERR' };
-  return { tone: 'offline', label: 'OFF' };
+  const display = deriveDeviceConnectionDisplay(device);
+  const label = DEVICE_CONNECTION_LABELS[display];
+  const tone =
+    display === 'live'
+      ? 'live'
+      : display === 'connected'
+        ? 'connected'
+        : display === 'connecting' || display === 'pairing'
+          ? 'connecting'
+          : 'offline';
+  return { tone, label };
 }
 
 export function AudioDevicesStrip({
@@ -42,6 +51,7 @@ export function AudioDevicesStrip({
         const selected = selectedChannel === index;
         const meta = statusMeta(device);
         const slot = device.slotNumber ?? index + 1;
+        const display = deriveDeviceConnectionDisplay(device);
 
         return (
           <button
@@ -51,9 +61,9 @@ export function AudioDevicesStrip({
             className={cn(
               'studiolive-device-chip',
               selected && 'studiolive-device-chip--selected',
-              device.status === 'live' && 'studiolive-device-chip--live',
-              isDeviceLinkedOnSession(device) && 'studiolive-device-chip--live',
-              device.status === 'connecting' && !isDeviceLinkedOnSession(device) && 'studiolive-device-chip--connecting',
+              display === 'live' && 'studiolive-device-chip--live',
+              display === 'connected' && 'studiolive-device-chip--live',
+              (display === 'connecting' || display === 'pairing') && 'studiolive-device-chip--connecting',
             )}
           >
             <span

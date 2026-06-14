@@ -3,14 +3,18 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
-import type { Session, User } from '@supabase/supabase-js';
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import { clearStoredSession } from '../lib/sessionStorage';
 import { normalizeConnectionMode } from '../lib/branding';
 import { fetchAdminAccess } from '../lib/adminService';
+import { pingSupabase } from '../lib/supabaseHeartbeat';
+import { clearCachedProfile, readCachedProfile, writeCachedProfile } from '../lib/profileCache';
+import { clearRegalCloudBootSession } from '../lib/regalCloudBoot';
 import type { AdminAccess } from '../types/admin';
 import type { PlanTier, SubscriptionPlan, UserProfile } from '../types/plans';
 import type { CloudCastProductId } from '../types/products';
@@ -46,12 +50,25 @@ function mapPlan(row: Record<string, unknown>): SubscriptionPlan {
   };
 }
 
+function mapProfileRow(p: Record<string, unknown>): UserProfile {
+  return {
+    id: String(p.id),
+    email: p.email ? String(p.email) : null,
+    full_name: p.full_name ? String(p.full_name) : null,
+    plan_id: p.plan_id as PlanTier,
+    plan: mapPlan(p.plan as Record<string, unknown>),
+    entitlements: buildEntitlementsFromProfile(p),
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [adminAccess, setAdminAccess] = useState<AdminAccess | null>(null);
   const [loading, setLoading] = useState(true);
+  const hydrateInflightRef = useRef<Promise<void> | null>(null);
+  const hydratedUserIdRef = useRef<string | null>(null);
 
   const refreshAdminAccess = useCallback(async () => {
     if (!isSupabaseConfigured()) {
@@ -72,17 +89,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data, error } = await getSupabase().rpc('get_user_profile');
       if (error) throw error;
-      const p = data as Record<string, unknown>;
-      setProfile({
-        id: String(p.id),
-        email: p.email ? String(p.email) : null,
-        full_name: p.full_name ? String(p.full_name) : null,
-        plan_id: p.plan_id as PlanTier,
-        plan: mapPlan(p.plan as Record<string, unknown>),
-        entitlements: buildEntitlementsFromProfile(p),
-      });
+      const next = mapProfileRow(data as Record<string, unknown>);
+      setProfile(next);
+      writeCachedProfile(next.id, next);
     } catch {
-      setProfile(null);
+      /* keep cached profile when refresh fails */
     }
   }, []);
 
@@ -94,30 +105,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const supabase = getSupabase();
 
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      setLoading(false);
-    });
+    const hydrateSession = async (nextSession: Session | null) => {
+      if (hydrateInflightRef.current) {
+        await hydrateInflightRef.current;
+        return;
+      }
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setUser(nextSession?.user ?? null);
-      setLoading(false);
+      const run = (async () => {
+        setSession(nextSession);
+        setUser(nextSession?.user ?? null);
+
+        if (!nextSession?.user) {
+          hydratedUserIdRef.current = null;
+          setProfile(null);
+          setAdminAccess(null);
+          clearCachedProfile();
+          setLoading(false);
+          return;
+        }
+
+        const userId = nextSession.user.id;
+        const cached = readCachedProfile(userId);
+        if (cached) {
+          setProfile(cached);
+          hydratedUserIdRef.current = userId;
+          setLoading(false);
+          void pingSupabase('auth-bootstrap');
+          void refreshProfile();
+          void refreshAdminAccess();
+          return;
+        }
+
+        setLoading(true);
+        try {
+          void pingSupabase('auth-bootstrap');
+          await refreshProfile();
+          hydratedUserIdRef.current = userId;
+        } finally {
+          setLoading(false);
+          void refreshAdminAccess();
+        }
+      })();
+
+      hydrateInflightRef.current = run;
+      try {
+        await run;
+      } finally {
+        if (hydrateInflightRef.current === run) {
+          hydrateInflightRef.current = null;
+        }
+      }
+    };
+
+    void supabase.auth.getSession().then(({ data }) => hydrateSession(data.session));
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, nextSession) => {
+      if (event === 'TOKEN_REFRESHED') {
+        setSession(nextSession);
+        setUser(nextSession?.user ?? null);
+        return;
+      }
+      if (event === 'INITIAL_SESSION' && hydratedUserIdRef.current === nextSession?.user?.id) {
+        return;
+      }
+      void hydrateSession(nextSession);
     });
 
     return () => sub.subscription.unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (user) {
-      void refreshProfile();
-      void refreshAdminAccess();
-    } else {
-      setProfile(null);
-      setAdminAccess(null);
-    }
-  }, [user, refreshProfile, refreshAdminAccess]);
+  }, [refreshProfile, refreshAdminAccess]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await getSupabase().auth.signInWithPassword({ email, password });
@@ -135,6 +190,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     clearStoredSession();
+    clearCachedProfile();
+    clearRegalCloudBootSession();
+    hydratedUserIdRef.current = null;
     await getSupabase().auth.signOut();
     setProfile(null);
     setAdminAccess(null);

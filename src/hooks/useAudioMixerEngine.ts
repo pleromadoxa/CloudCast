@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCloudCast } from '../context/CloudCastContext';
 import { usePgmAudio } from '../context/PgmAudioContext';
 import { resolveAudioStreamDeviceId } from '../lib/audioSettings';
@@ -127,6 +127,13 @@ export function useAudioMixerEngine({
     }
     return revision;
   }, [meshStreams]);
+
+  const [whepStreamRevision, setWhepStreamRevision] = useState(0);
+  useEffect(() => {
+    const onWhepPool = () => setWhepStreamRevision((r) => r + 1);
+    window.addEventListener('cloudcast:whep-pool', onWhepPool);
+    return () => window.removeEventListener('cloudcast:whep-pool', onWhepPool);
+  }, []);
 
   const ctxRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
@@ -427,6 +434,7 @@ export function useAudioMixerEngine({
 
         chain.ncHum.frequency.value = humNotchFrequency();
         chain.ncHum.Q.value = nc.enabled ? 2.8 : 0.5;
+        chain.ncHum.gain.value = nc.enabled ? -10 - (nc.strength / 100) * 14 : 0;
 
         if (nc.autoGate) {
           const gate = noiseGateParams(nc.strength, floor);
@@ -458,6 +466,7 @@ export function useAudioMixerEngine({
         chain.ncGate.ratio.value = 1;
         chain.ncVoice.gain.value = 0;
         chain.ncHiss.frequency.value = 20_000;
+        chain.ncHum.gain.value = 0;
       }
 
       ([1, 2, 3, 4] as const).forEach((bus) => {
@@ -572,7 +581,7 @@ export function useAudioMixerEngine({
       if (chain) teardownChain(chain);
       channelAnalysersRef.current.delete(id);
     });
-  }, [devices, meshStreams, meshStreamRevision, ensureMaster, teardownChain, updateGains, wireChannel]);
+  }, [devices, meshStreams, meshStreamRevision, whepStreamRevision, ensureMaster, teardownChain, updateGains, wireChannel]);
 
   useEffect(() => {
     updateGains();

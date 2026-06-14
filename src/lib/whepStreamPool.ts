@@ -28,7 +28,7 @@ interface Entry {
 
 const DISCONNECT_GRACE_MS = 1500;
 const MAX_RETRIES = 10;
-const BASE_RETRY_MS = 1200;
+const BASE_RETRY_MS = 600;
 const MAX_RETRY_MS = 30_000;
 
 const pool = new Map<string, Entry>();
@@ -48,6 +48,18 @@ function snapshot(entry: Entry): WhepPoolSnapshot {
 function notify(entry: Entry) {
   const snap = snapshot(entry);
   entry.listeners.forEach((fn) => fn(snap));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('cloudcast:whep-pool', {
+        detail: {
+          deviceId: entry.deviceId,
+          stream: snap.stream,
+          connectionState: snap.connectionState,
+          error: snap.error,
+        },
+      }),
+    );
+  }
 }
 
 function clearRetry(entry: Entry) {

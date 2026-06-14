@@ -1,30 +1,19 @@
 import type { ConnectionMode } from '../types/plans';
 import type { Device } from '../types/device';
 import { isRealDevice } from '../types/device';
-import { hasUsableVideo } from './streamAudioHub';
+import { hasLiveVideoStream, resolveHybridVideoStream } from './deviceIngress';
 
 export type ReplayIngressPath = 'mesh' | 'whep' | 'none';
 
-export function hasLiveVideoStream(stream: MediaStream | null | undefined): boolean {
-  if (!stream) return false;
-  return stream.getVideoTracks().some((track) => track.readyState === 'live');
-}
+export { hasLiveVideoStream } from './deviceIngress';
 
-/** Prefer mesh P2P; fall back to Regal Cloud WHEP playback for the same device. */
+/** Prefer Regal Cloud WHEP; fall back to mesh P2P for the same device. */
 export function resolveReplayDeviceStream(
   deviceId: string,
   getMeshStream: (id: string) => MediaStream | null,
   getWhepStream: (id: string) => MediaStream | null,
 ): MediaStream | null {
-  const mesh = getMeshStream(deviceId);
-  if (hasLiveVideoStream(mesh)) return mesh;
-  if (hasUsableVideo(mesh)) return mesh;
-
-  const whep = getWhepStream(deviceId);
-  if (hasLiveVideoStream(whep)) return whep;
-  if (hasUsableVideo(whep)) return whep;
-
-  return mesh ?? whep ?? null;
+  return resolveHybridVideoStream(getMeshStream(deviceId), getWhepStream(deviceId));
 }
 
 export function resolveExpectedReplayIngress(
@@ -34,10 +23,10 @@ export function resolveExpectedReplayIngress(
   getWhepStream: (id: string) => MediaStream | null,
 ): ReplayIngressPath {
   if (device.status === 'offline') return 'none';
-  if (hasLiveVideoStream(getMeshStream(device.deviceId))) return 'mesh';
   if (connectionMode === 'mesh') return 'mesh';
   if (device.whepUrl && hasLiveVideoStream(getWhepStream(device.deviceId))) return 'whep';
   if (device.whepUrl) return 'whep';
+  if (hasLiveVideoStream(getMeshStream(device.deviceId))) return 'mesh';
   return 'mesh';
 }
 

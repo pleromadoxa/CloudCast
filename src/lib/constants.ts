@@ -22,6 +22,8 @@ export const SIGNALING_EVENTS = {
   REPLAY_CONSOLE_SYNC: 'replay-console-sync',
   /** CloudCast Audio Mixer — cross-operator console state sync. */
   AUDIO_CONSOLE_SYNC: 'audio-console-sync',
+  /** CloudCast Video Mixer — cross-operator director state sync. */
+  VIDEO_MIXER_SYNC: 'video-mixer-sync',
 } as const;
 
 /** Dashboard presence key — distinguishes dashboard observers from mobile publishers. */

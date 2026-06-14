@@ -41,7 +41,12 @@ import { ExternalDisplayButton } from '../monitor/ExternalDisplayButton';
 import { useExternalDisplay } from '../../hooks/useExternalDisplay';
 import { SourceStrip } from '../monitor/SourceStrip';
 import { MixerControlDeck } from '../mixer/MixerControlDeck';
-import { MultiviewModal } from '../mixer/MultiviewModal';
+import { WorkspaceSplitHandle } from './WorkspaceSplitHandle';
+import { useVideoOperatorLocks } from '../../hooks/useVideoOperatorLocks';
+import { useVideoSessionSyncPublisher } from '../../hooks/useVideoSessionSync';
+import { useVideoProgramSnapshotPublisher } from '../../hooks/useVideoProgramSnapshot';
+import { logVideoAudit } from '../../lib/videoAuditService';
+import { VideoOperatorLockBanner } from '../video/VideoOperatorLockBanner';
 import { StreamStatusBanner } from '../mixer/StreamStatusBanner';
 import { AccessCodePanel } from '../session/AccessCodePanel';
 import { VideoBridgePanel } from '../audio/VideoBridgePanel';
@@ -76,10 +81,9 @@ import { CHROMA_KEY_GREEN } from '../../lib/chromaKeyColor';
 import { buildMixerOutputUrl } from '../../lib/pgmOutputSync';
 import { usePgmOutputPublisher } from '../../lib/pgmOutputTransport';
 import { useVerticalWorkspaceSplit } from '../../hooks/useVerticalWorkspaceSplit';
-import { WorkspaceSplitHandle } from './WorkspaceSplitHandle';
-import { MobileHandshakeDebugPanel } from '../session/MobileHandshakeDebugPanel';
+import { MultiviewModal } from '../mixer/MultiviewModal';
 
-export function DashboardLayout() {
+export function DashboardLayout({ active = true }: { active?: boolean }) {
   const {
     session,
     sessionLoading,
@@ -236,6 +240,43 @@ export function DashboardLayout() {
   const mixer = useDashboardState(mergedDevices);
   const { controls, pstDevice, pgmDevice, subDevice, transitionFromDevice, liveDevices, sourceDevices } = mixer;
 
+  const sessionId = session?.sessionId ?? null;
+  const operatorLabel = profile?.full_name ?? profile?.email ?? 'TD operator';
+  const videoPlanId = resolveProductPlan(profile, 'video_mixer');
+  const canCloud = videoPlanId !== 'free';
+  const operatorLocks = useVideoOperatorLocks({
+    sessionId,
+    operatorLabel,
+    enabled: active && Boolean(sessionId) && !controls.fullscreenPgm,
+  });
+  const prevOnAirRef = useRef(controls.isOnAir);
+  const prevRecordingRef = useRef(pgmRecording.isRecording);
+
+  const deviceDisplayLabel = useCallback(
+    (device: typeof pstDevice) => device?.label ?? device?.deviceId ?? null,
+    [],
+  );
+
+  useEffect(() => {
+    if (!active) return;
+    if (prevOnAirRef.current === controls.isOnAir) return;
+    prevOnAirRef.current = controls.isOnAir;
+    void logVideoAudit({
+      eventType: controls.isOnAir ? 'on_air_start' : 'on_air_stop',
+      sessionId,
+    });
+  }, [active, controls.isOnAir, sessionId]);
+
+  useEffect(() => {
+    if (!active) return;
+    if (prevRecordingRef.current === pgmRecording.isRecording) return;
+    prevRecordingRef.current = pgmRecording.isRecording;
+    void logVideoAudit({
+      eventType: pgmRecording.isRecording ? 'recording_start' : 'recording_stop',
+      sessionId,
+    });
+  }, [active, pgmRecording.isRecording, sessionId]);
+
   useEffect(() => {
     if (!session) return;
     mixer.setDefaultQuality(defaultStreamQualityForSession(planId, session.connectionMode));
@@ -391,46 +432,128 @@ export function DashboardLayout() {
     mixer,
   ]);
 
+  const transitionProgress = engine.isAnimating ? engine.progress : controls.transition.progress;
+  const liveInputCount = liveDevices.length;
+
+  useVideoSessionSyncPublisher(
+    sessionId,
+    session?.realtimeChannel,
+    operatorLocks.readOnly
+      ? null
+      : {
+          operatorKey: operatorLocks.operatorKey,
+          operatorLabel,
+          pstDeviceId: controls.pstDeviceId,
+          pstDeviceLabel: deviceDisplayLabel(pstDevice),
+          pgmDeviceId: controls.pgmDeviceId,
+          pgmDeviceLabel: deviceDisplayLabel(pgmDevice),
+          isOnAir: controls.isOnAir,
+          isRecording: pgmRecording.isRecording,
+          transitionType: controls.transition.type,
+          transitionProgress,
+          inTransition: Boolean(controls.transitionFromId) || engine.isAnimating,
+          outputMode: controls.outputMode,
+          activePanel: controls.activePanel,
+          replayOnPgmLabel: replayPush?.label ?? null,
+        },
+    active && Boolean(sessionId) && !controls.fullscreenPgm && !operatorLocks.readOnly,
+  );
+
+  useVideoProgramSnapshotPublisher({
+    enabled: active && canCloud && Boolean(sessionId) && !controls.fullscreenPgm && !operatorLocks.readOnly,
+    sessionId,
+    operatorKey: operatorLocks.operatorKey,
+    operatorLabel,
+    pstDeviceId: controls.pstDeviceId,
+    pstDeviceLabel: deviceDisplayLabel(pstDevice),
+    pgmDeviceId: controls.pgmDeviceId,
+    pgmDeviceLabel: deviceDisplayLabel(pgmDevice),
+    isOnAir: controls.isOnAir,
+    isRecording: pgmRecording.isRecording,
+    transitionType: controls.transition.type,
+    outputMode: controls.outputMode,
+    liveInputCount,
+    replayOnPgm: Boolean(replayPush),
+    replayLabel: replayPush?.label ?? null,
+  });
+
+  const guard = useCallback(
+    <T extends (...args: never[]) => void>(fn: T): T =>
+      ((...args: Parameters<T>) => {
+        if (operatorLocks.readOnly) return;
+        fn(...args);
+      }) as T,
+    [operatorLocks.readOnly],
+  );
+
+  const handleGoLive = useCallback(() => {
+    if (operatorLocks.readOnly) return;
+    void goLive();
+  }, [operatorLocks.readOnly, goLive]);
+
   const handleCut = useCallback(() => {
-    if (!controls.pstDeviceId) return;
+    if (operatorLocks.readOnly || !controls.pstDeviceId) return;
     engine.resetProgress();
     mixer.cutToPreview();
-  }, [engine, mixer, controls.pstDeviceId]);
+    void logVideoAudit({
+      eventType: 'cut',
+      sessionId,
+      deviceId: controls.pstDeviceId,
+      label: deviceDisplayLabel(pstDevice) ?? undefined,
+    });
+  }, [operatorLocks.readOnly, engine, mixer, controls.pstDeviceId, sessionId, pstDevice, deviceDisplayLabel]);
 
   const handleTake = useCallback(() => {
-    if (!controls.pstDeviceId || controls.pstDeviceId === controls.pgmDeviceId) return;
+    if (operatorLocks.readOnly || !controls.pstDeviceId || controls.pstDeviceId === controls.pgmDeviceId) return;
     mixer.beginTransition();
     engine.performTake();
-  }, [engine, mixer, controls.pstDeviceId, controls.pgmDeviceId]);
+    void logVideoAudit({
+      eventType: 'take',
+      sessionId,
+      deviceId: controls.pstDeviceId,
+      label: deviceDisplayLabel(pstDevice) ?? undefined,
+    });
+  }, [operatorLocks.readOnly, engine, mixer, controls.pstDeviceId, controls.pgmDeviceId, sessionId, pstDevice, deviceDisplayLabel]);
 
   const handleSendToPgm = useCallback(
     (deviceId: string) => {
+      if (operatorLocks.readOnly) return;
       engine.resetProgress();
       mixer.cutToDevice(deviceId);
+      const device = sourceDevices.find((d) => d.deviceId === deviceId);
+      void logVideoAudit({
+        eventType: 'send_to_pgm',
+        sessionId,
+        deviceId,
+        label: device?.label ?? deviceId,
+      });
     },
-    [engine, mixer],
+    [operatorLocks.readOnly, engine, mixer, sessionId, sourceDevices],
   );
 
   const handleFocusSource = useCallback(
     (deviceId: string) => {
+      if (operatorLocks.readOnly) return;
       mixer.sendToPst(deviceId);
     },
-    [mixer],
+    [operatorLocks.readOnly, mixer],
   );
 
   const handleTbarChange = useCallback(
     (value: number) => {
+      if (operatorLocks.readOnly) return;
       if (value > 0 && controls.pstDeviceId !== controls.pgmDeviceId && !controls.transitionFromId) {
         mixer.beginTransition();
       }
       engine.setTbar(value);
       mixer.setTransitionProgress(value);
     },
-    [engine, mixer, controls.pstDeviceId, controls.pgmDeviceId, controls.transitionFromId],
+    [operatorLocks.readOnly, engine, mixer, controls.pstDeviceId, controls.pgmDeviceId, controls.transitionFromId],
   );
 
   const handleCommitTbar = useCallback(
     (value: number) => {
+      if (operatorLocks.readOnly) return;
       if (value >= 50 && controls.pstDeviceId !== controls.pgmDeviceId) {
         if (!controls.transitionFromId) mixer.beginTransition();
         engine.commitTbar(value);
@@ -439,12 +562,13 @@ export function DashboardLayout() {
         mixer.abandonTransition();
       }
     },
-    [engine, mixer, controls.pstDeviceId, controls.pgmDeviceId, controls.transitionFromId],
+    [operatorLocks.readOnly, engine, mixer, controls.pstDeviceId, controls.pgmDeviceId, controls.transitionFromId],
   );
 
   const handleFadeBlack = useCallback(() => {
+    if (operatorLocks.readOnly) return;
     engine.fadeToBlack(engine.fadeToBlackLevel < 50);
-  }, [engine]);
+  }, [operatorLocks.readOnly, engine]);
 
   const handleReconnectStream = useCallback((deviceId: string) => {
     window.dispatchEvent(new CustomEvent('cloudcast:reconnect', { detail: { deviceId } }));
@@ -473,6 +597,7 @@ export function DashboardLayout() {
   }, [engine.fadeToBlackLevel, pgmBroadcast.isBroadcasting, pgmBroadcast.updateFadeToBlack]);
 
   const handleToggleRecording = useCallback(() => {
+    if (operatorLocks.readOnly) return;
     const result = pgmRecording.toggleRecording(
       pgmVideoRef.current,
       getBroadcastAudioStream(),
@@ -481,7 +606,7 @@ export function DashboardLayout() {
       type: result.ok ? 'success' : 'error',
       message: result.message,
     });
-  }, [pgmRecording, getBroadcastAudioStream]);
+  }, [operatorLocks.readOnly, pgmRecording, getBroadcastAudioStream]);
 
   useEffect(() => {
     mixer.setRecording(pgmRecording.isRecording);
@@ -549,14 +674,14 @@ export function DashboardLayout() {
         const d = mergedDevices[idx];
         if (d && isRealDevice(d)) handleSendToPgm(d.deviceId);
       },
-      onToggleOnAir: () => { void goLive(); },
+      onToggleOnAir: handleGoLive,
       onToggleMultiview: () => mixer.toggleMultiview(),
       onToggleFullscreen: () => mixer.toggleFullscreen(),
       onToggleRecording: handleToggleRecording,
       onSwap: () => mixer.swapPstPgm(),
       maxSlots: resolveDeviceLimit(session, profile),
     }),
-    [handleCut, handleTake, handleFadeBlack, mergedDevices, handleFocusSource, handleSendToPgm, mixer, session, profile, goLive, handleToggleRecording],
+    [handleCut, handleTake, handleFadeBlack, mergedDevices, handleFocusSource, handleSendToPgm, mixer, session, profile, handleGoLive, handleToggleRecording],
   );
 
   useKeyboardShortcuts(controls.keyboardShortcuts, shortcutHandlers, !shortcutAssigning);
@@ -590,7 +715,7 @@ export function DashboardLayout() {
       setTransitionType: mixer.setTransitionType,
       setTransitionDuration: mixer.setTransitionDuration,
       setTransitionProgress: mixer.setTransitionProgress,
-      toggleOnAir: () => { void goLive(); },
+      toggleOnAir: handleGoLive,
       toggleRecording: handleToggleRecording,
       toggleMultiview: mixer.toggleMultiview,
       toggleFullscreen: mixer.toggleFullscreen,
@@ -606,7 +731,7 @@ export function DashboardLayout() {
       patchPip: (p: Record<string, unknown>) => mixer.patchPip(p as Partial<typeof controls.pip>),
       patchKey: (p: Record<string, unknown>) => mixer.patchKey(p as Partial<typeof controls.key>),
     }),
-    [mixer, handleCut, handleTake, handleSendToPgm, handleReconnectStream, goLive, handleToggleRecording, controls.layers, controls.pip, controls.key],
+    [mixer, handleCut, handleTake, handleSendToPgm, handleReconnectStream, handleGoLive, handleToggleRecording, controls.layers, controls.pip, controls.key],
   );
 
   useAIControls(aiHandlers);
@@ -659,7 +784,6 @@ export function DashboardLayout() {
     (d) => isRealDevice(d) && !isDisplayFeedDevice(d) && !isPrismFeedDevice(d),
   );
   const aspectRatio = controls.display.aspectRatio;
-  const transitionProgress = engine.isAnimating ? engine.progress : controls.transition.progress;
 
   const graphicsHighlight = useMemo(() => {
     if (!controls.openPanels.includes('layers') || !controls.selectedGraphicsLayerId) {
@@ -909,6 +1033,15 @@ export function DashboardLayout() {
       )}
 
       {!controls.fullscreenPgm && (
+        <VideoOperatorLockBanner
+          active={Boolean(sessionId)}
+          readOnly={operatorLocks.readOnly}
+          blockingHolder={operatorLocks.blockingHolder}
+          operatorLabel={operatorLabel}
+        />
+      )}
+
+      {!controls.fullscreenPgm && (
         <ConnectivityBanner
           isOnline={isOnline}
           isRecovering={isRecovering}
@@ -945,142 +1078,148 @@ export function DashboardLayout() {
       )}
 
       <div ref={workspaceRef} className="dashboard-workspace flex min-h-0 flex-1 flex-col overflow-hidden">
-        {monitorSection}
+        {controls.fullscreenPgm ? (
+          monitorSection
+        ) : (
+          <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+            {monitorSection}
 
-        {!controls.fullscreenPgm && (
-          <WorkspaceSplitHandle isDragging={isDragging} {...splitHandleProps} />
-        )}
+            <WorkspaceSplitHandle isDragging={isDragging} {...splitHandleProps} />
 
-        {!controls.fullscreenPgm && (
-          <div className="dashboard-deck-wrap" style={{ height: deckHeight }}>
-          <MixerControlDeck
-          controls={controls}
-          devices={sourceDevices}
-          pstDeviceId={controls.pstDeviceId}
-          pgmDeviceId={controls.pgmDeviceId}
-          onSetPanel={mixer.setActivePanel}
-          onToggleOpenPanel={mixer.toggleOpenPanel}
-          onFocusPst={handleFocusSource}
-          onAssignSub={mixer.sendToSub}
-          onAssignPgm={handleSendToPgm}
-          onSetOutputMode={mixer.setOutputMode}
-          onSwapPstPgm={mixer.swapPstPgm}
-          onExchange={mixer.exchangeSources}
-          onToggleAutoTrans={mixer.toggleAutoTrans}
-          onCut={handleCut}
-          onTake={handleTake}
-          onFadeBlack={handleFadeBlack}
-          onSetTransitionType={mixer.setTransitionType}
-          onSetTransitionDuration={mixer.setTransitionDuration}
-          onSetTransitionProgress={handleTbarChange}
-          onCommitTbar={handleCommitTbar}
-          onGoLive={() => { void goLive(); }}
-          isStreamValidating={isStreamValidating}
-          streamNotice={streamNotice}
-          onTestStreamConnection={handleTestStreamConnection}
-          onToggleRecording={handleToggleRecording}
-          onSetGlobalOverlay={mixer.setGlobalOverlay}
-          onToggleMultiview={mixer.toggleMultiview}
-          onToggleFullscreen={mixer.toggleFullscreen}
-          onPatchPip={mixer.patchPip}
-          onPatchKey={mixer.patchKey}
-          onPatchLayers={mixer.patchLayers}
-          pgmLayers={controls.pgmLayers}
-          graphics={mixer.graphics}
-          selectedGraphicsLayerId={(controls.selectedGraphicsLayerId ?? 'lower-third') as LayerStackId}
-          onSelectGraphicsLayer={(id) => mixer.setSelectedGraphicsLayer(id)}
-          onPatchAudio={mixer.patchAudio}
-          onSetInputVolume={mixer.setInputVolume}
-          onToggleInputMute={mixer.toggleInputMute}
-          onToggleInputSolo={mixer.toggleInputSolo}
-          onToggleViewAudioMute={mixer.toggleViewAudioMute}
-          onSetViewMonitorVolume={mixer.setViewMonitorVolume}
-          onToggleMonitorMasterMute={mixer.toggleMonitorMasterMute}
-          onSetQuality={mixer.setDefaultQuality}
-          onSetAspectRatio={mixer.setAspectRatio}
-          onSetViewMode={mixer.setViewMode}
-          onSetKeyboardShortcuts={mixer.setKeyboardShortcuts}
-          onToggleExternalDisplay={() => { void externalDisplay.toggle(); }}
-          onShortcutAssigningChange={setShortcutAssigning}
-          externalDisplayOpen={externalDisplay.isOpen}
-          onUnpair={unpairDevice}
-          onReconnect={handleReconnectStream}
-          planId={profile?.plan_id ?? 'free'}
-          accessCode={session?.accessCode}
-          onSetInputAudioSource={handleSetInputAudioSource}
-          onSetLinkedUsbAudio={handleSetLinkedUsbAudio}
-          onPersistAudioSettings={handlePersistAudioSettings}
-          getAudioSourceForDevice={mixer.getAudioSourceForDevice}
-          ipCameraAllowed={ipCamera.allowed}
-          ipCameraConfig={ipCamera.config}
-          ipCameraSlot={deviceLimit}
-          onSaveIpCamera={ipCamera.save}
-          onRemoveIpCamera={ipCamera.remove}
-        />
-          </div>
-        )}
-
-        {!controls.fullscreenPgm && (
-          <div ref={trailingChromeRef} className="dashboard-workspace-chrome shrink-0">
-            <div className="flex shrink-0 items-center justify-between gap-2 border-t border-mixer-border bg-[#0d0d0d] px-3 py-2">
-              <p className="text-[9px] text-mixer-muted">Presentation & virtual production</p>
-              <div className="flex items-center gap-2">
-                {canAccessPrism && (
-                  <Link
-                    to="/prism"
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded border px-3 py-1.5 text-[10px] font-bold tracking-wider',
-                      prismOnAir
-                        ? 'border-amber-400/60 bg-amber-500/20 text-amber-200'
-                        : 'border-amber-500/40 bg-amber-950/40 text-amber-200 hover:border-amber-400/60 hover:bg-amber-900/50',
-                    )}
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    {prismOnAir ? 'REGAL PRISM · ON AIR' : 'REGAL PRISM'}
-                  </Link>
-                )}
-                {canAccessDisplay && (
-                  <Link
-                    to="/display"
-                    className="inline-flex items-center gap-1.5 rounded border border-violet-500/40 bg-violet-950/40 px-3 py-1.5 text-[10px] font-bold tracking-wider text-violet-200 hover:border-violet-400/60 hover:bg-violet-900/50"
-                  >
-                    <MonitorPlay className="h-3.5 w-3.5" />
-                    REGAL DISPLAY
-                  </Link>
-                )}
+            <div className="dashboard-deck-wrap" style={{ height: deckHeight }}>
+              <MixerControlDeck
+                  controls={controls}
+                  devices={sourceDevices}
+                  pstDeviceId={controls.pstDeviceId}
+                  pgmDeviceId={controls.pgmDeviceId}
+                  onSetPanel={mixer.setActivePanel}
+                  onToggleOpenPanel={mixer.toggleOpenPanel}
+                  onFocusPst={handleFocusSource}
+                  onAssignSub={guard(mixer.sendToSub)}
+                  onAssignPgm={handleSendToPgm}
+                  onSetOutputMode={guard(mixer.setOutputMode)}
+                  onSwapPstPgm={guard(mixer.swapPstPgm)}
+                  onExchange={guard(mixer.exchangeSources)}
+                  onToggleAutoTrans={guard(mixer.toggleAutoTrans)}
+                  onCut={handleCut}
+                  onTake={handleTake}
+                  onFadeBlack={handleFadeBlack}
+                  onSetTransitionType={guard(mixer.setTransitionType)}
+                  onSetTransitionDuration={guard(mixer.setTransitionDuration)}
+                  onSetTransitionProgress={handleTbarChange}
+                  onCommitTbar={handleCommitTbar}
+                  onGoLive={handleGoLive}
+                  isStreamValidating={isStreamValidating}
+                  streamNotice={streamNotice}
+                  onTestStreamConnection={handleTestStreamConnection}
+                  onToggleRecording={handleToggleRecording}
+                  onSetGlobalOverlay={guard(mixer.setGlobalOverlay)}
+                  onToggleMultiview={mixer.toggleMultiview}
+                  onToggleFullscreen={mixer.toggleFullscreen}
+                  onPatchPip={guard(mixer.patchPip)}
+                  onPatchKey={guard(mixer.patchKey)}
+                  onPatchLayers={guard(mixer.patchLayers)}
+                  pgmLayers={controls.pgmLayers}
+                  graphics={mixer.graphics}
+                  selectedGraphicsLayerId={(controls.selectedGraphicsLayerId ?? 'lower-third') as LayerStackId}
+                  onSelectGraphicsLayer={(id) => mixer.setSelectedGraphicsLayer(id)}
+                  onPatchAudio={guard(mixer.patchAudio)}
+                  onSetInputVolume={guard(mixer.setInputVolume)}
+                  onToggleInputMute={guard(mixer.toggleInputMute)}
+                  onToggleInputSolo={guard(mixer.toggleInputSolo)}
+                  onToggleViewAudioMute={mixer.toggleViewAudioMute}
+                  onSetViewMonitorVolume={mixer.setViewMonitorVolume}
+                  onToggleMonitorMasterMute={mixer.toggleMonitorMasterMute}
+                  onSetQuality={mixer.setDefaultQuality}
+                  onSetAspectRatio={mixer.setAspectRatio}
+                  onSetViewMode={mixer.setViewMode}
+                  onSetKeyboardShortcuts={mixer.setKeyboardShortcuts}
+                  onToggleExternalDisplay={() => { void externalDisplay.toggle(); }}
+                  onShortcutAssigningChange={setShortcutAssigning}
+                  externalDisplayOpen={externalDisplay.isOpen}
+                  onUnpair={unpairDevice}
+                  onReconnect={handleReconnectStream}
+                  planId={profile?.plan_id ?? 'free'}
+                  accessCode={session?.accessCode}
+                  onSetInputAudioSource={handleSetInputAudioSource}
+                  onSetLinkedUsbAudio={handleSetLinkedUsbAudio}
+                  onPersistAudioSettings={handlePersistAudioSettings}
+                  getAudioSourceForDevice={mixer.getAudioSourceForDevice}
+                  ipCameraAllowed={ipCamera.allowed}
+                  ipCameraConfig={ipCamera.config}
+                  ipCameraSlot={deviceLimit}
+                  onSaveIpCamera={ipCamera.save}
+                  onRemoveIpCamera={ipCamera.remove}
+                />
               </div>
-            </div>
 
-            {programOutputUrl && (
-              <div className="shrink-0 border-t border-emerald-500/20 bg-emerald-950/20 px-3 py-2.5 sm:px-4">
-                <p className="mb-1.5 text-[10px] font-bold tracking-wider text-emerald-300">PROGRAM OUTPUT URL</p>
-                <p className="mb-2 text-[9px] text-mixer-muted">
-                  Open on a projector PC, tablet, or TV — shows live PGM with all switched sources, graphics, and Display Feed (no operator controls).
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <code className="min-w-0 flex-1 truncate rounded bg-black/40 px-2 py-1.5 text-[10px] text-emerald-200">
-                    {programOutputUrl}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => void copyProgramOutputUrl()}
-                    className="mixer-btn flex items-center gap-1 px-3 py-1.5 text-[9px] font-bold"
-                  >
-                    {copiedOutputUrl ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
-                    {copiedOutputUrl ? 'COPIED' : 'COPY URL'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={openProgramOutputWindow}
-                    className="inline-flex items-center gap-1.5 rounded border border-emerald-500/40 bg-emerald-600/30 px-3 py-1.5 text-[9px] font-bold tracking-wider text-emerald-100 hover:bg-emerald-600/50"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" /> OPEN PROGRAM OUTPUT
-                  </button>
+              <div ref={trailingChromeRef} className="dashboard-workspace-chrome shrink-0">
+                <div className="flex shrink-0 items-center gap-1.5 overflow-hidden border-t border-mixer-border bg-[#0d0d0d] px-2 py-1">
+                  {canAccessPrism && (
+                    <Link
+                      to="/prism"
+                      title={prismOnAir ? 'Regal Prism feed active on mixer' : 'Open Regal Prism VP studio'}
+                      className={cn(
+                        'inline-flex shrink-0 items-center gap-1 rounded border px-2 py-0.5 text-[9px] font-bold tracking-wider',
+                        prismOnAir
+                          ? 'border-amber-400/60 bg-amber-500/20 text-amber-200'
+                          : 'border-amber-500/40 bg-amber-950/40 text-amber-200 hover:border-amber-400/60 hover:bg-amber-900/50',
+                      )}
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      {prismOnAir ? 'PRISM · LIVE' : 'REGAL PRISM'}
+                    </Link>
+                  )}
+                  {canAccessDisplay && (
+                    <Link
+                      to="/display"
+                      title="Open Regal Display presentation engine"
+                      className="inline-flex shrink-0 items-center gap-1 rounded border border-violet-500/40 bg-violet-950/40 px-2 py-0.5 text-[9px] font-bold tracking-wider text-violet-200 hover:border-violet-400/60 hover:bg-violet-900/50"
+                    >
+                      <MonitorPlay className="h-3 w-3" />
+                      REGAL DISPLAY
+                    </Link>
+                  )}
+                  {programOutputUrl && (
+                    <>
+                      {(canAccessPrism || canAccessDisplay) && (
+                        <span className="h-3 w-px shrink-0 bg-mixer-border/80" aria-hidden />
+                      )}
+                      <span className="shrink-0 text-[8px] font-bold tracking-wider text-emerald-300/90">
+                        OUTPUT
+                      </span>
+                      <code
+                        className="min-w-0 flex-1 truncate rounded bg-black/40 px-1.5 py-0.5 text-[9px] text-emerald-200"
+                        title={programOutputUrl}
+                      >
+                        {programOutputUrl}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => void copyProgramOutputUrl()}
+                        title={copiedOutputUrl ? 'Copied' : 'Copy program output URL'}
+                        aria-label={copiedOutputUrl ? 'Copied program output URL' : 'Copy program output URL'}
+                        className="inline-flex shrink-0 items-center rounded border border-emerald-500/30 bg-emerald-950/40 p-1 text-emerald-200 hover:bg-emerald-900/50"
+                      >
+                        {copiedOutputUrl ? (
+                          <Check className="h-3 w-3 text-emerald-400" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openProgramOutputWindow}
+                        title="Open program output in new window"
+                        aria-label="Open program output in new window"
+                        className="inline-flex shrink-0 items-center rounded border border-emerald-500/30 bg-emerald-950/40 p-1 text-emerald-200 hover:bg-emerald-900/50"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
-            )}
-
-            <MobileHandshakeDebugPanel className="border-t border-mixer-border" />
           </div>
         )}
       </div>
