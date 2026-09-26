@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react';
 import { RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import { useStudioMaterials } from './materials';
+import { PbrSurface } from './PbrSurface';
 
 /**
  * Designer navy kitchen set modelled on premium cooking-show interiors:
@@ -48,7 +49,7 @@ function ShakerFace({
     <group>
       <mesh position={[0, 0, 0.012]}>
         <boxGeometry args={[width, height, 0.024]} />
-        <meshStandardMaterial color={color} roughness={0.4} metalness={0.06} />
+        <PbrSurface color={color} roughness={0.4} metalness={0.06} />
       </mesh>
       <mesh position={[0, 0, 0.028]} material={panelMat}>
         <boxGeometry args={[width - 0.09, height - 0.09, 0.012]} />
@@ -82,7 +83,7 @@ export const CabinetRun = memo(function CabinetRun({
     <group position={position} rotation={rotation} scale={scale}>
       {/* carcass */}
       <RoundedBox args={[width, height, depth]} radius={0.012} smoothness={2} position={[0, height / 2, 0]} castShadow receiveShadow>
-        <meshStandardMaterial color={navy} roughness={0.42} metalness={0.06} />
+        <PbrSurface color={navy} roughness={0.42} metalness={0.06} />
       </RoundedBox>
       {/* shaker fronts */}
       {Array.from({ length: bays }, (_, i) => {
@@ -104,13 +105,13 @@ export const CabinetRun = memo(function CabinetRun({
       {/* toe kick */}
       <mesh position={[0, 0.055, -0.02]}>
         <boxGeometry args={[width - 0.02, 0.11, depth - 0.09]} />
-        <meshStandardMaterial color={navy.clone().multiplyScalar(0.55)} roughness={0.6} />
+        <PbrSurface color={navy.clone().multiplyScalar(0.55)} roughness={0.6} />
       </mesh>
       {/* upper cabinets */}
       {uppers && (
         <group position={[0, height + 1.05, -depth / 2 + 0.34]}>
           <RoundedBox args={[width, 0.75, 0.36]} radius={0.012} smoothness={2} castShadow>
-            <meshStandardMaterial color={navy} roughness={0.42} metalness={0.06} />
+            <PbrSurface color={navy} roughness={0.42} metalness={0.06} />
           </RoundedBox>
           {Array.from({ length: bays }, (_, i) => {
             const bw = (width - 0.04) / bays;
@@ -149,7 +150,7 @@ export const KitchenIsland = memo(function KitchenIsland({
       {[-1, 1].map((s) => (
         <mesh key={s} position={[s * width * 0.24, height * 0.52, depth / 2 - 0.075]}>
           <boxGeometry args={[width * 0.36, height * 0.68, 0.012]} />
-          <meshStandardMaterial color={new THREE.Color(baseColor).multiplyScalar(0.9)} roughness={0.85} />
+          <PbrSurface color={new THREE.Color(baseColor).multiplyScalar(0.9)} roughness={0.85} />
         </mesh>
       ))}
       {/* marble top with waterfall ends */}
@@ -173,14 +174,14 @@ export const OvenStack = memo(function OvenStack({
   return (
     <group position={position} rotation={rotation} scale={scale}>
       <RoundedBox args={[0.75, 2.25, 0.66]} radius={0.015} smoothness={2} position={[0, 1.125, 0]} castShadow receiveShadow>
-        <meshStandardMaterial color="#23272e" roughness={0.4} metalness={0.2} />
+        <PbrSurface color="#23272e" roughness={0.4} metalness={0.2} />
       </RoundedBox>
       {[0.72, 1.42].map((y, i) => (
         <group key={i}>
           {/* black glass door */}
           <mesh position={[0, y, 0.342]}>
             <boxGeometry args={[0.62, 0.52, 0.012]} />
-            <meshPhysicalMaterial color="#0a0a0d" roughness={0.12} metalness={0.5} clearcoat={1} envMapIntensity={1.4} />
+            <PbrSurface physical color="#0a0a0d" roughness={0.12} metalness={0.5} clearcoat={1} envMapIntensity={1.4} />
           </mesh>
           {/* handle bar */}
           <mesh position={[0, y + 0.3, 0.37]} rotation={[0, 0, Math.PI / 2]} material={m.brass}>
@@ -189,7 +190,7 @@ export const OvenStack = memo(function OvenStack({
           {/* control strip */}
           <mesh position={[0, y + 0.335, 0.345]}>
             <boxGeometry args={[0.62, 0.055, 0.01]} />
-            <meshStandardMaterial color="#14161a" roughness={0.35} metalness={0.5} />
+            <PbrSurface color="#14161a" roughness={0.35} metalness={0.5} />
           </mesh>
         </group>
       ))}
@@ -222,14 +223,14 @@ export const OpenShelving = memo(function OpenShelving({
                 [0, 1, 2].map((k) => (
                   <mesh key={k} position={[0, 0.022 + k * 0.042, 0]} castShadow>
                     <cylinderGeometry args={[0.085 - k * 0.004, 0.065, 0.04, 18]} />
-                    <meshStandardMaterial color="#f3ede4" roughness={0.35} />
+                    <PbrSurface color="#f3ede4" roughness={0.35} />
                   </mesh>
                 ))
               ) : (
                 // glass carafe
                 <mesh position={[0, 0.11, 0]} castShadow>
                   <cylinderGeometry args={[0.05, 0.065, 0.22, 14]} />
-                  <meshPhysicalMaterial color="#e8f2f6" transparent opacity={0.32} roughness={0.08} clearcoat={1} envMapIntensity={1.5} />
+                  <PbrSurface physical color="#e8f2f6" transparent opacity={0.32} roughness={0.08} clearcoat={1} envMapIntensity={1.5} />
                 </mesh>
               )}
             </group>
@@ -238,11 +239,11 @@ export const OpenShelving = memo(function OpenShelving({
           <group position={[width / 2 - 0.18, y + 0.04, 0]}>
             <mesh castShadow>
               <cylinderGeometry args={[0.055, 0.045, 0.09, 14]} />
-              <meshStandardMaterial color={wood} roughness={0.6} />
+              <PbrSurface color={wood} roughness={0.6} />
             </mesh>
             <mesh position={[0, 0.1, 0]}>
               <sphereGeometry args={[0.075, 10, 8]} />
-              <meshStandardMaterial color="#3f7d4e" roughness={0.6} />
+              <PbrSurface color="#3f7d4e" roughness={0.6} />
             </mesh>
           </group>
         </group>
@@ -277,7 +278,7 @@ export const KitchenBarStool = memo(function KitchenBarStool({
       </mesh>
       {/* seat */}
       <RoundedBox args={[0.42, 0.055, 0.4]} radius={0.024} smoothness={3} position={[0, seatHeight + 0.028, 0]} castShadow>
-        <meshStandardMaterial color="#1c1c1e" roughness={0.55} />
+        <PbrSurface color="#1c1c1e" roughness={0.55} />
       </RoundedBox>
     </group>
   );

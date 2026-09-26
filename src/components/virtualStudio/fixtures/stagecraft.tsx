@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStudioMaterials } from './materials';
+import { PbrSurface } from './PbrSurface';
 import { LightBeam } from './LightBeam';
 
 /**
@@ -215,7 +216,7 @@ export const SwirlLedDisc = memo(function SwirlLedDisc({
       {/* recessed dark ring housing */}
       <mesh position={[0, 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <ringGeometry args={[radius, radius + 0.34, 64]} />
-        <meshStandardMaterial color="#14161c" metalness={0.55} roughness={0.42} />
+        <PbrSurface color="#14161c" metalness={0.55} roughness={0.42} />
       </mesh>
       {/* LED face */}
       <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -389,16 +390,16 @@ export const GlassPendantCluster = memo(function GlassPendantCluster({
             {/* braided cord + brass collar */}
             <mesh position={[0, -d / 2, 0]}>
               <cylinderGeometry args={[0.006, 0.006, d, 6]} />
-              <meshStandardMaterial color="#1c1917" roughness={0.7} />
+              <PbrSurface color="#1c1917" roughness={0.7} />
             </mesh>
             <mesh position={[0, -d - 0.02, 0]}>
               <cylinderGeometry args={[0.035, 0.022, 0.09, 12]} />
-              <meshStandardMaterial color="#b08d4f" metalness={1} roughness={0.32} envMapIntensity={1.5} />
+              <PbrSurface color="#b08d4f" metalness={1} roughness={0.32} envMapIntensity={1.5} />
             </mesh>
             {/* teardrop glass globe */}
             <mesh position={[0, -d - 0.22, 0]} scale={[1, 1.32, 1]}>
               <sphereGeometry args={[0.16, 24, 20]} />
-              <meshPhysicalMaterial
+              <PbrSurface physical
                 color="#fdf6ec"
                 transparent
                 opacity={0.28}
@@ -443,7 +444,7 @@ export const TieredPlatform = memo(function TieredPlatform({
             {/* deck */}
             <mesh position={[0, h / 2, 0]} receiveShadow castShadow>
               <cylinderGeometry args={[r, r, h, 48, 1, false, -arc / 2, arc]} />
-              <meshStandardMaterial color="#2a2d34" roughness={0.52} metalness={0.22} envMapIntensity={1.1} />
+              <PbrSurface color="#2a2d34" roughness={0.52} metalness={0.22} envMapIntensity={1.1} />
             </mesh>
             {/* LED edge strip along the arc */}
             <mesh position={[0, h + 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -453,7 +454,7 @@ export const TieredPlatform = memo(function TieredPlatform({
             {/* riser face */}
             <mesh position={[0, h / 2, 0]}>
               <cylinderGeometry args={[r + 0.012, r + 0.012, h * 0.82, 48, 1, true, -arc / 2, arc]} />
-              <meshStandardMaterial color="#1b1e24" roughness={0.6} metalness={0.35} side={THREE.DoubleSide} />
+              <PbrSurface color="#1b1e24" roughness={0.6} metalness={0.35} side={THREE.DoubleSide} />
             </mesh>
           </group>
         );

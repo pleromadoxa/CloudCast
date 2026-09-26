@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import type { StudioScreenSource } from '../../../lib/virtualStudio/types';
+import { PbrSurface } from './PbrSurface';
 import { ScreenSurface } from '../ScreenSurface';
 import { useStudioTexture } from '../useStudioTexture';
 
@@ -117,7 +118,7 @@ export const Television = memo(function Television({
     <group position={position} rotation={rotation} scale={scale}>
       {spill && <ScreenSpill intensity={5 * brightness} distance={3.2} position={[0, 0, 0.55]} />}
       <RoundedBox args={[width, height, 0.055]} radius={0.012} smoothness={4} castShadow receiveShadow>
-        <meshStandardMaterial color={BEZEL} metalness={0.6} roughness={0.32} envMapIntensity={1.2} />
+        <PbrSurface color={BEZEL} metalness={0.6} roughness={0.32} envMapIntensity={1.2} />
       </RoundedBox>
       <group position={[0, 0, 0.0285]}>
         <ScreenSurface
@@ -134,10 +135,10 @@ export const Television = memo(function Television({
         <group position={[0, -height / 2, 0]}>
           <mesh position={[0, -0.06, 0]} castShadow>
             <cylinderGeometry args={[0.035, 0.05, 0.12, 24]} />
-            <meshStandardMaterial color={BRUSHED} metalness={0.85} roughness={0.28} />
+            <PbrSurface color={BRUSHED} metalness={0.85} roughness={0.28} />
           </mesh>
           <RoundedBox args={[width * 0.42, 0.02, 0.2]} radius={0.008} smoothness={3} position={[0, -0.125, 0.02]} receiveShadow>
-            <meshStandardMaterial color={BEZEL} metalness={0.7} roughness={0.35} />
+            <PbrSurface color={BEZEL} metalness={0.7} roughness={0.35} />
           </RoundedBox>
         </group>
       )}
@@ -160,7 +161,7 @@ export const FramedMonitor = memo(function FramedMonitor({
     <group position={position} rotation={rotation} scale={scale}>
       {spill && <ScreenSpill intensity={2.2 * brightness} distance={2.2} position={[0, 0, 0.4]} />}
       <RoundedBox args={[width, height, 0.04]} radius={0.01} smoothness={4} castShadow receiveShadow>
-        <meshStandardMaterial color={BEZEL} metalness={0.55} roughness={0.3} />
+        <PbrSurface color={BEZEL} metalness={0.55} roughness={0.3} />
       </RoundedBox>
       <group position={[0, 0, 0.0215]}>
         <ScreenSurface
@@ -214,7 +215,7 @@ export const VideoWall = memo(function VideoWall({
         </>
       )}
       <RoundedBox args={[width + frame, height + frame, 0.12]} radius={0.02} smoothness={4} castShadow receiveShadow>
-        <meshStandardMaterial color="#0b0b0e" metalness={0.5} roughness={0.42} envMapIntensity={1.1} />
+        <PbrSurface color="#0b0b0e" metalness={0.5} roughness={0.42} envMapIntensity={1.1} />
       </RoundedBox>
       <group position={[0, 0, 0.062]}>
         <ScreenSurface
@@ -252,7 +253,7 @@ export const VideoWall = memo(function VideoWall({
       {/* wall mounting rail */}
       <mesh position={[0, height / 2 + 0.1, -0.08]} castShadow>
         <boxGeometry args={[width * 0.9, 0.06, 0.06]} />
-        <meshStandardMaterial color="#18181b" metalness={0.8} roughness={0.3} />
+        <PbrSurface color="#18181b" metalness={0.8} roughness={0.3} />
       </mesh>
     </group>
   );
@@ -274,7 +275,7 @@ export const RibbonBanner = memo(function RibbonBanner({
     <group position={position} rotation={rotation} scale={scale}>
       {spill && <ScreenSpill intensity={3 * brightness} distance={3} position={[0, -0.15, 0.5]} />}
       <RoundedBox args={[width, height, 0.07]} radius={0.02} smoothness={4} castShadow receiveShadow>
-        <meshStandardMaterial color="#0c0c10" metalness={0.55} roughness={0.4} />
+        <PbrSurface color="#0c0c10" metalness={0.55} roughness={0.4} />
       </RoundedBox>
       <group position={[0, 0, 0.037]}>
         <ScreenSurface
@@ -307,13 +308,13 @@ export const StandingBanner = memo(function StandingBanner({
     <group position={position} rotation={rotation} scale={scale}>
       {spill && <ScreenSpill intensity={1.4 * brightness} distance={2.4} position={[0, height / 2 + 0.08, 0.4]} />}
       <RoundedBox args={[width, height, 0.035]} radius={0.012} smoothness={4} position={[0, height / 2 + 0.08, 0]} castShadow receiveShadow>
-        <meshStandardMaterial color="#15151a" metalness={0.4} roughness={0.5} />
+        <PbrSurface color="#15151a" metalness={0.4} roughness={0.5} />
       </RoundedBox>
       <group position={[0, height / 2 + 0.08, 0.019]}>
         <ScreenSurface source={source} width={width - 0.03} height={height - 0.03} brightness={brightness} form="banner" />
       </group>
       <RoundedBox args={[width * 0.9, 0.05, 0.34]} radius={0.015} smoothness={3} position={[0, 0.025, 0.04]} castShadow receiveShadow>
-        <meshStandardMaterial color={BRUSHED} metalness={0.85} roughness={0.3} />
+        <PbrSurface color={BRUSHED} metalness={0.85} roughness={0.3} />
       </RoundedBox>
     </group>
   );
@@ -365,7 +366,7 @@ export const CurvedVideoWall = memo(function CurvedVideoWall({
       {/* housing */}
       <mesh castShadow receiveShadow>
         <cylinderGeometry args={[radius + 0.1, radius + 0.1, height + 0.16, segments, 1, true, -arc / 2, arc]} />
-        <meshStandardMaterial color="#0b0b0e" metalness={0.5} roughness={0.42} side={THREE.BackSide} />
+        <PbrSurface color="#0b0b0e" metalness={0.5} roughness={0.42} side={THREE.BackSide} />
       </mesh>
       {/* emissive face */}
       <mesh>

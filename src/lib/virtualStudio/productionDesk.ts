@@ -1,4 +1,5 @@
 import type { StudioCameraPreset, StudioEffectOverrides, StudioRundownStep } from './types';
+import { kelvinToHex, temperatureToKelvin } from '../renderEngine/colorTemperature';
 
 /**
  * Pure logic behind the production desk UI: camera shot presets and memories,
@@ -148,15 +149,20 @@ export function clampEffectOverrides(
   };
 }
 
-/** A warm/cool tint blended across the rig — cool blue through neutral to tungsten. */
+/**
+ * The rig's white-balance colour for a 0…1 temperature fader.
+ *
+ * Physically based: the fader is remapped to a kelvin value along the Planckian
+ * locus (cool 7500 K → balanced 5600 K → warm 2700 K) and converted through a
+ * black-body fit, so the tint matches what a real fixture of that CCT emits.
+ */
 export function temperatureColor(temperature: number): string {
-  const t = clampTemperature(temperature);
-  const cool = { r: 0.68, g: 0.79, b: 1.0 };
-  const warm = { r: 1.0, g: 0.82, b: 0.62 };
-  const r = Math.round(255 * (cool.r + (warm.r - cool.r) * t));
-  const g = Math.round(255 * (cool.g + (warm.g - cool.g) * t));
-  const b = Math.round(255 * (cool.b + (warm.b - cool.b) * t));
-  return `#${[r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+  return kelvinToHex(temperatureToKelvin(clampTemperature(temperature)));
+}
+
+/** The kelvin CCT the temperature fader currently resolves to. */
+export function temperatureKelvin(temperature: number): number {
+  return temperatureToKelvin(clampTemperature(temperature));
 }
 
 /* ------------------------------------------------------------- autocam */

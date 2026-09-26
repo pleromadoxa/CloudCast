@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react';
 import { RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import { useStudioMaterials } from './materials';
+import { PbrSurface } from './PbrSurface';
 import { LightBeam } from './LightBeam';
 import {
   PLANT_SPECIES,
@@ -59,7 +60,7 @@ export const AnchorDesk = memo(function AnchorDesk({
     <group position={position} rotation={rotation} scale={scale}>
       <RoundedBox args={[width, 0.78, 1.1]} radius={0.06} smoothness={4} position={[0, 0.39, 0]} material={bodyMat} castShadow receiveShadow />
       <RoundedBox args={[width + 0.14, 0.05, 1.24]} radius={0.02} smoothness={4} position={[0, 0.805, 0]} castShadow>
-        <meshPhysicalMaterial
+        <PbrSurface physical
           color="#0d0d12"
           metalness={0.2}
           roughness={0.06}
@@ -70,17 +71,17 @@ export const AnchorDesk = memo(function AnchorDesk({
       </RoundedBox>
       <mesh position={[0, 0.5, 0.56]}>
         <planeGeometry args={[width - 0.3, 0.16]} />
-        <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={2.4} toneMapped={false} />
+        <PbrSurface color={accent} emissive={accent} emissiveIntensity={2.4} toneMapped={false} />
       </mesh>
       <mesh position={[0, 0.16, 0.56]}>
         <planeGeometry args={[width - 0.3, 0.05]} />
-        <meshStandardMaterial color="#38bdf8" emissive="#38bdf8" emissiveIntensity={1.6} toneMapped={false} />
+        <PbrSurface color="#38bdf8" emissive="#38bdf8" emissiveIntensity={1.6} toneMapped={false} />
       </mesh>
       <RoundedBox args={[width - 0.3, 0.12, 0.9]} radius={0.03} smoothness={3} position={[0, 0.06, 0]} material={m.blackGlass} receiveShadow />
       {/* cable grommet in the glass top */}
       <mesh position={[width / 2 - 0.42, 0.832, -0.34]}>
         <cylinderGeometry args={[0.055, 0.055, 0.012, 20]} />
-        <meshStandardMaterial color="#101014" metalness={0.6} roughness={0.4} />
+        <PbrSurface color="#101014" metalness={0.6} roughness={0.4} />
       </mesh>
     </group>
   );
@@ -100,7 +101,7 @@ export const SportsDesk = memo(function SportsDesk({
       <RoundedBox args={[3.3, 0.06, 1.4]} radius={0.025} smoothness={4} position={[0, 0.83, 0]} material={m.marble} castShadow />
       <mesh position={[0, 0.42, 0.66]}>
         <planeGeometry args={[2.6, 0.3]} />
-        <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={2.2} toneMapped={false} />
+        <PbrSurface color={accent} emissive={accent} emissiveIntensity={2.2} toneMapped={false} />
       </mesh>
     </group>
   );
@@ -137,7 +138,7 @@ export const StudioSofa = memo(function StudioSofa({
       <RoundedBox args={[width, 0.3, 1.0]} radius={0.07} smoothness={4} position={[0, 0.25, 0]} material={clothDark} castShadow receiveShadow />
       <mesh position={[0, 0.425, 0.02]}>
         <boxGeometry args={[width - 0.18, 0.03, 0.9]} />
-        <meshStandardMaterial color="#0b0b0d" roughness={1} />
+        <PbrSurface color="#0b0b0d" roughness={1} />
       </mesh>
       {/* back */}
       <RoundedBox args={[width, 0.62, 0.24]} radius={0.09} smoothness={4} position={[0, 0.66, -0.4]} material={cloth} castShadow />
@@ -237,7 +238,7 @@ export const StudioArmchair = memo(function StudioArmchair({
       <RoundedBox args={[0.88, 0.24, 0.88]} radius={0.08} smoothness={4} position={[0, 0.3, 0]} material={clothDark} castShadow receiveShadow />
       <mesh position={[0, 0.435, 0.02]}>
         <boxGeometry args={[0.72, 0.025, 0.72]} />
-        <meshStandardMaterial color="#0b0b0d" roughness={1} />
+        <PbrSurface color="#0b0b0d" roughness={1} />
       </mesh>
       {/* back cushion with top-edge piping */}
       <RoundedBox args={[0.82, 0.56, 0.17]} radius={0.08} smoothness={4} position={[0, 0.68, -0.315]} rotation={[-0.16, 0, 0]} material={cloth} castShadow />
@@ -295,7 +296,7 @@ export const StudioChair = memo(function StudioChair({
       <RoundedBox args={[0.5, 0.1, 0.48]} radius={0.045} smoothness={4} position={[0, 0.555, 0.01]} material={seatMat} castShadow receiveShadow />
       <mesh position={[0, 0.608, 0.01]} rotation={[-Math.PI / 2, 0, 0]}>
         <torusGeometry args={[0.17, 0.006, 6, 36]} />
-        <meshStandardMaterial color="#161b24" roughness={0.95} />
+        <PbrSurface color="#161b24" roughness={0.95} />
       </mesh>
       {/* contoured back with lumbar curve */}
       <RoundedBox args={[0.48, 0.58, 0.08]} radius={0.038} smoothness={4} position={[0, 0.86, -0.235]} rotation={[-0.14, 0, 0]} material={seatMat} castShadow />
@@ -329,7 +330,7 @@ export const StudioChair = memo(function StudioChair({
           {[-0.022, 0.022].map((x) => (
             <mesh key={x} position={[x, 0.032, 0.43]} rotation={[0, 0, Math.PI / 2]} castShadow>
               <torusGeometry args={[0.028, 0.012, 8, 16]} />
-              <meshStandardMaterial color="#0c0d10" roughness={0.45} />
+              <PbrSurface color="#0c0d10" roughness={0.45} />
             </mesh>
           ))}
         </group>
@@ -424,7 +425,7 @@ export const TubChair = memo(function TubChair({
       <RoundedBox args={[0.72, 0.17, 0.66]} radius={0.07} smoothness={4} position={[0, 0.32, 0.02]} material={clothDark} castShadow receiveShadow />
       <mesh position={[0, 0.415, 0.02]}>
         <boxGeometry args={[0.6, 0.025, 0.55]} />
-        <meshStandardMaterial color="#0b0b0d" roughness={1} />
+        <PbrSurface color="#0b0b0d" roughness={1} />
       </mesh>
       <RoundedBox args={[0.68, 0.16, 0.62]} radius={0.075} smoothness={5} position={[0, 0.5, 0.03]} material={cloth} castShadow />
       <mesh position={[0, 0.583, 0.03]} rotation={[-Math.PI / 2, 0, 0]} material={seam}>
@@ -541,7 +542,7 @@ export const CoffeeTable = memo(function CoffeeTable({
       <RoundedBox args={[width, 0.055, depth]} radius={0.022} smoothness={4} position={[0, 0.42, 0]} material={top} castShadow receiveShadow />
       <mesh position={[0, 0.4485, 0]}>
         <boxGeometry args={[width * 0.995, 0.0025, 0.012]} />
-        <meshStandardMaterial color="#b08d4f" metalness={1} roughness={0.3} envMapIntensity={1.5} />
+        <PbrSurface color="#b08d4f" metalness={1} roughness={0.3} envMapIntensity={1.5} />
       </mesh>
       {/* sculptural trestle: two angled slab legs + centre stretcher */}
       {[-1, 1].map((side) => (
@@ -576,7 +577,7 @@ export const MediaConsole = memo(function MediaConsole({
       <RoundedBox args={[width, 0.45, 0.42]} radius={0.03} smoothness={4} position={[0, 0.3, 0]} material={m.walnut} castShadow receiveShadow />
       <mesh position={[0, 0.3, 0.215]}>
         <planeGeometry args={[width - 0.1, 0.3]} />
-        <meshStandardMaterial color="#0d0d10" roughness={0.4} metalness={0.3} />
+        <PbrSurface color="#0d0d10" roughness={0.4} metalness={0.3} />
       </mesh>
       {[-width / 4, width / 4].map((x) => (
         <mesh key={x} position={[x, 0.05, 0]} material={m.chrome} castShadow>
@@ -587,12 +588,12 @@ export const MediaConsole = memo(function MediaConsole({
       {[-0.06, 0, 0.06].map((y) => (
         <mesh key={y} position={[-width / 6, 0.3 + y, 0.22]}>
           <planeGeometry args={[width * 0.42, 0.018]} />
-          <meshStandardMaterial color="#26262b" roughness={0.6} metalness={0.4} />
+          <PbrSurface color="#26262b" roughness={0.6} metalness={0.4} />
         </mesh>
       ))}
       <mesh position={[width / 2 - 0.14, 0.3, 0.222]}>
         <circleGeometry args={[0.012, 12]} />
-        <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={1.6} toneMapped={false} />
+        <PbrSurface color="#22c55e" emissive="#22c55e" emissiveIntensity={1.6} toneMapped={false} />
       </mesh>
     </group>
   );
@@ -613,11 +614,11 @@ export const AreaRug = memo(function AreaRug({
     <group position={position} rotation={rotation} scale={scale}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]} receiveShadow>
         <planeGeometry args={[width, depth]} />
-        <meshStandardMaterial map={m.carpet.map} color={color} roughness={0.95} />
+        <PbrSurface map={m.carpet.map} color={color} roughness={0.95} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
         <planeGeometry args={[width + 0.1, depth + 0.1]} />
-        <meshStandardMaterial color="#292524" roughness={1} />
+        <PbrSurface color="#292524" roughness={1} />
       </mesh>
     </group>
   );
@@ -651,7 +652,7 @@ export const Bookshelf = memo(function Bookshelf({
                 return (
                   <mesh key={b} position={[x, bh / 2, 0]} castShadow>
                     <boxGeometry args={[bw, bh, 0.18]} />
-                    <meshStandardMaterial color={bookColors[(b + s) % bookColors.length]} roughness={0.8} />
+                    <PbrSurface color={bookColors[(b + s) % bookColors.length]} roughness={0.8} />
                   </mesh>
                 );
               })}
@@ -746,7 +747,7 @@ const CeramicPot = memo(function CeramicPot({
     <group>
       {/* glazed body */}
       <mesh geometry={geometry} castShadow receiveShadow>
-        <meshPhysicalMaterial
+        <PbrSurface physical
           color={palette.body}
           roughness={palette.roughness}
           clearcoat={palette.clearcoat}
@@ -757,13 +758,13 @@ const CeramicPot = memo(function CeramicPot({
       {/* domed soil */}
       <mesh position={[0, height * 0.84, 0]} scale={[1, 0.22, 1]} receiveShadow>
         <sphereGeometry args={[radius * 0.93, 22, 10]} />
-        <meshStandardMaterial map={getSoilTexture()} color="#8a7562" roughness={1} />
+        <PbrSurface map={getSoilTexture()} color="#8a7562" roughness={1} />
       </mesh>
       {/* pebble mulch ring */}
       {pebbles.map((p, i) => (
         <mesh key={i} position={[p.x, height * 0.88, p.z]} scale={[1, 0.55, 1]} rotation={[0, i * 1.7, 0]} castShadow>
           <sphereGeometry args={[p.s, 8, 6]} />
-          <meshStandardMaterial color={new THREE.Color(0.55, 0.5, 0.44).multiplyScalar(p.tone)} roughness={0.82} />
+          <PbrSurface color={new THREE.Color(0.55, 0.5, 0.44).multiplyScalar(p.tone)} roughness={0.82} />
         </mesh>
       ))}
     </group>
@@ -790,11 +791,11 @@ const ProceduralPlant = memo(function ProceduralPlant({ height = 1.5 }: { height
       </mesh>
       <mesh position={[0, 0.5, 0]}>
         <cylinderGeometry args={[0.23, 0.23, 0.06, 24]} />
-        <meshStandardMaterial color="#292524" roughness={1} />
+        <PbrSurface color="#292524" roughness={1} />
       </mesh>
       <mesh position={[0, 0.5 + height * 0.25, 0]} castShadow>
         <cylinderGeometry args={[0.03, 0.05, height * 0.5, 10]} />
-        <meshStandardMaterial color="#3f6212" roughness={0.85} />
+        <PbrSurface color="#3f6212" roughness={0.85} />
       </mesh>
       {leaves.map((leaf, i) => (
         <mesh
@@ -808,7 +809,7 @@ const ProceduralPlant = memo(function ProceduralPlant({ height = 1.5 }: { height
           castShadow
         >
           <sphereGeometry args={[leaf.len, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial
+          <PbrSurface
             color={i % 3 === 0 ? '#3f6212' : '#4d7c0f'}
             roughness={0.75}
             side={THREE.DoubleSide}
@@ -887,7 +888,7 @@ export const FloorLamp = memo(function FloorLamp({
       </mesh>
       <mesh position={[0, height, 0]} castShadow>
         <cylinderGeometry args={[0.2, 0.26, 0.34, 24, 1, true]} />
-        <meshStandardMaterial
+        <PbrSurface
           color="#fef3c7"
           emissive={glow}
           emissiveIntensity={1.4}
@@ -915,14 +916,14 @@ export const PendantLight = memo(function PendantLight({
     <group position={position} scale={scale}>
       <mesh position={[0, drop / 2, 0]}>
         <cylinderGeometry args={[0.006, 0.006, drop, 6]} />
-        <meshStandardMaterial color="#27272a" metalness={0.8} roughness={0.4} />
+        <PbrSurface color="#27272a" metalness={0.8} roughness={0.4} />
       </mesh>
       <mesh position={[0, -0.08, 0]} material={m.dark} castShadow>
         <cylinderGeometry args={[0.16, 0.24, 0.24, 24, 1, true]} />
       </mesh>
       <mesh position={[0, -0.14, 0]}>
         <sphereGeometry args={[0.07, 16, 12]} />
-        <meshStandardMaterial color={glow} emissive={glow} emissiveIntensity={3} toneMapped={false} />
+        <PbrSurface color={glow} emissive={glow} emissiveIntensity={3} toneMapped={false} />
       </mesh>
       <pointLight position={[0, -0.2, 0]} intensity={6} distance={8} decay={2} color={glow} />
       {/* soft pool of light in the air below the shade */}
@@ -993,7 +994,7 @@ export const OverheadTruss = memo(function OverheadTruss({
             </mesh>
             <mesh position={[0, -0.28, 0]} rotation={[Math.PI, 0, 0]}>
               <circleGeometry args={[0.11, 16]} />
-              <meshStandardMaterial
+              <PbrSurface
                 color={i % 2 === 0 ? '#fff7ed' : accent}
                 emissive={i % 2 === 0 ? '#fff7ed' : accent}
                 emissiveIntensity={2.6}
@@ -1034,7 +1035,7 @@ export const StageDeck = memo(function StageDeck({
       </mesh>
       <mesh position={[0, height * 0.35, depth / 2 + 0.005]}>
         <planeGeometry args={[width - 0.2, 0.04]} />
-        <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={2.2} toneMapped={false} />
+        <PbrSurface color={accent} emissive={accent} emissiveIntensity={2.2} toneMapped={false} />
       </mesh>
     </group>
   );
@@ -1053,7 +1054,7 @@ export const Lectern = memo(function Lectern({
       <RoundedBox args={[0.8, 0.06, 0.55]} radius={0.02} smoothness={4} position={[0, 1.08, 0.03]} rotation={[-0.18, 0, 0]} material={m.oak} castShadow />
       <mesh position={[0, 0.6, 0.24]}>
         <planeGeometry args={[0.4, 0.5]} />
-        <meshStandardMaterial color="#f59e0b" emissive="#f59e0b" emissiveIntensity={0.9} roughness={0.5} toneMapped={false} />
+        <PbrSurface color="#f59e0b" emissive="#f59e0b" emissiveIntensity={0.9} roughness={0.5} toneMapped={false} />
       </mesh>
     </group>
   );
@@ -1092,14 +1093,14 @@ export const CurtainPanel = memo(function CurtainPanel({
         return (
           <mesh key={i} position={[x, height / 2 + 0.05, zig]} castShadow receiveShadow>
             <cylinderGeometry args={[width / folds / 2.1, width / folds / 1.7, height, 10]} />
-            <meshStandardMaterial color={shade} roughness={0.92} metalness={0} />
+            <PbrSurface color={shade} roughness={0.92} metalness={0} />
           </mesh>
         );
       })}
       {/* weighted hem */}
       <mesh position={[0, 0.045, 0]} receiveShadow>
         <boxGeometry args={[width * 0.99, 0.05, 0.11]} />
-        <meshStandardMaterial color={new THREE.Color(color).multiplyScalar(0.72)} roughness={0.9} />
+        <PbrSurface color={new THREE.Color(color).multiplyScalar(0.72)} roughness={0.9} />
       </mesh>
     </group>
   );
@@ -1126,7 +1127,7 @@ export const Bed = memo(function Bed({
       <RoundedBox args={[width + 0.14, 0.22, 2.24]} radius={0.04} smoothness={3} position={[0, 0.13, 0.1]} material={m.walnut} castShadow receiveShadow />
       {/* tufted headboard */}
       <RoundedBox args={[width + 0.24, 1.15, 0.16]} radius={0.06} smoothness={4} position={[0, 0.85, -1.02]} castShadow receiveShadow>
-        <meshStandardMaterial color={headColor} roughness={0.86} metalness={0} />
+        <PbrSurface color={headColor} roughness={0.86} metalness={0} />
       </RoundedBox>
       {Array.from({ length: tuftCols * tuftRows }, (_, i) => {
         const col = i % tuftCols;
@@ -1136,7 +1137,7 @@ export const Bed = memo(function Bed({
         return (
           <mesh key={i} position={[x, y, -0.925]} scale={[1, 1, 0.5]}>
             <sphereGeometry args={[0.045, 10, 8]} />
-            <meshStandardMaterial color={headColor.clone().multiplyScalar(0.62)} roughness={0.7} />
+            <PbrSurface color={headColor.clone().multiplyScalar(0.62)} roughness={0.7} />
           </mesh>
         );
       })}
@@ -1151,7 +1152,7 @@ export const Bed = memo(function Bed({
           <RoundedBox args={[0.86, 0.16, 0.5]} radius={0.07} smoothness={4} material={m.linen} castShadow />
           <mesh position={[0, -0.055, 0]} scale={[1, 0.32, 1]}>
             <boxGeometry args={[0.83, 0.16, 0.47]} />
-            <meshStandardMaterial color="#8d8377" roughness={0.95} />
+            <PbrSurface color="#8d8377" roughness={0.95} />
           </mesh>
         </group>
       ))}

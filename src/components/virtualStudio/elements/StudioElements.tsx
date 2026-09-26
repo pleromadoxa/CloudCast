@@ -10,8 +10,11 @@ import {
   glassMaterial,
   lacqueredWoodMaterial,
   leatherMaterial,
+  pbrPhysical,
+  pbrStandard,
   upholsteryMaterial,
 } from '../../../lib/prism/pbrMaterials';
+import { PbrSurface } from '../fixtures/PbrSurface';
 import { LightBeam } from '../fixtures/LightBeam';
 import {
   AnchorDesk,
@@ -81,14 +84,14 @@ function LoungeChair(p: StudioElementProps) {
   const m = useStudioMaterials();
   const leather = useMemo(() => leatherMaterial('#6b4a35', 7), []);
   const leatherDark = useMemo(() => leatherMaterial('#543827', 8), []);
-  const seam = useMemo(() => new THREE.MeshStandardMaterial({ color: '#3a2517', roughness: 0.9 }), []);
+  const seam = useMemo(() => pbrStandard({ color: '#3a2517', roughness: 0.9 }), []);
   return (
     <group position={p.position} rotation={p.rotation} scale={p.scale}>
       {/* seat base + shadow gap + cushion */}
       <RoundedBox args={[0.92, 0.28, 0.9]} radius={0.09} smoothness={4} position={[0, 0.3, 0]} material={leatherDark} castShadow receiveShadow />
       <mesh position={[0, 0.452, 0.01]}>
         <boxGeometry args={[0.76, 0.025, 0.76]} />
-        <meshStandardMaterial color="#0b0b0d" roughness={1} />
+        <PbrSurface color="#0b0b0d" roughness={1} />
       </mesh>
       <RoundedBox args={[0.82, 0.14, 0.82]} radius={0.055} smoothness={4} position={[0, 0.5, 0.03]} material={leather} castShadow />
       <mesh position={[0, 0.573, 0.03]} rotation={[-Math.PI / 2, 0, 0]} material={seam}>
@@ -125,7 +128,7 @@ function LoungeChair(p: StudioElementProps) {
 function BarStool(p: StudioElementProps) {
   const m = useStudioMaterials();
   const seat = useMemo(() => leatherMaterial('#7a4a2c', 9), []);
-  const seam = useMemo(() => new THREE.MeshStandardMaterial({ color: '#4a2c17', roughness: 0.9 }), []);
+  const seam = useMemo(() => pbrStandard({ color: '#4a2c17', roughness: 0.9 }), []);
   return (
     <group position={p.position} rotation={p.rotation} scale={p.scale}>
       {/* contoured saddle seat with piping + swivel collar */}
@@ -167,7 +170,7 @@ function BarStool(p: StudioElementProps) {
 function OfficeChair(p: StudioElementProps) {
   const m = useStudioMaterials();
   const seat = useMemo(() => upholsteryMaterial('#2e3440', { sheen: 0.75, sheenColor: '#556072' }), []);
-  const shell = useMemo(() => new THREE.MeshStandardMaterial({ color: '#171b22', roughness: 0.5, metalness: 0.14 }), []);
+  const shell = useMemo(() => pbrStandard({ color: '#171b22', roughness: 0.5, metalness: 0.14 }), []);
   return (
     <group position={p.position} rotation={p.rotation} scale={p.scale}>
       {/* seat cushion on a shell */}
@@ -175,7 +178,7 @@ function OfficeChair(p: StudioElementProps) {
       <RoundedBox args={[0.51, 0.1, 0.49]} radius={0.045} smoothness={4} position={[0, 0.55, 0.01]} material={seat} castShadow />
       <mesh position={[0, 0.603, 0.01]} rotation={[-Math.PI / 2, 0, 0]}>
         <torusGeometry args={[0.175, 0.006, 6, 36]} />
-        <meshStandardMaterial color="#1b212b" roughness={0.95} />
+        <PbrSurface color="#1b212b" roughness={0.95} />
       </mesh>
       {/* back with lumbar contour + headband */}
       <RoundedBox args={[0.49, 0.6, 0.09]} radius={0.042} smoothness={4} position={[0, 0.88, -0.235]} rotation={[-0.12, 0, 0]} material={seat} castShadow />
@@ -208,7 +211,7 @@ function OfficeChair(p: StudioElementProps) {
             {[-0.02, 0.02].map((z) => (
               <mesh key={z} position={[0.285, 0.03, z]} rotation={[0, 0, Math.PI / 2]} castShadow>
                 <torusGeometry args={[0.026, 0.011, 8, 16]} />
-                <meshStandardMaterial color="#0c0d10" roughness={0.45} />
+                <PbrSurface color="#0c0d10" roughness={0.45} />
               </mesh>
             ))}
           </group>
@@ -220,7 +223,7 @@ function OfficeChair(p: StudioElementProps) {
 function Bench(p: StudioElementProps) {
   const m = useStudioMaterials();
   const cushion = useMemo(() => upholsteryMaterial('#4b5563', { sheen: 0.9 }), []);
-  const seam = useMemo(() => new THREE.MeshStandardMaterial({ color: '#2b313a', roughness: 0.95 }), []);
+  const seam = useMemo(() => pbrStandard({ color: '#2b313a', roughness: 0.95 }), []);
   return (
     <group position={p.position} rotation={p.rotation} scale={p.scale}>
       {/* upholstered top with piping + subtle button line */}
@@ -248,7 +251,7 @@ function Bench(p: StudioElementProps) {
 function Ottoman(p: StudioElementProps) {
   const m = useStudioMaterials();
   const cushion = useMemo(() => upholsteryMaterial('#57534e', { sheen: 0.9 }), []);
-  const seam = useMemo(() => new THREE.MeshStandardMaterial({ color: '#322f2b', roughness: 0.95 }), []);
+  const seam = useMemo(() => pbrStandard({ color: '#322f2b', roughness: 0.95 }), []);
   return (
     <group position={p.position} rotation={p.rotation} scale={p.scale}>
       {/* drum body with a seam ring and button top */}
@@ -262,7 +265,7 @@ function Ottoman(p: StudioElementProps) {
       {/* shadow base + tiny feet */}
       <mesh position={[0, 0.022, 0]}>
         <boxGeometry args={[0.62, 0.04, 0.46]} />
-        <meshStandardMaterial color="#111113" roughness={1} />
+        <PbrSurface color="#111113" roughness={1} />
       </mesh>
       {[
         [-0.28, 0.2],
@@ -298,7 +301,7 @@ function SideTable(p: StudioElementProps) {
       </mesh>
       <mesh position={[0, 0.543, 0]}>
         <cylinderGeometry args={[0.305, 0.295, 0.016, 40]} />
-        <meshStandardMaterial color="#0e0e10" roughness={0.7} metalness={0.3} />
+        <PbrSurface color="#0e0e10" roughness={0.7} metalness={0.3} />
       </mesh>
       {/* turned brass stem with knuckles */}
       <mesh position={[0, 0.3, 0]} material={m.brass} castShadow>
@@ -322,7 +325,7 @@ function DiningTable(p: StudioElementProps) {
       <RoundedBox args={[2.1, 0.055, 1.05]} radius={0.022} smoothness={4} position={[0, 0.74, 0]} material={top} castShadow receiveShadow />
       <mesh position={[0, 0.705, 0]}>
         <boxGeometry args={[1.86, 0.012, 0.84]} />
-        <meshStandardMaterial color="#0e0e10" roughness={0.9} />
+        <PbrSurface color="#0e0e10" roughness={0.9} />
       </mesh>
       {/* apron rails */}
       {[-1, 1].map((side) => (
@@ -360,7 +363,7 @@ function Desk(p: StudioElementProps) {
       <RoundedBox args={[2.0, 0.05, 0.9]} radius={0.02} smoothness={4} position={[0, 0.75, 0]} material={top} castShadow receiveShadow />
       <mesh position={[-0.62, 0.777, -0.28]} rotation={[-Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.05, 0.05, 0.012, 20]} />
-        <meshStandardMaterial color="#101014" metalness={0.5} roughness={0.5} />
+        <PbrSurface color="#101014" metalness={0.5} roughness={0.5} />
       </mesh>
       {/* pedestal with drawer reveals + pulls */}
       <RoundedBox args={[0.62, 0.72, 0.82]} radius={0.025} smoothness={3} position={[-0.62, 0.37, 0]} material={carcass} castShadow />
@@ -368,7 +371,7 @@ function Desk(p: StudioElementProps) {
         <group key={y}>
           <mesh position={[-0.62, y, 0.415]}>
             <boxGeometry args={[0.56, 0.012, 0.012]} />
-            <meshStandardMaterial color="#0c0c0e" roughness={0.9} />
+            <PbrSurface color="#0c0c0e" roughness={0.9} />
           </mesh>
           <mesh position={[-0.62, y + 0.055, 0.422]} material={m.brass}>
             <boxGeometry args={[0.22, 0.018, 0.018]} />
@@ -392,7 +395,7 @@ function ConsoleTable(p: StudioElementProps) {
       <RoundedBox args={[1.8, 0.048, 0.42]} radius={0.018} smoothness={4} position={[0, 0.82, 0]} material={m.marble} castShadow receiveShadow />
       <mesh position={[0, 0.792, 0]}>
         <boxGeometry args={[1.68, 0.014, 0.32]} />
-        <meshStandardMaterial color="#0e0e10" roughness={0.8} metalness={0.25} />
+        <PbrSurface color="#0e0e10" roughness={0.8} metalness={0.25} />
       </mesh>
       {/* walnut shelf */}
       <RoundedBox args={[1.7, 0.055, 0.34]} radius={0.018} smoothness={3} position={[0, 0.42, 0]} material={shelf} castShadow receiveShadow />
@@ -422,14 +425,14 @@ function BarCounter(p: StudioElementProps) {
       {[-0.92, -0.3, 0.3, 0.92].map((x) => (
         <mesh key={x} position={[x, 0.55, 0.362]}>
           <boxGeometry args={[0.015, 0.86, 0.012]} />
-          <meshStandardMaterial color="#08080a" roughness={0.85} />
+          <PbrSurface color="#08080a" roughness={0.85} />
         </mesh>
       ))}
       {/* waterfall marble top with eased edge + under-shadow */}
       <RoundedBox args={[2.95, 0.06, 0.92]} radius={0.025} smoothness={4} position={[0, 1.08, 0]} material={m.marble} castShadow />
       <mesh position={[0, 1.042, 0]}>
         <boxGeometry args={[2.82, 0.012, 0.78]} />
-        <meshStandardMaterial color="#0b0b0d" roughness={0.85} />
+        <PbrSurface color="#0b0b0d" roughness={0.85} />
       </mesh>
       {/* brass foot rail */}
       <mesh position={[0, 0.17, 0.44]} rotation={[0, 0, Math.PI / 2]} material={m.brass} castShadow>
@@ -443,7 +446,7 @@ function BarCounter(p: StudioElementProps) {
       {/* under-counter light cove */}
       <mesh position={[0, 1.0, 0.345]}>
         <planeGeometry args={[2.6, 0.05]} />
-        <meshStandardMaterial color="#38bdf8" emissive="#38bdf8" emissiveIntensity={1.6} toneMapped={false} />
+        <PbrSurface color="#38bdf8" emissive="#38bdf8" emissiveIntensity={1.6} toneMapped={false} />
       </mesh>
     </group>
   );
@@ -504,7 +507,7 @@ function makeLeafMaterial(color: THREE.Color | string): THREE.MeshPhysicalMateri
   const key = `#${c.getHexString()}`;
   const hit = leafMaterialCache.get(key);
   if (hit) return hit;
-  const mat = new THREE.MeshPhysicalMaterial({
+  const mat = pbrPhysical({
     color: c,
     roughness: 0.5,
     metalness: 0,
@@ -528,7 +531,7 @@ function PotAssembly({ pot, radius = 0.19, height = 0.32, saucer = false }: { po
       {saucer && (
         <mesh position={[0, 0.012, 0]} castShadow receiveShadow>
           <cylinderGeometry args={[radius * 1.18, radius * 1.22, 0.024, 28]} />
-          <meshStandardMaterial color={pot} roughness={0.5} />
+          <PbrSurface color={pot} roughness={0.5} />
         </mesh>
       )}
       <mesh position={[0, height / 2 + 0.01, 0]} material={glaze} castShadow receiveShadow>
@@ -541,11 +544,11 @@ function PotAssembly({ pot, radius = 0.19, height = 0.32, saucer = false }: { po
       {/* soil mound + moss collar */}
       <mesh position={[0, height - 0.008, 0]}>
         <sphereGeometry args={[radius * 0.88, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2.6]} />
-        <meshStandardMaterial color="#2b211a" roughness={1} />
+        <PbrSurface color="#2b211a" roughness={1} />
       </mesh>
       <mesh position={[0, height - 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[radius * 0.6, radius * 0.86, 24]} />
-        <meshStandardMaterial color="#3d4a2c" roughness={1} side={THREE.DoubleSide} />
+        <PbrSurface color="#3d4a2c" roughness={1} side={THREE.DoubleSide} />
       </mesh>
     </group>
   );
@@ -553,7 +556,7 @@ function PotAssembly({ pot, radius = 0.19, height = 0.32, saucer = false }: { po
 
 /** Monstera — fenestrated split leaves on curving stems from the soil. */
 function Monstera(p: StudioElementProps) {
-  const stemMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#4a6b3c', roughness: 0.7 }), []);
+  const stemMat = useMemo(() => pbrStandard({ color: '#4a6b3c', roughness: 0.7 }), []);
   const leafGeo = useMemo(() => createLeafGeometry(1, 0.4, 0.28, 0.14), []);
   const leaves = useMemo(
     () =>
@@ -619,7 +622,7 @@ function Monstera(p: StudioElementProps) {
   );
 }
 function Palm(p: StudioElementProps) {
-  const trunkMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#7a6248', roughness: 0.92 }), []);
+  const trunkMat = useMemo(() => pbrStandard({ color: '#7a6248', roughness: 0.92 }), []);
   const leafGeo = useMemo(() => createLeafGeometry(1, 0.09, 0.42, 0.06), []);
   const fronds = useMemo(
     () =>
@@ -674,7 +677,7 @@ function Palm(p: StudioElementProps) {
   );
 }
 function Ficus(p: StudioElementProps) {
-  const trunkMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#6b5b47', roughness: 0.9 }), []);
+  const trunkMat = useMemo(() => pbrStandard({ color: '#6b5b47', roughness: 0.9 }), []);
   const leafGeo = useMemo(() => createLeafGeometry(1, 0.42, 0.24, 0.1), []);
   const clusters = useMemo(
     () =>
@@ -709,7 +712,7 @@ function Ficus(p: StudioElementProps) {
           <group key={i} position={[cx, c.y, cz]}>
             <mesh castShadow>
               <sphereGeometry args={[0.13, 10, 8]} />
-              <meshStandardMaterial color={new THREE.Color('#1f4d2d').multiplyScalar(0.5)} roughness={0.8} />
+              <PbrSurface color={new THREE.Color('#1f4d2d').multiplyScalar(0.5)} roughness={0.8} />
             </mesh>
             {Array.from({ length: 7 }, (_, k) => {
               const la = (k / 7) * Math.PI * 2 + i * 0.7;
@@ -733,7 +736,7 @@ function Ficus(p: StudioElementProps) {
   );
 }
 function Fern(p: StudioElementProps) {
-  const stemMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#4c7a3a', roughness: 0.75 }), []);
+  const stemMat = useMemo(() => pbrStandard({ color: '#4c7a3a', roughness: 0.75 }), []);
   const pinnaGeo = useMemo(() => createLeafGeometry(1, 0.3, 0.2, 0.05), []);
   const fronds = useMemo(
     () =>
@@ -818,7 +821,7 @@ function Succulent(p: StudioElementProps) {
         {/* tight centre bud */}
         <mesh position={[0, 0.075, 0]} castShadow>
           <sphereGeometry args={[0.032, 12, 10]} />
-          <meshStandardMaterial color="#7fae86" roughness={0.42} />
+          <PbrSurface color="#7fae86" roughness={0.42} />
         </mesh>
       </group>
     </group>
@@ -830,15 +833,15 @@ function HedgePlanter(p: StudioElementProps) {
     <group position={p.position} rotation={p.rotation} scale={p.scale}>
       <RoundedBox args={[1.9, 0.42, 0.55]} radius={0.03} smoothness={3} position={[0, 0.21, 0]} material={m.concrete} castShadow receiveShadow />
       <RoundedBox args={[1.82, 0.75, 0.48]} radius={0.12} smoothness={4} position={[0, 0.82, 0]} castShadow>
-        <meshStandardMaterial color="#2c6e3f" roughness={0.68} />
+        <PbrSurface color="#2c6e3f" roughness={0.68} />
       </RoundedBox>
     </group>
   );
 }
 function FlowerVase(p: StudioElementProps) {
   const glass = useMemo(() => glassMaterial('#e8f4f8', 0.14), []);
-  const water = useMemo(() => new THREE.MeshPhysicalMaterial({ color: '#bfe3ea', transparent: true, opacity: 0.42, roughness: 0.08, metalness: 0, clearcoat: 1 }), []);
-  const stemMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#4a7a3c', roughness: 0.7 }), []);
+  const water = useMemo(() => pbrPhysical({ color: '#bfe3ea', transparent: true, opacity: 0.42, roughness: 0.08, metalness: 0, clearcoat: 1 }), []);
+  const stemMat = useMemo(() => pbrStandard({ color: '#4a7a3c', roughness: 0.7 }), []);
   const vaseGeo = useMemo(() => {
     // lathe profile: heavy base, belly, narrow neck, flared lip
     const pts: THREE.Vector2[] = [
@@ -894,13 +897,13 @@ function FlowerVase(p: StudioElementProps) {
                 return (
                   <mesh key={k} position={[Math.cos(pa) * 0.042, 0, Math.sin(pa) * 0.042]} rotation={[Math.sin(pa) * 0.7, -pa, Math.cos(pa) * -0.7]} castShadow>
                     <sphereGeometry args={[0.036, 10, 8]} />
-                    <meshStandardMaterial color={s.petal} roughness={0.52} side={THREE.DoubleSide} />
+                    <PbrSurface color={s.petal} roughness={0.52} side={THREE.DoubleSide} />
                   </mesh>
                 );
               })}
               <mesh castShadow>
                 <sphereGeometry args={[0.024, 12, 10]} />
-                <meshStandardMaterial color="#fbbf24" roughness={0.65} />
+                <PbrSurface color="#fbbf24" roughness={0.65} />
               </mesh>
             </group>
           </group>
@@ -921,7 +924,7 @@ function UplightCan(p: StudioElementProps) {
       </mesh>
       <mesh position={[0, 0.335, 0]} rotation={[Math.PI, 0, 0]}>
         <coneGeometry args={[0.11, 0.12, 20, 1, true]} />
-        <meshStandardMaterial color="#fef3c7" emissive="#fde68a" emissiveIntensity={2.4} toneMapped={false} side={THREE.DoubleSide} />
+        <PbrSurface color="#fef3c7" emissive="#fde68a" emissiveIntensity={2.4} toneMapped={false} side={THREE.DoubleSide} />
       </mesh>
       <spotLight position={[0, 1.3, 0]} angle={0.5} penumbra={0.9} intensity={7} distance={5} decay={2} color="#fde68a" />
       {/* upward wash visible in studio haze */}
@@ -936,7 +939,7 @@ function StudioSoftbox(p: StudioElementProps) {
       <RoundedBox args={[0.72, 0.72, 0.16]} radius={0.02} smoothness={3} position={[0, 1.75, 0]} rotation={[-0.35, 0, 0]} material={m.dark} castShadow />
       <mesh position={[0, 1.75, 0.095]} rotation={[-0.35, 0, 0]}>
         <planeGeometry args={[0.62, 0.62]} />
-        <meshStandardMaterial color="#ffffff" emissive="#fff7ed" emissiveIntensity={1.9} toneMapped={false} />
+        <PbrSurface color="#ffffff" emissive="#fff7ed" emissiveIntensity={1.9} toneMapped={false} />
       </mesh>
       {/* key-light shaft from the diffuser face */}
       <group position={[0, 1.75, 0.095]} rotation={[-0.35, 0, 0]}>
@@ -963,7 +966,7 @@ function ArtworkFrame(p: StudioElementProps) {
       <RoundedBox args={[1.15, 0.85, 0.045]} radius={0.012} smoothness={3} material={m.walnut} castShadow />
       <mesh position={[0, 0, 0.03]}>
         <planeGeometry args={[0.98, 0.68]} />
-        <meshStandardMaterial color="#0ea5e9" roughness={0.35} metalness={0.15} />
+        <PbrSurface color="#0ea5e9" roughness={0.35} metalness={0.15} />
       </mesh>
     </group>
   );
@@ -975,7 +978,7 @@ function FloorMirror(p: StudioElementProps) {
       <RoundedBox args={[0.86, 1.72, 0.05]} radius={0.015} smoothness={3} position={[0, 0.86, 0]} material={m.walnut} castShadow />
       <mesh position={[0, 0.86, 0.032]}>
         <planeGeometry args={[0.72, 1.56]} />
-        <meshStandardMaterial color="#c7d2fe" metalness={0.95} roughness={0.06} envMapIntensity={1.8} />
+        <PbrSurface color="#c7d2fe" metalness={0.95} roughness={0.06} envMapIntensity={1.8} />
       </mesh>
     </group>
   );
@@ -993,7 +996,7 @@ function CoffeeBooks(p: StudioElementProps) {
         { y: 0.084, w: 0.33, d: 0.24, c: '#3f3f46' },
       ].map((b, i) => (
         <RoundedBox key={i} args={[b.w, 0.032, b.d]} radius={0.008} smoothness={2} position={[0, b.y, 0]} rotation={[0, i * 0.16, 0]} castShadow>
-          <meshStandardMaterial color={b.c} roughness={0.7} />
+          <PbrSurface color={b.c} roughness={0.7} />
         </RoundedBox>
       ))}
       <mesh position={[0.26, 0.03, 0.1]} material={m.marble} castShadow>
@@ -1011,7 +1014,7 @@ function WallClock(p: StudioElementProps) {
       </mesh>
       <mesh position={[0, 0, 0.03]}>
         <circleGeometry args={[0.245, 32]} />
-        <meshStandardMaterial color="#f5f5f4" roughness={0.5} />
+        <PbrSurface color="#f5f5f4" roughness={0.5} />
       </mesh>
       {[
         { len: 0.14, w: 0.016, rot: 1.1 },
@@ -1019,7 +1022,7 @@ function WallClock(p: StudioElementProps) {
       ].map((hand, i) => (
         <mesh key={i} position={[Math.sin(hand.rot) * hand.len * 0.5, Math.cos(hand.rot) * hand.len * 0.5, 0.045]} rotation={[0, 0, -hand.rot]}>
           <boxGeometry args={[hand.w, hand.len, 0.008]} />
-          <meshStandardMaterial color="#1c1917" />
+          <PbrSurface color="#1c1917" />
         </mesh>
       ))}
     </group>
@@ -1034,7 +1037,7 @@ function RoomDivider(p: StudioElementProps) {
           <RoundedBox args={[0.58, 1.9, 0.06]} radius={0.02} smoothness={3} position={[0, 0.95, 0]} material={m.oak} castShadow receiveShadow />
           <mesh position={[0, 0.95, 0.035]}>
             <planeGeometry args={[0.42, 1.6]} />
-            <meshStandardMaterial color="#0f172a" roughness={0.4} metalness={0.25} />
+            <PbrSurface color="#0f172a" roughness={0.4} metalness={0.25} />
           </mesh>
         </group>
       ))}

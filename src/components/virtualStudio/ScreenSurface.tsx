@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { StudioFit, StudioScreenForm, StudioScreenSource } from '../../lib/virtualStudio/types';
 import { useStudioTexture } from './useStudioTexture';
+import { PbrSurface } from './fixtures/PbrSurface';
 
 /**
  * The physical emissive panel every studio screen is built from: binds a
@@ -98,7 +99,7 @@ export const ScreenSurface = memo(function ScreenSurface({
             color={new THREE.Color(brightness, brightness, brightness)}
           />
         ) : (
-          <meshStandardMaterial
+          <PbrSurface
             color={offColor}
             metalness={0.35}
             roughness={0.22}
@@ -124,7 +125,7 @@ export const ScreenSurface = memo(function ScreenSurface({
       {glass && (
         <mesh position={[0, 0, 0.004]}>
           <planeGeometry args={[width, height]} />
-          <meshPhysicalMaterial
+          <PbrSurface physical
             color="#ffffff"
             transparent
             opacity={0.05}

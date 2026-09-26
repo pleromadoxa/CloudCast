@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { PbrSurface } from './fixtures/PbrSurface';
 
 /**
  * Production mode primitives shared by the photoreal stage:
@@ -118,7 +119,7 @@ export const XrSetExtension = memo(function XrSetExtension({
           {/* panel body */}
           <mesh receiveShadow>
             <planeGeometry args={[radius * 0.7, height]} />
-            <meshStandardMaterial
+            <PbrSurface
               color={accent}
               emissive={accent}
               emissiveIntensity={0.32}
@@ -130,7 +131,7 @@ export const XrSetExtension = memo(function XrSetExtension({
           {/* bright bezel seam — sells the individual LED cabinet edges */}
           <mesh position={[0, 0, 0.02]}>
             <planeGeometry args={[radius * 0.7, 0.06]} />
-            <meshStandardMaterial
+            <PbrSurface
               color="#0b0b12"
               emissive={accent}
               emissiveIntensity={1.4}
@@ -142,7 +143,7 @@ export const XrSetExtension = memo(function XrSetExtension({
       {/* overhead header glow bar tying the volume together */}
       <mesh position={[0, height + 0.15, -radius * 0.42]}>
         <boxGeometry args={[radius * 1.35, 0.1, 0.1]} />
-        <meshStandardMaterial
+        <PbrSurface
           color="#0b0b12"
           emissive={accent}
           emissiveIntensity={1.1}
@@ -152,7 +153,7 @@ export const XrSetExtension = memo(function XrSetExtension({
       {/* floor spill so the extension grounds into the set */}
       <mesh position={[0, 0.02, -radius * 0.35]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[radius * 1.6, radius * 0.5]} />
-        <meshStandardMaterial color="#05050a" roughness={0.7} metalness={0.2} />
+        <PbrSurface color="#05050a" roughness={0.7} metalness={0.2} />
       </mesh>
     </group>
   );

@@ -596,3 +596,202 @@ export function getProceduralNormal(kind: ProceduralTextureKind, seed = 0, stren
   normalCache.set(key, tex);
   return tex;
 }
+
+/**
+ * Metallic map — the third leg of a PBR texture set alongside the normal and
+ * roughness maps. Three.js samples `metalnessMap` from the green channel, so the
+ * channel carries the per-texel metalness: dense/oxidised texels read as more
+ * metallic, porous/scratched texels as less. Mean-preserving around the base so
+ * the material's scalar metalness keeps meaning (we set `metalness: 1` and let
+ * the map carry the value, mirroring the roughness map).
+ */
+const metalnessCache = new Map<string, THREE.DataTexture>();
+
+export function getProceduralMetalness(
+  kind: ProceduralTextureKind,
+  seed = 0,
+  baseMetalness = 0.05,
+): THREE.DataTexture | null {
+  if (FLAT_KINDS.includes(kind)) return null;
+  const key = `${kind}:${seed}:${baseMetalness}`;
+  const hit = metalnessCache.get(key);
+  if (hit) return hit;
+
+  const canvas = buildCanvas(kind, seed);
+  const { width, height } = canvas;
+  const src = canvas.getContext('2d')!.getImageData(0, 0, width, height).data;
+  const data = new Uint8Array(width * height * 4);
+  for (let i = 0; i < width * height; i += 1) {
+    const o = i * 4;
+    const lum = (src[o] * 0.299 + src[o + 1] * 0.587 + src[o + 2] * 0.114) / 255;
+    // Dense/bright texels a touch more metallic, porous/dark texels less.
+    const metal = Math.min(1, Math.max(0, baseMetalness * (0.84 + 0.32 * lum)));
+    const v = Math.round(metal * 255);
+    data[o] = v;
+    data[o + 1] = v;
+    data[o + 2] = v;
+    data[o + 3] = 255;
+  }
+  const tex = new THREE.DataTexture(data, width, height, THREE.RGBAFormat);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 16;
+  applyKindRepeat(tex, kind);
+  tex.needsUpdate = true;
+  metalnessCache.set(key, tex);
+  return tex;
+}
+
+/* --------------------------------------------- micro-surface (solid finishes) */
+
+/**
+ * A tileable value-noise height field used to give flat/solid finishes (paint,
+ * lacquer, powder-coat) a believable micro-surface. No real surface is a
+ * perfect plane; without per-texel normal/roughness/metalness variation a solid
+ * material reads as plastic. Derived maps are cached once and shared.
+ */
+function tileableHeight(size: number): Float32Array {
+  const height = new Float32Array(size * size);
+  // A few octaves of integer-lattice value noise that wraps on the tile.
+  const octaves = [4, 8, 16, 32];
+  for (const cells of octaves) {
+    const lattice = new Float32Array(cells * cells);
+    let s = cells * 9781 + 1;
+    for (let i = 0; i < lattice.length; i += 1) {
+      s = (s * 16807) % 2147483647;
+      lattice[i] = (s & 0xffff) / 0xffff;
+    }
+    const amp = 1 / cells;
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const fx = (x / size) * cells;
+        const fy = (y / size) * cells;
+        const x0 = Math.floor(fx) % cells;
+        const y0 = Math.floor(fy) % cells;
+        const x1 = (x0 + 1) % cells;
+        const y1 = (y0 + 1) % cells;
+        const tx = fx - Math.floor(fx);
+        const ty = fy - Math.floor(fy);
+        const sx = tx * tx * (3 - 2 * tx);
+        const sy = ty * ty * (3 - 2 * ty);
+        const v00 = lattice[y0 * cells + x0];
+        const v10 = lattice[y0 * cells + x1];
+        const v01 = lattice[y1 * cells + x0];
+        const v11 = lattice[y1 * cells + x1];
+        const v = v00 + (v10 - v00) * sx + (v01 - v00) * sy + (v00 - v10 - v01 + v11) * sx * sy;
+        height[y * size + x] += v * amp;
+      }
+    }
+  }
+  return height;
+}
+
+const MICRO_SIZE = 64;
+const microNormalCache = new Map<string, THREE.DataTexture>();
+const microRoughnessCache = new Map<string, THREE.DataTexture>();
+const microMetalnessCache = new Map<string, THREE.DataTexture>();
+let microHeight: Float32Array | null = null;
+
+function microHeightField(): Float32Array {
+  if (!microHeight) microHeight = tileableHeight(MICRO_SIZE);
+  return microHeight;
+}
+
+/** Tangent-space normal map for a solid finish (shared, cached). */
+export function getMicroNormal(strength = 0.6): THREE.DataTexture {
+  const key = `${strength}`;
+  const hit = microNormalCache.get(key);
+  if (hit) return hit;
+  const h = microHeightField();
+  const size = MICRO_SIZE;
+  const at = (x: number, y: number) => h[(((y % size) + size) % size) * size + (((x % size) + size) % size)];
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const gx = at(x + 1, y) - at(x - 1, y);
+      const gy = at(x, y + 1) - at(x, y - 1);
+      let nx = -gx * strength * size * 0.06;
+      let ny = -gy * strength * size * 0.06;
+      const nz = 1;
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      nx /= len;
+      ny /= len;
+      const o = (y * size + x) * 4;
+      data[o] = Math.round((nx * 0.5 + 0.5) * 255);
+      data[o + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+      data[o + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+      data[o + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.repeat.set(3, 3);
+  tex.needsUpdate = true;
+  microNormalCache.set(key, tex);
+  return tex;
+}
+
+/** Micro-roughness map for a solid finish — green channel carries the value. */
+export function getMicroRoughness(baseRoughness = 0.5, swing = 0.18): THREE.DataTexture {
+  const key = `${baseRoughness}:${swing}`;
+  const hit = microRoughnessCache.get(key);
+  if (hit) return hit;
+  const h = microHeightField();
+  const size = MICRO_SIZE;
+  const data = new Uint8Array(size * size * 4);
+  for (let i = 0; i < size * size; i += 1) {
+    const v = Math.min(1, Math.max(0.02, baseRoughness * (1 - swing / 2 + swing * h[i])));
+    const b = Math.round(v * 255);
+    const o = i * 4;
+    data[o] = b;
+    data[o + 1] = b;
+    data[o + 2] = b;
+    data[o + 3] = 255;
+  }
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.repeat.set(3, 3);
+  tex.needsUpdate = true;
+  microRoughnessCache.set(key, tex);
+  return tex;
+}
+
+/** Micro-metalness map for a solid finish — green channel carries the value. */
+export function getMicroMetalness(baseMetalness = 0.05, swing = 0.12): THREE.DataTexture {
+  const key = `${baseMetalness}:${swing}`;
+  const hit = microMetalnessCache.get(key);
+  if (hit) return hit;
+  const h = microHeightField();
+  const size = MICRO_SIZE;
+  const data = new Uint8Array(size * size * 4);
+  for (let i = 0; i < size * size; i += 1) {
+    const v = Math.min(1, Math.max(0, baseMetalness * (1 - swing / 2 + swing * h[i])));
+    const b = Math.round(v * 255);
+    const o = i * 4;
+    data[o] = b;
+    data[o + 1] = b;
+    data[o + 2] = b;
+    data[o + 3] = 255;
+  }
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.repeat.set(3, 3);
+  tex.needsUpdate = true;
+  microMetalnessCache.set(key, tex);
+  return tex;
+}

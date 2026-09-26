@@ -42,6 +42,7 @@ import {
   OvenStack,
 } from '../fixtures/kitchen';
 import { useStudioMaterials } from '../fixtures/materials';
+import { PbrSurface } from '../fixtures/PbrSurface';
 import {
   AccentWall,
   BackdropPlane,
@@ -213,7 +214,7 @@ export const SportsArenaScene = memo(function SportsArenaScene({
       {/* arena bowl floor */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[70, 70]} />
-        <meshStandardMaterial color="#0c0d10" roughness={0.62} metalness={0.12} envMapIntensity={1.2} />
+        <PbrSurface color="#0c0d10" roughness={0.62} metalness={0.12} envMapIntensity={1.2} />
       </mesh>
       {/* studio ceiling rig — dense grid of spot fixtures over the desk area */}
       <CeilingGrid position={[0, 0, 0.5]} width={22} depth={16} height={6.4} slatsX={10} slatsZ={7} spotsX={6} spotsZ={4} color="#fff1e0" />
@@ -522,15 +523,15 @@ export const KitchenScene = memo(function KitchenScene({
       {/* sink + black faucet on the left counter */}
       <mesh position={[-4.6, 0.955, -5.42]}>
         <boxGeometry args={[0.62, 0.035, 0.44]} />
-        <meshStandardMaterial color="#17181c" metalness={0.6} roughness={0.35} />
+        <PbrSurface color="#17181c" metalness={0.6} roughness={0.35} />
       </mesh>
       <mesh position={[-4.6, 1.14, -5.62]} rotation={[0, 0, 0]}>
         <cylinderGeometry args={[0.016, 0.016, 0.34, 10]} />
-        <meshStandardMaterial color="#101013" metalness={0.75} roughness={0.28} />
+        <PbrSurface color="#101013" metalness={0.75} roughness={0.28} />
       </mesh>
       <mesh position={[-4.6, 1.3, -5.54]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.015, 0.015, 0.18, 10]} />
-        <meshStandardMaterial color="#101013" metalness={0.75} roughness={0.28} />
+        <PbrSurface color="#101013" metalness={0.75} roughness={0.28} />
       </mesh>
 
       {/* open shelving with dishware */}
@@ -748,12 +749,12 @@ export const GreenRoomScene = memo(function GreenRoomScene({
       <RoundedBox args={[2.3, 1.5, 0.07]} radius={0.03} smoothness={3} position={[-4.2, 1.75, -5.0]} material={m.walnut} castShadow />
       <mesh position={[-4.2, 1.75, -4.95]}>
         <planeGeometry args={[2.05, 1.25]} />
-        <meshStandardMaterial color="#c7d2fe" metalness={0.92} roughness={0.07} envMapIntensity={1.8} />
+        <PbrSurface color="#c7d2fe" metalness={0.92} roughness={0.07} envMapIntensity={1.8} />
       </mesh>
       {Array.from({ length: 6 }, (_, i) => (
         <mesh key={i} position={[-5.15 + i * 0.38, 2.62, -4.95]}>
           <sphereGeometry args={[0.055, 12, 12]} />
-          <meshStandardMaterial color="#fef3c7" emissive="#fde68a" emissiveIntensity={2.2} toneMapped={false} />
+          <PbrSurface color="#fef3c7" emissive="#fde68a" emissiveIntensity={2.2} toneMapped={false} />
         </mesh>
       ))}
 
@@ -796,7 +797,7 @@ export const XrConcertScene = memo(function XrConcertScene({
       {[-3.6, 0, 3.6].map((x) => (
         <mesh key={x} position={[x, 0.375, -2.4]} rotation={[-Math.PI / 2, 0, 0]}>
           <planeGeometry args={[0.16, 6.2]} />
-          <meshStandardMaterial color="#22d3ee" emissive="#22d3ee" emissiveIntensity={2.4} toneMapped={false} />
+          <PbrSurface color="#22d3ee" emissive="#22d3ee" emissiveIntensity={2.4} toneMapped={false} />
         </mesh>
       ))}
 
@@ -911,7 +912,7 @@ export const GlobalNewsArenaScene = memo(function GlobalNewsArenaScene({
       {[-7.4, 7.4].map((x) => (
         <group key={x} position={[x, 0, -4.4]}>
           <RoundedBox args={[1.05, 6, 1.05]} radius={0.02} smoothness={2} position={[0, 3, 0]} castShadow receiveShadow>
-            <meshStandardMaterial color="#3a3e46" roughness={0.6} metalness={0.25} />
+            <PbrSurface color="#3a3e46" roughness={0.6} metalness={0.25} />
           </RoundedBox>
           {[1.2, 2.1, 3.0].map((y) => (
             <mesh key={y} position={[0, y, 0.54]}>

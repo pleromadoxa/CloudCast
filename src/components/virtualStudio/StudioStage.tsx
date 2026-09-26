@@ -3,11 +3,10 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { ContactShadows, Environment, PerformanceMonitor } from '@react-three/drei';
 import {
   Bloom,
-  BrightnessContrast,
   ChromaticAberration,
   DepthOfField,
   EffectComposer,
-  HueSaturation,
+  LUT,
   N8AO,
   Noise,
   SMAA,
@@ -32,6 +31,8 @@ import type {
   StudioTransitionStyle,
 } from '../../lib/virtualStudio/types';
 import { clampBloomIntensity, clampExposure, clampTemperature } from '../../lib/virtualStudio/productionDesk';
+import { kelvinToHex, temperatureToKelvin } from '../../lib/renderEngine/colorTemperature';
+import { buildGradeLut } from '../../lib/renderEngine/gradeLut';
 import { useRenderEngineSettings } from '../../context/RenderEngineContext';
 import { toneMappingModeFor } from '../../lib/renderEngine/toneMappingBridge';
 import {
@@ -358,15 +359,27 @@ function StudioLighting({
 }) {
   ensureAreaLightTables();
   // Cool-to-warm balance across the rig — the operator's colour temperature.
+  // Physically based: the fader resolves to a correlated colour temperature on
+  // the Planckian locus and every fixture emits the black-body chromaticity for
+  // its own CCT. Mixed-CCT lighting (a slightly cooler fill against a warmer
+  // kicker) is what gives real sets their colour separation — it falls out of
+  // the kelvin values rather than hand-picked tints.
   const t = Math.max(0, Math.min(1, temperature));
-  const keyColor = useMemo(() => `#${new THREE.Color('#e2ebff').lerp(new THREE.Color('#ffedd6'), t).getHexString()}`, [t]);
-  const fillColor = useMemo(() => `#${new THREE.Color('#b7d0ff').lerp(new THREE.Color('#ffd9ae'), t).getHexString()}`, [t]);
-  const kickerColor = useMemo(() => `#${new THREE.Color('#cfe0ff').lerp(new THREE.Color('#ffcf9e'), t).getHexString()}`, [t]);
+  const masterKelvin = temperatureToKelvin(t);
+  const keyColor = useMemo(() => kelvinToHex(masterKelvin), [masterKelvin]);
+  // Fill sits ~350 K cooler than the key (soft daylight bounce).
+  const fillColor = useMemo(() => kelvinToHex(masterKelvin + 350), [masterKelvin]);
+  // Kicker sits ~450 K warmer (tungsten edge/accent), matching on-set practice.
+  const kickerColor = useMemo(() => kelvinToHex(masterKelvin - 450), [masterKelvin]);
   /* Rim spot picks up the set accent so the backlight ties the talent to the
-     set instead of sitting on top of it as neutral white. */
+     set instead of sitting on top of it as neutral white. The accent is blended
+     onto the fixture's own CCT so the rim reads as a coloured practical. */
   const rimColor = useMemo(
-    () => (accent ? `#${new THREE.Color('#ffffff').lerp(new THREE.Color(accent), 0.5).getHexString()}` : '#ffffff'),
-    [accent],
+    () =>
+      accent
+        ? `#${new THREE.Color(kelvinToHex(masterKelvin)).lerp(new THREE.Color(accent), 0.5).getHexString()}`
+        : kelvinToHex(masterKelvin),
+    [accent, masterKelvin],
   );
   const fillBoost = 1.25 - t * 0.5;
   const kickerBoost = 0.75 + t * 0.5;
@@ -431,6 +444,10 @@ function StudioLighting({
         color={kickerColor}
         onUpdate={(light) => light.lookAt(0, 1.2, 0)}
       />
+      {/* rim/overhead spot — physically accurate light falloff: decay = 2 is the
+          inverse-square law (energy falls as 1/d²), windowed by `distance` so it
+          reaches zero smoothly instead of popping off at range. Colour comes from
+          the rig's correlated colour temperature, not a hand-picked tint. */}
       <spotLight
         position={[0, 7.5, -3]}
         angle={0.7}
@@ -466,7 +483,7 @@ function StudioLighting({
         rotation={[-0.4, 0, 0]}
         height={8}
         radius={1.9}
-        color="#fff7ed"
+        color={keyColor}
         opacity={0.055}
       />
     </>
@@ -504,12 +521,16 @@ function StudioPostProcessing({
   chromaticAberration: boolean;
   chromaticAberrationAmount: number;
 }) {
-  // The `postprocessing` grade effects speak in −1…1; the engine grade store
-  // keeps saturation/vibrance in their natural 0…2 domain.
-  const saturation = Math.max(-1, Math.min(1, (grade.saturation - 1) + (grade.vibrance - 1) * 0.35));
-  const contrast = Math.max(-1, Math.min(1, grade.contrast));
-  // Temperature nudges hue: warm pans toward red, cool toward blue, in turns.
-  const hue = Math.max(-1, Math.min(1, grade.temperature * 0.06));
+  // LUT-based colour grading: white balance, contrast and saturation/vibrance
+  // are baked into a 3D lookup texture and applied with tetrahedral
+  // interpolation — a real show-LUT transform rather than a chain of ad-hoc
+  // per-channel effects. Rebuilt only when a grading control actually moves.
+  const lut = useMemo(
+    () => buildGradeLut({ contrast: grade.contrast, saturation: grade.saturation, vibrance: grade.vibrance, temperature: grade.temperature }),
+    [grade.contrast, grade.saturation, grade.vibrance, grade.temperature],
+  );
+  // Free the previous lookup texture whenever the grade moves.
+  useEffect(() => () => lut.dispose(), [lut]);
   return (
     <EffectComposer multisampling={msaaSamples} enableNormalPass={false}>
       {/* Ambient occlusion grounds furniture/feet — ultra tier only. */}
@@ -550,13 +571,11 @@ function StudioPostProcessing({
           LED walls and practicals stay believable. It sits after the HDR
           effects (AO, bloom, DOF) and before the display-space grade. */}
       <ToneMapping mode={toneMap} />
-      {/* Display-space grade — contrast, saturation/vibrance, white balance. */}
-      {(contrast !== 0 || saturation !== 0 || hue !== 0) && (
-        <>
-          <BrightnessContrast brightness={0} contrast={contrast} />
-          <HueSaturation hue={hue} saturation={saturation} />
-        </>
-      )}
+      {/* LUT-based display-space grade — white balance, contrast, saturation
+          and vibrance resolved through a baked 3D lookup texture (tetrahedral
+          interpolation) so every template shares one film-consistent
+          transform. */}
+      <LUT lut={lut} tetrahedralInterpolation />
       {/* Chromatic aberration fringes the frame edges like a real fast lens. */}
       {chromaticAberration && chromaticAberrationAmount > 0 && (
         <ChromaticAberration

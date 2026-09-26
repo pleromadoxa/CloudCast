@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react';
 import * as THREE from 'three';
 import { pbrFromTexture, pbrSolid } from '../../../lib/prism/pbrMaterials';
+import { PbrSurface } from './PbrSurface';
 import type { StudioFit, StudioScreenSource } from '../../../lib/virtualStudio/types';
 import { ScreenSurface } from '../ScreenSurface';
 
@@ -40,7 +41,7 @@ export const BackdropPlane = memo(function BackdropPlane({
     <group position={position} rotation={rotation} scale={scale}>
       <mesh>
         <planeGeometry args={[width, height]} />
-        <meshStandardMaterial color="#0b0d12" roughness={0.9} />
+        <PbrSurface color="#0b0d12" roughness={0.9} />
       </mesh>
       <group position={[0, 0, 0.01]}>
         <ScreenSurface
@@ -124,7 +125,7 @@ export const RoomShell = memo(function RoomShell({
       {/* floor — double-sided so low hero-angle cameras keep the ground */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[width, depth]} />
-        <meshStandardMaterial
+        <PbrSurface
           map={materials.floor.map}
           color={floorColor}
           roughness={materials.floor.roughness}
@@ -186,7 +187,7 @@ export const RoomShell = memo(function RoomShell({
         <group key={i} position={[light.x, height - 0.02, light.z]}>
           <mesh rotation={[Math.PI / 2, 0, 0]}>
             <planeGeometry args={[1.6, 0.7]} />
-            <meshStandardMaterial color="#f8fafc" emissive="#eef4ff" emissiveIntensity={2.2} toneMapped={false} />
+            <PbrSurface color="#f8fafc" emissive="#eef4ff" emissiveIntensity={2.2} toneMapped={false} />
           </mesh>
           <mesh position={[0, 0.02, 0]} rotation={[Math.PI / 2, 0, 0]} material={materials.trim}>
             <planeGeometry args={[1.8, 0.9]} />
@@ -300,7 +301,7 @@ export const WindowFrame = memo(function WindowFrame({
         })}
         <mesh position={[0, 0, 0.01]}>
           <planeGeometry args={[width, height]} />
-          <meshPhysicalMaterial
+          <PbrSurface physical
             color="#cfe8ff"
             transparent
             opacity={0.07}
@@ -337,7 +338,7 @@ export const AccentWall = memo(function AccentWall({
         return (
           <mesh key={i} position={[x, 0, 0.06]}>
             <boxGeometry args={[width / slats - 0.12, height * 0.94, 0.05]} />
-            <meshStandardMaterial
+            <PbrSurface
               color={glow ? accent : '#161a24'}
               emissive={glow ? accent : '#000000'}
               emissiveIntensity={glow ? 1.5 : 0}
