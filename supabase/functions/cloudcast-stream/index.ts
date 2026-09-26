@@ -8,6 +8,21 @@ import {
   type StreamPlanTier,
 } from "../_shared/cloudflareStream.ts";
 
+function resolveStreamPlanTier(planId: string): StreamPlanTier | null {
+  if (planId === "pro_master" || planId === "universal_studio" || planId === "universal") {
+    return "pro_master";
+  }
+  if (planId === "pro" || planId === "universal_essential") {
+    return "pro";
+  }
+  return null;
+}
+
+function isRegalVideoSession(planId: string, productType: string): boolean {
+  if (productType === "audio") return false;
+  return resolveStreamPlanTier(planId) !== null;
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -31,10 +46,6 @@ function serviceClient() {
   return createClient(supabaseUrl, svcKey);
 }
 
-function isRegalMode(mode: string | null | undefined): boolean {
-  return mode === "regal" || mode === "cloudflare";
-}
-
 async function resolveRegalSession(
   admin: ReturnType<typeof createClient>,
   accessCode: string,
@@ -43,7 +54,7 @@ async function resolveRegalSession(
   const code = accessCode.toUpperCase().trim();
   const { data: session, error: sessionError } = await admin
     .from("mixer_sessions")
-    .select("id, plan_id, connection_mode, is_active, expires_at")
+    .select("id, plan_id, connection_mode, product_type, is_active, expires_at")
     .eq("access_code", code)
     .eq("is_active", true)
     .maybeSingle();
@@ -56,13 +67,15 @@ async function resolveRegalSession(
     return { error: json(410, { error: "Session expired" }) };
   }
 
-  if (!isRegalMode(session.connection_mode)) {
-    return { error: json(403, { error: "Regal Cloud is not enabled for this session" }) };
-  }
-
   const planId = String(session.plan_id ?? "");
-  if (planId !== "pro" && planId !== "pro_master") {
-    return { error: json(403, { error: "Regal Cloud requires a Pro or Pro Master plan" }) };
+  const productType = String(session.product_type ?? "video");
+  const streamPlan = resolveStreamPlanTier(planId);
+
+  if (!isRegalVideoSession(planId, productType)) {
+    const message = productType === "audio"
+      ? "Regal Cloud video ingest is not used for audio-only dashboard sessions"
+      : "Regal Cloud requires a Pro, Pro Master, or Universal video plan";
+    return { error: json(403, { error: message }) };
   }
 
   const { data: device, error: deviceError } = await admin
@@ -79,7 +92,7 @@ async function resolveRegalSession(
   return {
     session,
     device,
-    planId: planId as StreamPlanTier,
+    planId: streamPlan!,
   };
 }
 

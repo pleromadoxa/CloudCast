@@ -4,6 +4,7 @@ import { Loader2, Wifi, WifiOff } from 'lucide-react';
 import { DisplaySlideRenderer } from '../components/display/DisplaySlideRenderer';
 import { DisplayCongregationClock } from '../components/display/DisplayCongregationClock';
 import { useDisplayFeedSyncSubscriber } from '../hooks/useDisplayFeedSyncSubscriber';
+import { resolveCongregationSlide } from '../lib/displayOverlaySlide';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import { cn } from '../lib/utils';
 
@@ -106,10 +107,12 @@ export function DisplayCongregationPage() {
     );
   }
 
+  const congregationSlide = sync.isLive ? resolveCongregationSlide(sync.liveSlide) : null;
+
   return (
     <div className="fixed inset-0 overflow-hidden bg-black">
       <DisplaySlideRenderer
-        slide={sync.isLive ? sync.liveSlide : null}
+        slide={congregationSlide}
         holdBackground={sync.holdBackground}
         animate={sync.isLive}
         transition={sync.transition}

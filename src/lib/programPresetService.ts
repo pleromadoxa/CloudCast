@@ -18,14 +18,12 @@ import { normalizeAudioSettings } from './audioSettings';
 import { getSupabase, isSupabaseConfigured } from './supabase';
 
 function stripEphemeralProduction(state: Partial<PersistedProductionState>): Partial<PersistedProductionState> {
-  const {
-    pstDeviceId: _pst,
-    pgmDeviceId: _pgm,
-    subDeviceId: _sub,
-    isOnAir: _onAir,
-    onAirStartedAt: _started,
-    ...rest
-  } = state;
+  const rest = { ...state };
+  delete rest.pstDeviceId;
+  delete rest.pgmDeviceId;
+  delete rest.subDeviceId;
+  delete rest.isOnAir;
+  delete rest.onAirStartedAt;
   return rest;
 }
 
@@ -101,6 +99,8 @@ export function applyProgramPresetConfig(config: ProgramPresetConfig): void {
     openPanels: ['sources'],
     defaultQuality: 'auto',
     viewMode: 'grid',
+    mixerViewMode: 'advanced',
+    simpleProductionView: false,
     globalOverlay: 'none',
     display: { aspectRatio: '16:9' },
     pip: { position: 'bottom-right', size: 'medium', border: true, opacity: 100 },
@@ -127,6 +127,8 @@ export function applyProgramPresetConfig(config: ProgramPresetConfig): void {
   const overlayLayers = normalizeLayerSettings(config.video.overlays as Parameters<typeof normalizeLayerSettings>[0]);
   saveOverlayLayers({
     imageOverlays: overlayLayers.imageOverlays,
+    videoOverlays: overlayLayers.videoOverlays,
+    mediaLibrary: overlayLayers.mediaLibrary,
     lowerThirdTemplate: overlayLayers.lowerThirdTemplate,
     lowerThirdCustomization: overlayLayers.lowerThirdCustomization,
     lowerThirdPresetId: overlayLayers.lowerThirdPresetId,
@@ -138,6 +140,16 @@ export function applyProgramPresetConfig(config: ProgramPresetConfig): void {
     breakingNews: overlayLayers.breakingNews,
     showLiveButton: overlayLayers.showLiveButton,
     liveButton: overlayLayers.liveButton,
+    weather: overlayLayers.weather,
+    showWeather: overlayLayers.showWeather,
+    adZone: overlayLayers.adZone,
+    showAdZone: overlayLayers.showAdZone,
+    scoreboard: overlayLayers.scoreboard,
+    showScoreboard: overlayLayers.showScoreboard,
+    countdown: overlayLayers.countdown,
+    showCountdown: overlayLayers.showCountdown,
+    sponsorBug: overlayLayers.sponsorBug,
+    showSponsorBug: overlayLayers.showSponsorBug,
     graphicsStackOrder: overlayLayers.graphicsStackOrder,
   });
 

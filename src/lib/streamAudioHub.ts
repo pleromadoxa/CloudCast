@@ -39,13 +39,52 @@ export function streamHasActiveMedia(
   return hasVideo || hasAudio;
 }
 
+/** Regal Mesh: one peer connection should carry both camera picture and mic. */
+export function meshStreamHasBothMedia(stream: MediaStream | null | undefined): boolean {
+  return hasUsableVideo(stream) && hasUsableAudio(stream);
+}
+
+/** Merge remote tracks into a single per-device stream (replace ended tracks of the same kind). */
+export function mergeTrackIntoStream(
+  existing: MediaStream | null | undefined,
+  track: MediaStreamTrack,
+  fallback?: MediaStream | null,
+): MediaStream {
+  const base = existing ?? fallback ?? new MediaStream();
+  for (const old of [...base.getTracks()]) {
+    if (old.kind === track.kind && old.readyState === 'ended' && old.id !== track.id) {
+      try {
+        base.removeTrack(old);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  if (!base.getTracks().some((t) => t.id === track.id)) {
+    base.addTrack(track);
+  }
+  return base;
+}
+
+export function mergeTracksIntoStream(
+  existing: MediaStream | null | undefined,
+  tracks: MediaStreamTrack[],
+  fallback?: MediaStream | null,
+): MediaStream {
+  let stream = existing ?? fallback ?? new MediaStream();
+  for (const track of tracks) {
+    stream = mergeTrackIntoStream(stream, track);
+  }
+  return stream;
+}
+
 /** Changes when tracks are added/removed or change state — use to re-wire mixer channels. */
 export function streamWireKey(stream: MediaStream): string {
-  const tracks = stream
-    .getAudioTracks()
-    .map((t) => `${t.id}:${t.readyState}:${t.enabled ? 1 : 0}`)
+  const parts = stream
+    .getTracks()
+    .map((t) => `${t.kind}:${t.id}:${t.readyState}:${t.enabled ? 1 : 0}:${t.muted ? 1 : 0}`)
     .join('|');
-  return `${stream.id}#${tracks || 'none'}`;
+  return `${stream.id}#${parts || 'none'}`;
 }
 
 export function acquireStreamSource(

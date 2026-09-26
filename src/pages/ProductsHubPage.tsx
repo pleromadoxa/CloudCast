@@ -10,8 +10,9 @@ import { PLAN_LABELS } from '../types/plans';
 import { useProgramPresets } from '../context/ProgramPresetContext';
 
 export function ProductsHubPage() {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, platformServices } = useAuth();
   const { activePreset } = useProgramPresets();
+  void platformServices;
   const subscriptions = listProductSubscriptions(profile);
   const isUniversal = profile ? isUniversalPlan(profile.plan_id) || profile.entitlements?.universal : false;
   const universalLabel = profile ? universalTierLabel(profile.plan_id) : 'Universal';
@@ -70,7 +71,7 @@ export function ProductsHubPage() {
                 </p>
               </div>
             ) : (
-              subscriptions.map((sub) => {
+              subscriptions.filter((sub) => sub.hasAccess).map((sub) => {
                 const product = CLOUDCAST_PRODUCTS.find((p) => p.id === sub.product)!;
                 return (
                   <div key={sub.product} className="rounded-lg border border-white/10 bg-black/30 p-4">
@@ -87,15 +88,13 @@ export function ProductsHubPage() {
               })
             )}
           </div>
-          {!isUniversal && (
-            <Link
-              to="/pricing?product=universal"
-              className="mt-4 inline-flex items-center gap-2 text-xs font-bold tracking-wider text-amber-400 hover:text-amber-300"
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              Upgrade to CloudCast Universal
-            </Link>
-          )}
+          <Link
+            to="/pricing?product=universal"
+            className="mt-4 inline-flex items-center gap-2 text-xs font-bold tracking-wider text-amber-400 hover:text-amber-300"
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />
+            Paid upgrades coming soon
+          </Link>
         </section>
 
         <MobileAppsSection className="mt-8" />

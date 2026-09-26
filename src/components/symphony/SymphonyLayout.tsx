@@ -7,7 +7,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { CloudCastLogo } from '../brand/CloudCastLogo';
 import { CLOUDCAST_NAV_LOGO } from '../../lib/branding';
-import { resolveProductPlan } from '../../lib/productEntitlements';
+import { resolveProductPlan, canAccessProduct } from '../../lib/productEntitlements';
 import { SYMPHONY_TRACKS } from '../../config/products';
 import { useSymphonyProject } from '../../hooks/useSymphonyProject';
 import { useSymphonyPlayback } from '../../hooks/useSymphonyPlayback';
@@ -199,9 +199,11 @@ export function SymphonyLayout() {
           <Link to="/dashboard" className="sym-btn sym-btn--icon sym-btn--ghost hidden lg:inline-flex" title="Video Mixer">
             <span className="sym-btn__face"><Video className="h-3.5 w-3.5" /></span>
           </Link>
-          <Link to="/audio" className="sym-btn sym-btn--icon sym-btn--ghost hidden lg:inline-flex" title="Audio Mixer">
-            <span className="sym-btn__face"><SlidersHorizontal className="h-3.5 w-3.5" /></span>
-          </Link>
+          {canAccessProduct(profile, 'audio_mixer') && (
+            <Link to="/audio" className="sym-btn sym-btn--icon sym-btn--ghost hidden lg:inline-flex" title="Audio Mixer">
+              <span className="sym-btn__face"><SlidersHorizontal className="h-3.5 w-3.5" /></span>
+            </Link>
+          )}
           <SymphonyButton variant="ghost" accent="neutral" onClick={() => { void signOut(); }} title="Sign out">
             <LogOut className="h-3.5 w-3.5" />
           </SymphonyButton>

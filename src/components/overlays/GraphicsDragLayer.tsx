@@ -13,6 +13,7 @@ import {
   xToLowerThirdPosition,
 } from '../../lib/overlayPlacement';
 import { rescaleOverlayDimensions } from '../../lib/imageResize';
+import { overlayCanvasPercentSize } from '../../lib/mediaImagePlacement';
 import { cn } from '../../lib/utils';
 
 interface GraphicsDragLayerProps {
@@ -84,12 +85,90 @@ export function GraphicsDragLayer({
         return;
       }
 
+      if (selectedLayerId === 'weather') {
+        onPatch({
+          weather: {
+            ...layers.weather,
+            xPercent: x,
+            yPercent: y,
+            position: nearestCornerPreset(x, y),
+          },
+        });
+        return;
+      }
+
+      if (selectedLayerId === 'ad-zone') {
+        onPatch({
+          adZone: {
+            ...layers.adZone,
+            xPercent: x,
+            yPercent: y,
+            position: nearestCornerPreset(x, y),
+          },
+        });
+        return;
+      }
+
+      if (selectedLayerId === 'scoreboard') {
+        onPatch({
+          scoreboard: {
+            ...layers.scoreboard,
+            xPercent: x,
+            yPercent: y,
+            position: nearestCornerPreset(x, y),
+          },
+        });
+        return;
+      }
+
+      if (selectedLayerId === 'countdown') {
+        onPatch({
+          countdown: {
+            ...layers.countdown,
+            xPercent: x,
+            yPercent: y,
+            position: nearestCornerPreset(x, y),
+          },
+        });
+        return;
+      }
+
+      if (selectedLayerId === 'sponsor-bug') {
+        onPatch({
+          sponsorBug: {
+            ...layers.sponsorBug,
+            xPercent: x,
+            yPercent: y,
+            position: nearestCornerPreset(x, y),
+          },
+        });
+        return;
+      }
+
       if (selectedLayerId.startsWith('image:')) {
         const imgId = selectedLayerId.slice(6);
         onPatch({
           imageOverlays: layers.imageOverlays.map((o) =>
             o.id === imgId
-              ? { ...o, xPercent: x, yPercent: y, position: nearestCornerPreset(x, y) }
+              ? {
+                  ...o,
+                  xPercent: x,
+                  yPercent: y,
+                  position: nearestCornerPreset(x, y),
+                  fillScreen: false,
+                }
+              : o,
+          ),
+        });
+        return;
+      }
+
+      if (selectedLayerId.startsWith('video:')) {
+        const vidId = selectedLayerId.slice(6);
+        onPatch({
+          videoOverlays: layers.videoOverlays.map((o) =>
+            o.id === vidId
+              ? { ...o, xPercent: x, yPercent: y, position: nearestCornerPreset(x, y), fillScreen: false }
               : o,
           ),
         });
@@ -162,12 +241,42 @@ export function GraphicsDragLayer({
     const p = resolveCornerPlacement(layers.liveButton.position, layers.liveButton);
     handleStyle = placementStyle(p);
     handleSize = { w: '18%', h: '10%' };
+  } else if (selectedLayerId === 'weather') {
+    const p = resolveCornerPlacement(layers.weather.position, layers.weather);
+    handleStyle = placementStyle(p);
+    handleSize = { w: '32%', h: '18%' };
+  } else if (selectedLayerId === 'ad-zone') {
+    const p = resolveCornerPlacement(layers.adZone.position, layers.adZone);
+    handleStyle = placementStyle(p);
+    handleSize = {
+      w: `${layers.adZone.widthPercent}%`,
+      h: `${Math.max(9, Math.round((layers.adZone.widthPercent * 9) / 16))}%`,
+    };
+  } else if (selectedLayerId === 'scoreboard') {
+    const p = resolveCornerPlacement(layers.scoreboard.position, layers.scoreboard);
+    handleStyle = placementStyle(p);
+    handleSize = { w: '30%', h: '12%' };
+  } else if (selectedLayerId === 'countdown') {
+    const p = resolveCornerPlacement(layers.countdown.position, layers.countdown);
+    handleStyle = placementStyle(p);
+    handleSize = { w: '18%', h: '30%' };
+  } else if (selectedLayerId === 'sponsor-bug') {
+    const p = resolveCornerPlacement(layers.sponsorBug.position, layers.sponsorBug);
+    handleStyle = placementStyle(p);
+    handleSize = { w: `${Math.max(12, layers.sponsorBug.size)}%`, h: '8%' };
   } else if (selectedLayerId.startsWith('image:')) {
     const img = layers.imageOverlays.find((o) => o.id === selectedLayerId.slice(6));
-    if (!img) return null;
+    if (!img || img.fillScreen) return null;
     const p = resolveCornerPlacement(img.position, img);
     handleStyle = placementStyle(p);
-    const size = rescaleOverlayDimensions(img.naturalWidth, img.naturalHeight, img.scale);
+    const size = overlayCanvasPercentSize(img.naturalWidth, img.naturalHeight, img.scale);
+    handleSize = { w: `${size.widthPct}%`, h: `${size.heightPct}%` };
+  } else if (selectedLayerId.startsWith('video:')) {
+    const vid = layers.videoOverlays.find((o) => o.id === selectedLayerId.slice(6));
+    if (!vid || vid.fillScreen) return null;
+    const p = resolveCornerPlacement(vid.position, vid);
+    handleStyle = placementStyle(p);
+    const size = rescaleOverlayDimensions(vid.naturalWidth, vid.naturalHeight, vid.scale);
     handleSize = { w: size.width, h: size.height };
   }
 
@@ -187,8 +296,6 @@ export function GraphicsDragLayer({
           height: handleSize.h,
           minWidth: 48,
           minHeight: 32,
-          maxWidth: '55%',
-          maxHeight: '45%',
         }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

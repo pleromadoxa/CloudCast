@@ -10,6 +10,7 @@ export interface RelayClientOptions {
 export class BroadcastRelayClient {
   private ws: WebSocket | null = null;
   private options: RelayClientOptions;
+  private closedIntentionally = false;
 
   constructor(options: RelayClientOptions) {
     this.options = options;
@@ -17,11 +18,13 @@ export class BroadcastRelayClient {
 
   connect(timeoutMs = 8000): Promise<void> {
     return new Promise((resolve, reject) => {
+      this.closedIntentionally = false;
       const ws = new WebSocket(this.options.url);
       this.ws = ws;
       ws.binaryType = 'arraybuffer';
 
       const timer = setTimeout(() => {
+        this.closedIntentionally = true;
         reject(new Error('Broadcast relay connection timed out.'));
         ws.close();
       }, timeoutMs);
@@ -48,8 +51,8 @@ export class BroadcastRelayClient {
       };
 
       ws.onclose = () => {
-        this.options.onClose?.();
         this.ws = null;
+        if (!this.closedIntentionally) this.options.onClose?.();
       };
     });
   }
@@ -90,12 +93,18 @@ export class BroadcastRelayClient {
   }
 
   close() {
+    this.closedIntentionally = true;
     this.ws?.close();
     this.ws = null;
   }
 
   get isOpen() {
     return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /** Bytes still queued in the socket — a sustained high value means the uplink is saturated. */
+  get bufferedAmount() {
+    return this.ws?.bufferedAmount ?? 0;
   }
 }
 

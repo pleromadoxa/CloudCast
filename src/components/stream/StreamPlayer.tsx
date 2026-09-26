@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, memo } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { useWhepStream } from '../../hooks/useWhepStream';
 import { useIpCameraStream } from '../../hooks/useIpCameraStream';
@@ -11,14 +11,22 @@ import { isRealDevice } from '../../types/device';
 import { isIpCameraDevice } from '../../lib/ipCameraDevice';
 import { isDisplayFeedDevice } from '../../lib/displayFeedDevice';
 import { isPrismFeedDevice } from '../../lib/prismFeedDevice';
+import { isMediaFeedDevice } from '../../lib/mediaFeedDevice';
+import { isBrowserFeedDevice } from '../../lib/browserFeedDevice';
+import type { MediaFeedRole } from '../../lib/mediaFeedState';
+import type { BrowserFeedRole } from '../../types/browserFeed';
+import { MediaFeedPlayer } from '../media/MediaFeedPlayer';
+import { BrowserFeedPlayer } from '../browser/BrowserFeedPlayer';
+import { BrowserFeedVideoCapture } from '../browser/BrowserFeedVideoCapture';
 import { detectIpStreamKind } from '../../lib/ipCameraUrl';
 import { DisplayFeedPlayer } from '../display/DisplayFeedPlayer';
 import { DisplayFeedVideoCapture } from '../display/DisplayFeedVideoCapture';
 import { PrismFeedPlayer } from '../prism/PrismFeedPlayer';
 import { DeviceConnectionBadge } from '../device/DeviceConnectionBadge';
 import { cn } from '../../lib/utils';
-import { ensureAudioOutputReady } from '../../lib/audioOutput';
 import { hasUsableAudio, hasUsableVideo } from '../../lib/streamAudioHub';
+import { useLiveVideoBinding } from '../../hooks/useLiveVideoBinding';
+import { useOwnedVideoOutRef } from '../../lib/videoOutRef';
 import { useStreamSpeakerPlayback } from '../../hooks/useStreamSpeakerPlayback';
 import { SignalPlaceholder } from './SignalPlaceholder';
 import { VideoOverlay } from '../overlays/VideoOverlay';
@@ -45,9 +53,14 @@ interface StreamPlayerProps {
   enableSpeakerPlayback?: boolean;
   /** Display Feed: false = preview slide, true = live output (default true). */
   displayFeedLive?: boolean;
+  /** Media virtual input: which bus this player represents. */
+  mediaFeedRole?: MediaFeedRole;
+  /** Browser Shot virtual input: which bus this player represents. */
+  browserFeedRole?: BrowserFeedRole;
+  registerShot?: boolean;
 }
 
-export function StreamPlayer({
+function StreamPlayerComponent({
   device,
   overlay = 'none',
   quality = 'auto',
@@ -64,9 +77,20 @@ export function StreamPlayer({
   onBusPlaybackStream,
   enableSpeakerPlayback = true,
   displayFeedLive = true,
+  mediaFeedRole = 'strip',
+  browserFeedRole = 'strip',
+  registerShot = true,
 }: StreamPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audibleRef = useRef<HTMLVideoElement>(null);
+  const { bindVideoOutRef } = useOwnedVideoOutRef(onVideoRef);
+  const bindMainVideoRef = useCallback(
+    (el: HTMLVideoElement | null) => {
+      videoRef.current = el;
+      bindVideoOutRef(el);
+    },
+    [bindVideoOutRef],
+  );
   const { connectionMode, devices, getMeshStream } = useCloudCast();
   const isIpCam = Boolean(device && isIpCameraDevice(device));
   const useMeshOnly = connectionMode === 'mesh' && !isIpCam;
@@ -92,7 +116,10 @@ export function StreamPlayer({
   });
 
   const mesh = useMeshStream(device?.deviceId ?? 'none', meshEnabled, connectionMode);
-  const meshFeed = device && isRealDevice(device) ? mesh.stream ?? getMeshStream(device.deviceId) : null;
+  const meshFeed =
+    device && isRealDevice(device)
+      ? mesh.stream ?? getMeshStream(device.deviceId)
+      : null;
 
   const audioDevice = audioDeviceId
     ? devices.find((d) => d.deviceId === audioDeviceId) ?? null
@@ -128,7 +155,7 @@ export function StreamPlayer({
   const stream = ipCamEnabled
     ? ipCam.stream
     : useMeshOnly
-      ? mesh.stream
+      ? mesh.stream ?? meshFeed
       : useHybridRegal
         ? hybridVideo
         : whep.stream;
@@ -157,12 +184,14 @@ export function StreamPlayer({
         device.connectionState === 'connected' ||
         device.connectionState === 'connecting'),
   );
+  const hasPicture = Boolean(hasUsableVideo(stream) || hasUsableVideo(meshFeed));
   const isStreaming = Boolean(
     device &&
       isRealDevice(device) &&
-      (hasHybridVideo ||
-        (useMeshOnly && (hasMeshFeed || hasPreviewableMedia)) ||
-        (useHybridRegal && hasPreviewableMedia) ||
+      (hasPicture ||
+        hasHybridVideo ||
+        (useMeshOnly && hasMeshFeed && hasUsableVideo(meshFeed ?? stream)) ||
+        (useHybridRegal && hasUsableVideo(stream)) ||
         (isIpCam && Boolean(device.whepUrl) && ipCam.stream)),
   );
   const waitingForMeshStream =
@@ -201,27 +230,9 @@ export function StreamPlayer({
     (el: HTMLVideoElement | null) => {
       audibleRef.current = el;
       onAudibleRef?.(el);
-      if (!el) return;
-
-      el.srcObject = playbackStream;
-      // PGM bus: always muted on the element — Web Audio gain handles output (prevents double playback crackle).
-      el.muted = true;
-      el.volume = 1;
-      if (playbackStream) {
-        void ensureAudioOutputReady().then(() => el.play().catch(() => undefined));
-      }
     },
-    [onAudibleRef, playbackStream],
+    [onAudibleRef],
   );
-
-  useEffect(() => {
-    const el = audibleRef.current;
-    if (!onAudibleRef || !el) return;
-    el.srcObject = playbackStream;
-    if (playbackStream) {
-      void ensureAudioOutputReady().then(() => el.play().catch(() => undefined));
-    }
-  }, [onAudibleRef, playbackStream]);
 
   useEffect(() => {
     if (!onBusPlaybackStream) return;
@@ -236,26 +247,8 @@ export function StreamPlayer({
   const error = ipCamEnabled ? ipCam.error : useMeshOnly ? null : whep.error;
   const reconnect = ipCamEnabled ? ipCam.reconnect : whep.reconnect;
 
-  useEffect(() => {
-    const el = videoRef.current;
-    if (!el) return;
-    el.srcObject = stream;
-    if (!stream) return;
-
-    const playLive = () => {
-      void el.play().catch(() => undefined);
-    };
-
-    playLive();
-    stream.getTracks().forEach((track) => {
-      track.onunmute = playLive;
-    });
-  }, [stream]);
-
-  useEffect(() => {
-    onVideoRef?.(videoRef.current);
-    return () => onVideoRef?.(null);
-  }, [onVideoRef, stream]);
+  useLiveVideoBinding(videoRef, stream);
+  useLiveVideoBinding(audibleRef, onAudibleRef ? playbackStream : null);
 
   if (!device) {
     return (
@@ -289,6 +282,44 @@ export function StreamPlayer({
     );
   }
 
+  if (isMediaFeedDevice(device)) {
+    return (
+      <div className={cn('relative h-full w-full overflow-hidden bg-black', className)} style={style}>
+        <MediaFeedPlayer
+          feedRole={mediaFeedRole}
+          compact={compact}
+          showLabel={showLabel}
+          onVideoRef={onVideoRef}
+          registerShot={registerShot}
+          onBusPlaybackStream={onBusPlaybackStream}
+          enableSpeakerPlayback={enableSpeakerPlayback}
+          volume={volume}
+          audioMuted={audioMuted}
+          className="absolute inset-0"
+        />
+      </div>
+    );
+  }
+
+  if (isBrowserFeedDevice(device)) {
+    return (
+      <div className={cn('relative h-full w-full overflow-hidden bg-black', className)} style={style}>
+        <BrowserFeedPlayer
+          feedRole={browserFeedRole}
+          compact={compact}
+          showLabel={showLabel}
+          className="absolute inset-0"
+        />
+        {onVideoRef && (
+          <BrowserFeedVideoCapture
+            onVideoRef={onVideoRef}
+            className="pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0"
+          />
+        )}
+      </div>
+    );
+  }
+
   const showOffline =
     !isStreaming &&
     !isPairedOnline &&
@@ -304,6 +335,7 @@ export function StreamPlayer({
   });
   const connectionLabel = DEVICE_CONNECTION_LABELS[connectionDisplay];
   const showConnectionOverlay =
+    !hasPicture &&
     !hasPreviewableMedia &&
     !isStreaming &&
     (connectionDisplay === 'pairing' ||
@@ -312,6 +344,15 @@ export function StreamPlayer({
       regalAwaitingWhep ||
       waitingForMeshStream ||
       waitingForRegalCloud);
+
+  const showWhepSpinner =
+    !hasPicture &&
+    !useMeshOnly &&
+    (regalAwaitingWhep ||
+      waitingForRegalCloud ||
+      waitingForMeshStream ||
+      connectionState === 'connecting' ||
+      connectionState === 'reconnecting');
 
   return (
     <div className={cn('relative h-full w-full overflow-hidden bg-black', className)} style={style}>
@@ -327,15 +368,43 @@ export function StreamPlayer({
         <DeviceConnectionBadge
           device={device}
           hasActiveStream={isStreaming}
-          hasVideoStream={hasHybridVideo}
+          hasVideoStream={hasHybridVideo || hasPicture}
           compact={compact}
         />
       </div>
 
+      {stream && (
+        <>
+          <video
+            ref={bindMainVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="h-full w-full object-cover"
+            onLoadedMetadata={(e) => {
+              void e.currentTarget.play().catch(() => undefined);
+            }}
+            onCanPlay={(e) => {
+              void e.currentTarget.play().catch(() => undefined);
+            }}
+          />
+          {onAudibleRef && playbackStream && (
+            <video
+              ref={bindAudibleElement}
+              autoPlay
+              playsInline
+              muted
+              className="pointer-events-none absolute h-px w-px opacity-0"
+            />
+          )}
+          {!compact && <VideoOverlay type={overlay} deviceLabel={device.label} />}
+        </>
+      )}
+
       {showConnectionOverlay ? (
         <div
           className={cn(
-            'flex h-full flex-col items-center justify-center gap-1',
+            'absolute inset-0 z-10 flex flex-col items-center justify-center gap-1',
             connectionDisplay === 'connecting' || connectionDisplay === 'pairing'
               ? 'text-mixer-muted'
               : connectionDisplay === 'connected'
@@ -376,26 +445,21 @@ export function StreamPlayer({
               <span className={cn('font-bold tracking-wider', compact ? 'text-[8px]' : 'text-xs')}>
                 {connectionLabel}
               </span>
-              {!compact && <span className="text-[10px] text-mixer-muted">Waiting for Go Live</span>}
+              {!compact && <span className="text-[10px] text-mixer-muted">Waiting for camera…</span>}
             </>
           ) : null}
         </div>
-      ) : showOffline ? (
+      ) : showOffline && !stream ? (
         <SignalPlaceholder variant="offline" compact={compact} />
-      ) : !useMeshOnly &&
-        (regalAwaitingWhep ||
-          waitingForRegalCloud ||
-          waitingForMeshStream ||
-          connectionState === 'connecting' ||
-          connectionState === 'reconnecting') ? (
-        <div className="flex h-full flex-col items-center justify-center gap-1 text-mixer-muted">
+      ) : showWhepSpinner ? (
+        <div className="absolute inset-0 z-10 flex h-full flex-col items-center justify-center gap-1 text-mixer-muted">
           <Loader2 className={cn('animate-spin', compact ? 'h-4 w-4' : 'h-8 w-8')} />
           {!compact && connectionState === 'reconnecting' && (
             <span className="text-[10px] text-mixer-green">Reconnecting Regal Cloud…</span>
           )}
         </div>
-      ) : error ? (
-        <div className="flex h-full flex-col items-center justify-center gap-1 p-2 text-center">
+      ) : error && !stream ? (
+        <div className="absolute inset-0 z-10 flex h-full flex-col items-center justify-center gap-1 p-2 text-center">
           <AlertCircle className={cn('text-mixer-red', compact ? 'h-4 w-4' : 'h-6 w-6')} />
           {!compact && (
             <button
@@ -407,33 +471,9 @@ export function StreamPlayer({
             </button>
           )}
         </div>
-      ) : (
-        <>
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="h-full w-full object-cover"
-            onLoadedMetadata={(e) => {
-              void e.currentTarget.play().catch(() => undefined);
-            }}
-            onCanPlay={(e) => {
-              void e.currentTarget.play().catch(() => undefined);
-            }}
-          />
-          {onAudibleRef && playbackStream && (
-            <video
-              ref={bindAudibleElement}
-              autoPlay
-              playsInline
-              muted
-              className="pointer-events-none absolute h-px w-px opacity-0"
-            />
-          )}
-          {!compact && <VideoOverlay type={overlay} deviceLabel={device.label} />}
-        </>
-      )}
+      ) : null}
     </div>
   );
 }
+
+export const StreamPlayer = memo(StreamPlayerComponent);

@@ -2,9 +2,6 @@ import { getSupabase } from '../supabase';
 import type { ChromaKeySettings } from './chromaKey';
 import type { PrismProductionMode } from './virtualSets';
 import type { PrismSceneExtendedState, PrismSceneRecord } from '../../types/prismFeed';
-import type { PrismNodeGraph } from './nodeGraph';
-import type { PrismSecondarySlot } from '../../types/prismCameras';
-import type { PrismLowerThird, PrismSceneObject } from '../../types/prismFeed';
 
 export interface SavePrismSceneInput {
   name: string;
@@ -14,6 +11,10 @@ export interface SavePrismSceneInput {
   cameraYaw: number;
   cameraPitch: number;
   cameraZoom: number;
+  /** Free-camera look-at point (panned anywhere in the set). */
+  cameraTarget?: [number, number, number];
+  /** Lens field of view in degrees. */
+  cameraFov?: number;
   showShadows: boolean;
   showReflections: boolean;
   extendedState?: PrismSceneExtendedState;
@@ -64,6 +65,8 @@ export async function savePrismScene(input: SavePrismSceneInput): Promise<PrismS
       yaw: input.cameraYaw,
       pitch: input.cameraPitch,
       zoom: input.cameraZoom,
+      fov: input.cameraFov,
+      target: input.cameraTarget,
     },
     lighting: {
       shadows: input.showShadows,
@@ -98,11 +101,6 @@ export function sceneToKeySettings(record: PrismSceneRecord): ChromaKeySettings 
   };
 }
 
-export function sceneExtendedState(record: PrismSceneRecord): {
-  nodeGraph?: PrismNodeGraph;
-  secondarySlots?: PrismSecondarySlot[];
-  lowerThird?: PrismLowerThird;
-  sceneObjects?: PrismSceneObject[];
-} {
+export function sceneExtendedState(record: PrismSceneRecord): PrismSceneExtendedState {
   return record.extended_state ?? {};
 }

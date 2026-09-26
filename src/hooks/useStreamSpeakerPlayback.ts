@@ -1,6 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { rampGainDown, rampGainUp } from '../lib/audioFade';
-import { ensureAudioOutputReady, isDashboardAudioUnlocked, registerDashboardAudioContext, unlockDashboardAudio } from '../lib/audioOutput';
+import {
+  ensureAudioOutputReady,
+  isDashboardAudioUnlocked,
+  registerDashboardAudioContext,
+  unlockDashboardAudio,
+} from '../lib/audioOutput';
 import {
   acquireStreamSource,
   hasUsableAudio,
@@ -28,7 +33,8 @@ function applyGain(gain: GainNode, volume: number) {
   const now = ctx.currentTime;
   try {
     gain.gain.cancelScheduledValues(now);
-    gain.gain.setTargetAtTime(next, now, 0.02);
+    gain.gain.setValueAtTime(gain.gain.value, now);
+    gain.gain.linearRampToValueAtTime(next, now + 0.02);
   } catch {
     gain.gain.value = next;
   }
@@ -45,7 +51,7 @@ export function useStreamSpeakerPlayback(
 
   const teardown = async () => {
     const gain = gainRef.current;
-    const stream = streamRef.current;
+    const wired = streamRef.current;
     gainRef.current = null;
     streamRef.current = null;
 
@@ -58,8 +64,8 @@ export function useStreamSpeakerPlayback(
       }
     }
 
-    if (stream) {
-      releaseStreamSource(getPlaybackContext(), stream);
+    if (wired) {
+      releaseStreamSource(getPlaybackContext(), wired);
     }
   };
 
@@ -70,7 +76,7 @@ export function useStreamSpeakerPlayback(
     }
 
     await teardown();
-    if (vol <= 0 || !hasUsableAudio(targetStream)) return;
+    if (!hasUsableAudio(targetStream)) return;
 
     await ensureAudioOutputReady();
     if (isDashboardAudioUnlocked()) {
@@ -84,11 +90,14 @@ export function useStreamSpeakerPlayback(
 
     try {
       const gain = ctx.createGain();
+      // Start silent then ramp — mute/unmute later only touches gain.
+      gain.gain.value = 0;
       source.connect(gain);
       gain.connect(ctx.destination);
       gainRef.current = gain;
       streamRef.current = targetStream;
-      rampGainUp(gain, vol);
+      if (vol > 0) rampGainUp(gain, vol);
+      else applyGain(gain, 0);
     } catch (err) {
       console.warn('[CloudCast] Monitor speaker playback failed:', err);
       releaseStreamSource(ctx, targetStream);
@@ -100,7 +109,8 @@ export function useStreamSpeakerPlayback(
 
     const sync = () => {
       if (cancelled) return;
-      if (!active || !stream || volume <= 0) {
+      // Keep the graph wired while the stream is active; volume 0 = muted, not teardown.
+      if (!active || !stream) {
         void teardown();
         return;
       }
@@ -120,10 +130,11 @@ export function useStreamSpeakerPlayback(
       stream?.removeEventListener('removetrack', onTrackChange);
       void teardown();
     };
-  }, [stream, active, volume]);
+  }, [stream, active]);
 
+  // Seamless mute/unmute — only ramp gain; do not reconnect.
   useEffect(() => {
-    if (!gainRef.current || !active || !stream || volume <= 0) return;
+    if (!gainRef.current || !active || !stream) return;
     applyGain(gainRef.current, volume);
   }, [volume, active, stream]);
 }

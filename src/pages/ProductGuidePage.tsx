@@ -302,7 +302,7 @@ export function ProductGuidePage() {
           <p className="mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-mixer-muted sm:text-base">
             A detailed look at what each {SITE_LEGAL.brandLine} product does, the production problems
             it solves, how cost-effective it is compared to traditional gear, step-by-step usage, and
-            real live-event scenarios — plus why teams choose Quantum Regal.
+            real live-event scenarios — plus why teams choose Spatial Regal.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
@@ -360,7 +360,7 @@ export function ProductGuidePage() {
       <section id="why" className="scroll-mt-28 border-t border-white/5 py-20">
         <div className="mx-auto max-w-6xl px-6">
           <SectionHeading
-            eyebrow="WHY QUANTUM REGAL"
+            eyebrow="WHY SPATIAL REGAL"
             title={`Why choose ${SITE_LEGAL.brandLine}?`}
             description={`${SITE_LEGAL.companyName} built CloudCast because broadcast teams deserve professional tools without the capital expense, truck racks, and fragmented software stacks that slow live production down.`}
           />

@@ -60,6 +60,16 @@ export function replayObjectKey(storagePath: string): string {
   return `cloudcast/replay/${storagePath.replace(/^\/+/, "")}`;
 }
 
+/** Mixer media asset storage path → R2 object key */
+export function mixerMediaObjectKey(storagePath: string): string {
+  return `cloudcast/mixer-media/${storagePath.replace(/^\/+/, "")}`;
+}
+
+export function isOwnedMixerMediaPath(userId: string, storagePath: string): boolean {
+  const normalized = storagePath.replace(/^\/+/, "");
+  return normalized.startsWith(`${userId}/`) && !normalized.includes("..");
+}
+
 export function isOwnedReplayPath(userId: string, storagePath: string): boolean {
   const normalized = storagePath.replace(/^\/+/, "");
   return normalized.startsWith(`${userId}/`) && !normalized.includes("..");

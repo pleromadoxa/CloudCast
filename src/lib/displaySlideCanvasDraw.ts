@@ -7,8 +7,9 @@ import {
   DISPLAY_SCRIPTURE_TRANSLATION_PX,
   DISPLAY_TEXT_SIZE_PX,
 } from './displayCanvas';
-import { CHROMA_KEY_GREEN, chromaKeyGreenRgb } from './chromaKeyColor';
+import { chromaKeyGreenRgb } from './chromaKeyColor';
 import { DISPLAY_BACKGROUND_PRESETS } from './displayBackgrounds';
+import { computeForegroundBox, isOverlaySlide } from './displayOverlaySlide';
 
 function parseCssColor(css: string): [number, number, number] {
   const trimmed = css.trim();
@@ -38,7 +39,7 @@ function fillBackground(
   bg: DisplayBackground | undefined,
   keyMode: boolean,
 ): void {
-  if (keyMode) {
+  if (keyMode || bg?.kind === 'chroma') {
     const [r, g, b] = chromaKeyGreenRgb();
     ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
     ctx.fillRect(0, 0, w, h);
@@ -218,6 +219,20 @@ export function paintDisplaySlideToCanvas(
   }
 
   const layout = slide.layout ?? 'full';
+  const useChroma = keyMode || isOverlaySlide(slide);
+
+  if (isOverlaySlide(slide)) {
+    fillBackground(ctx, w, h, { kind: 'chroma', overlayOpacity: 0 }, true);
+    if (slide.foregroundImageUrl) {
+      const fg = loadCachedImage(slide.foregroundImageUrl, imageCache);
+      if (fg) {
+        const box = computeForegroundBox(slide, w, h, fg.naturalWidth, fg.naturalHeight);
+        ctx.drawImage(fg, box.x, box.y, box.w, box.h);
+      }
+    }
+    return;
+  }
+
   const isBannerBottom = layout === 'banner-bottom' || layout === 'lower-third';
   const isBannerTop = layout === 'banner-top';
   const bannerHeight = getBannerHeight(slide);
@@ -228,7 +243,7 @@ export function paintDisplaySlideToCanvas(
     const clearY = isBannerBottom ? 0 : bannerPx;
     const bannerY = isBannerBottom ? clearPx : 0;
 
-    if (keyMode) {
+    if (useChroma) {
       const [kr, kg, kb] = chromaKeyGreenRgb();
       ctx.fillStyle = `rgb(${kr}, ${kg}, ${kb})`;
       ctx.fillRect(0, clearY, w, clearPx);
@@ -256,7 +271,7 @@ export function paintDisplaySlideToCanvas(
       ctx.restore();
     }
 
-    if ((bannerBg.overlayOpacity ?? 0) > 0 && !keyMode) {
+    if ((bannerBg.overlayOpacity ?? 0) > 0 && !useChroma) {
       ctx.fillStyle = `rgba(0,0,0,${(bannerBg.overlayOpacity ?? 0) / 100})`;
       ctx.fillRect(0, bannerY, w, bannerPx);
     }
@@ -271,11 +286,11 @@ export function paintDisplaySlideToCanvas(
     if (img) drawImageCover(ctx, img, 0, 0, w, h);
     else fillBackground(ctx, w, h, bg, false);
   } else {
-    fillBackground(ctx, w, h, keyMode ? { kind: 'color', color: CHROMA_KEY_GREEN, overlayOpacity: 0 } : bg, keyMode);
+    fillBackground(ctx, w, h, useChroma ? { kind: 'chroma', overlayOpacity: 0 } : bg, useChroma);
   }
 
   const overlayOpacity = bg.overlayOpacity ?? 0;
-  if (overlayOpacity > 0 && !keyMode) {
+  if (overlayOpacity > 0 && !useChroma) {
     ctx.fillStyle = `rgba(0,0,0,${overlayOpacity / 100})`;
     ctx.fillRect(0, 0, w, h);
   }
@@ -283,12 +298,8 @@ export function paintDisplaySlideToCanvas(
   if (slide.foregroundImageUrl) {
     const fg = loadCachedImage(slide.foregroundImageUrl, imageCache);
     if (fg) {
-      const maxW = 720;
-      const maxH = 320;
-      const scale = Math.min(maxW / fg.naturalWidth, maxH / fg.naturalHeight, 1);
-      const fw = fg.naturalWidth * scale;
-      const fh = fg.naturalHeight * scale;
-      ctx.drawImage(fg, (w - fw) / 2, h * 0.15, fw, fh);
+      const box = computeForegroundBox(slide, w, h, fg.naturalWidth, fg.naturalHeight);
+      ctx.drawImage(fg, box.x, box.y, box.w, box.h);
     }
   }
 

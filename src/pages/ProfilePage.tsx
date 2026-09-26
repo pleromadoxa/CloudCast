@@ -29,6 +29,7 @@ import {
 import { redeemCoupon } from '../lib/couponService';
 import { CLOUDCAST_PRODUCTS, UNIVERSAL_PLAN_FROM_CENTS } from '../config/products';
 import {
+  canAccessProduct,
   isUniversalPlan,
   listProductSubscriptions,
   resolveProductPlan,
@@ -373,7 +374,9 @@ export function ProfilePage() {
                 All six products · from {formatPrice(UNIVERSAL_PLAN_FROM_CENTS)} on other tiers
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
-                {CLOUDCAST_PRODUCTS.map((product) => (
+                {CLOUDCAST_PRODUCTS.filter((product) =>
+                  subscriptions.find((s) => s.product === product.id)?.hasAccess,
+                ).map((product) => (
                   <Link
                     key={product.id}
                     to={product.dashboardPath}
@@ -386,7 +389,7 @@ export function ProfilePage() {
             </div>
           ) : (
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {subscriptions.map((sub) => {
+              {subscriptions.filter((sub) => sub.hasAccess).map((sub) => {
                 const product = CLOUDCAST_PRODUCTS.find((p) => p.id === sub.product)!;
                 return (
                   <div key={sub.product} className="rounded-lg border border-white/10 bg-black/30 p-4">
@@ -402,21 +405,19 @@ export function ProfilePage() {
                       to={product.pricingPath}
                       className="ml-3 inline-block text-[10px] font-bold uppercase tracking-wider text-mixer-muted hover:text-white"
                     >
-                      Change plan
+                      View plans
                     </Link>
                   </div>
                 );
               })}
             </div>
           )}
-          {!isUniversal && (
-            <Link
-              to="/pricing?product=universal"
-              className="mt-4 inline-block text-xs font-bold tracking-wider text-amber-400 hover:text-amber-300"
-            >
-              Upgrade to CloudCast Universal →
-            </Link>
-          )}
+          <Link
+            to="/pricing?product=universal"
+            className="mt-4 inline-block text-xs font-bold tracking-wider text-amber-400 hover:text-amber-300"
+          >
+            Paid upgrades coming soon →
+          </Link>
         </section>
 
         {stripeEnabled && (
@@ -957,12 +958,22 @@ export function ProfilePage() {
                 </p>
               )}
             </div>
-            <Link
-              to="/replay"
-              className="rounded border border-emerald-500/30 px-3 py-1.5 text-[10px] font-bold tracking-wider text-emerald-300 hover:border-emerald-500/50"
-            >
-              OPEN REPLAY
-            </Link>
+            {canAccessProduct(profile, 'instant_replay') ? (
+              <Link
+                to="/replay"
+                className="rounded border border-emerald-500/30 px-3 py-1.5 text-[10px] font-bold tracking-wider text-emerald-300 hover:border-emerald-500/50"
+              >
+                OPEN REPLAY
+              </Link>
+            ) : (
+              <Link
+                to="/dashboard"
+                className="rounded border border-white/15 px-3 py-1.5 text-[10px] font-bold tracking-wider text-mixer-muted hover:border-white/30"
+                title="Enable Replay from Video Mixer Setup"
+              >
+                ENABLE IN SETUP
+              </Link>
+            )}
           </div>
 
           {loading ? (

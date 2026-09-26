@@ -7,6 +7,7 @@ import { isRealDevice } from '../../../types/device';
 import { MIXER_QUICK_TERMS } from '../../../config/mixerGuide';
 import { planAllowsChromaKey } from '../../../lib/planFeatures';
 import { FeatureHint } from '../FeatureHint';
+import { MixerRockerSwitch } from '../MixerRockerSwitch';
 import { cn } from '../../../lib/utils';
 
 interface SourcesPanelProps {
@@ -75,6 +76,7 @@ export function SourcesPanel({
   const chromaAllowed = planAllowsChromaKey(planId);
   const keyReady =
     keySettings.fillSource === 'preset' ||
+    keySettings.fillSource === 'transparent' ||
     Boolean(subDeviceId && pgmDeviceId && subDeviceId !== pgmDeviceId);
 
   return (
@@ -171,13 +173,14 @@ export function SourcesPanel({
                 </button>
               ))}
             </div>
-            <div className="atem-onoff-row">
-              <button type="button" onClick={() => onSetOutputMode('pip')} className={cn('atem-onoff-btn', pipOn && 'atem-toggle-on')}>
-                ON
-              </button>
-              <button type="button" onClick={() => onSetOutputMode('main')} className={cn('atem-onoff-btn', !pipOn && outputMode === 'main' && 'atem-toggle-glow')}>
-                OFF
-              </button>
+            <div className="atem-onoff-row atem-onoff-row--rocker">
+              <MixerRockerSwitch
+                size="sm"
+                checked={pipOn}
+                label="Picture-in-picture"
+                title={pipOn ? 'PiP on — click to turn off' : 'PiP off — click to turn on'}
+                onCheckedChange={(on) => onSetOutputMode(on ? 'pip' : 'main')}
+              />
             </div>
             {pipOn && !pipReady && (
               <p className="mt-1 text-[8px] leading-snug text-amber-400">
@@ -227,27 +230,22 @@ export function SourcesPanel({
                     Luma
                   </button>
                 </div>
-                <div className="atem-onoff-row">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSetOutputMode('key');
-                      onPatchKey({ enabled: true });
+                <div className="atem-onoff-row atem-onoff-row--rocker">
+                  <MixerRockerSwitch
+                    size="sm"
+                    checked={keyOn}
+                    label="Keyer"
+                    title={keyOn ? 'Key on — click to turn off' : 'Key off — click to turn on'}
+                    onCheckedChange={(on) => {
+                      if (on) {
+                        onSetOutputMode('key');
+                        onPatchKey({ enabled: true });
+                      } else {
+                        onSetOutputMode('main');
+                        onPatchKey({ enabled: false });
+                      }
                     }}
-                    className={cn('atem-onoff-btn', keyOn && 'atem-toggle-on')}
-                  >
-                    ON
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSetOutputMode('main');
-                      onPatchKey({ enabled: false });
-                    }}
-                    className={cn('atem-onoff-btn', !keyOn && outputMode === 'main' && 'atem-toggle-glow')}
-                  >
-                    OFF
-                  </button>
+                  />
                 </div>
                 {keyOn && !keyReady && (
                   <p className="mt-1 text-[8px] leading-snug text-amber-400">

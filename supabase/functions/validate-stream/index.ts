@@ -27,7 +27,24 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const result = await validateRtmpDestination(streamUrl, streamKey);
+    // Hard ceiling so the request never hangs the client, even if a socket stalls.
+    const overallTimeout = new Promise<{ ok: boolean; message: string; stage: string }>(
+      (resolve) =>
+        setTimeout(
+          () =>
+            resolve({
+              ok: false,
+              message: "Could not reach the validation service in time — using format checks only.",
+              stage: "connect",
+            }),
+          12_000,
+        ),
+    );
+
+    const result = await Promise.race([
+      validateRtmpDestination(streamUrl, streamKey),
+      overallTimeout,
+    ]);
     return new Response(JSON.stringify(result), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

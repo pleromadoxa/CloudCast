@@ -1,0 +1,35 @@
+# Always-on CloudCast broadcast relay for production.
+#
+# Prerequisites (once, from your laptop):
+#   npm run relay:setup          # creates tunnel + writes .env tokens
+#   npm run deploy:pages         # bakes VITE_BROADCAST_RELAY_WS into the app
+#
+# On your VPS (Ubuntu/Debian, 1 vCPU / 1 GB RAM is enough):
+#   git clone … && cd CloudCast
+#   cp .env .env.relay            # RELAY_TOKEN + RELAY_TUNNEL_TOKEN from relay:setup
+#   docker compose -f tools/broadcast-relay/docker-compose.yml up -d --build
+#
+# Verify: curl -s https://relay.cloudcast.live/health  →  ok
+#         (530 = tunnel connector down; 502 = relay down inside container)
+
+services:
+  relay:
+    build:
+      context: ../..
+      dockerfile: tools/broadcast-relay/Dockerfile
+    container_name: cloudcast-relay
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      NODE_ENV: production
+      RELAY_HOST: 127.0.0.1
+      RELAY_PORT: "8090"
+      # Required — from `npm run relay:setup`:
+      RELAY_TOKEN: ${RELAY_TOKEN:?Set RELAY_TOKEN in .env}
+      RELAY_TUNNEL_TOKEN: ${RELAY_TUNNEL_TOKEN:?Set RELAY_TUNNEL_TOKEN in .env}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

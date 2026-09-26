@@ -577,9 +577,9 @@ export const WHY_CLOUDCAST_POINTS = [
       'Video switching, broadcast audio, music production, instant replay, presentation, and virtual production are separate products with dedicated dashboards — subscribe only to what you need, or unlock CloudCast Universal (Essential $59, Studio $99, Master $149) for every product in one bill.',
   },
   {
-    title: 'Built by Quantum Regal for real broadcast workflows',
+    title: 'Built by Spatial Regal for real broadcast workflows',
     description:
-      'CloudCast by Quantum Regal is engineered by Quantum Regal Digital Labs — not a generic streaming widget. PST/PGM semantics, replay banks, Fat Channel audio, and DAW export mirror the language your directors, A1s, and producers already speak.',
+      'CloudCast by Spatial Regal is engineered by Spatial Regal Digital Labs — not a generic streaming widget. PST/PGM semantics, replay banks, Fat Channel audio, and DAW export mirror the language your directors, A1s, and producers already speak.',
   },
   {
     title: 'Regal Mesh and Regal Cloud without the complexity',

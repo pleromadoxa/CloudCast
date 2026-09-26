@@ -14,6 +14,24 @@ export async function updateUserProfile(fullName: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+export interface DashboardPreferenceUpdate {
+  audio_dashboard_enabled?: boolean;
+  prism_dashboard_enabled?: boolean;
+  replay_dashboard_enabled?: boolean;
+}
+
+export async function updateUserDashboardPreferences(
+  prefs: DashboardPreferenceUpdate,
+): Promise<DashboardPreferenceUpdate> {
+  const { data, error } = await getSupabase().rpc('update_user_dashboard_preferences', {
+    p_audio_dashboard_enabled: prefs.audio_dashboard_enabled ?? null,
+    p_prism_dashboard_enabled: prefs.prism_dashboard_enabled ?? null,
+    p_replay_dashboard_enabled: prefs.replay_dashboard_enabled ?? null,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? {}) as DashboardPreferenceUpdate;
+}
+
 function mapPlanGrant(row: Record<string, unknown> | null): UserPlanGrant | null {
   if (!row || !row.id) return null;
   return {

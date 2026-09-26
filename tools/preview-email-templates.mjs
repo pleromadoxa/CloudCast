@@ -18,8 +18,8 @@ process.env.APP_PUBLIC_URL = process.env.APP_PUBLIC_URL ?? 'https://cloudcast.pl
 // Mirror of supabase/functions/_shared/legal.ts + templates.ts (keep in sync)
 const EMAIL_BRAND = {
   productName: 'CloudCast',
-  byline: 'by Quantum Regal',
-  companyName: 'Quantum Regal Digital Labs',
+  byline: 'by Spatial Regal',
+  companyName: 'Spatial Regal Digital Labs',
   tagline: 'Professional broadcast production platform',
   supportEmail: 'support@cloudcast.regal',
   legalEmail: 'legal@cloudcast.regal',
@@ -125,11 +125,11 @@ const name = 'Alex Rivera';
 
 const templates = {
   signup_welcome: {
-    subject: 'Welcome to CloudCast by Quantum Regal',
+    subject: 'Welcome to CloudCast by Spatial Regal',
     html: layout('Welcome aboard', `
       <p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#bbb;">Hi ${name},</p>
       <p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#bbb;">
-        Your CloudCast account is ready. You now have access to the full Quantum Regal broadcast suite — live video mixing,
+        Your CloudCast account is ready. You now have access to the full Spatial Regal broadcast suite — live video mixing,
         instant replay, audio console, and Symphony studio — from one dashboard.
       </p>
       <ul style="margin:0 0 16px;padding-left:18px;font-size:13px;line-height:1.7;color:#999;">
@@ -150,7 +150,7 @@ const templates = {
     html: layout('Payment receipt', `
       <p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#bbb;">Hi ${name},</p>
       <p style="margin:0 0 4px;font-size:14px;line-height:1.65;color:#bbb;">
-        Thank you for your CloudCast subscription. This email confirms your payment to Quantum Regal Digital Labs.
+        Thank you for your CloudCast subscription. This email confirms your payment to Spatial Regal Digital Labs.
       </p>
       ${receiptTable([
         ['Receipt', '<span style="font-family:monospace;">CC-2025-0612-A1B2C3D4</span>'],
@@ -224,7 +224,7 @@ const indexHtml = `<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <h1>CloudCast email previews <span style="color:#888;font-weight:400;">by Quantum Regal</span></h1>
+  <h1>CloudCast email previews <span style="color:#888;font-weight:400;">by Spatial Regal</span></h1>
   <p style="color:#888;font-size:14px;">Static previews — every template includes logo + Regal byline.</p>
   <ul>
     ${indexLinks.map(({ id, file, subject }) => `<li><strong>${id}</strong> — <a href="./${file}">${subject}</a></li>`).join('\n    ')}

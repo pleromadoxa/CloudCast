@@ -1,11 +1,13 @@
 import type { LayerSettings } from '../../types/mixer';
 import type { LayerStackId } from '../mixer/panels/layers/layerStackTypes';
 import {
+  isDraggableLayer,
   LOWER_THIRD_Y,
   placementStyle,
   resolveCornerPlacement,
   resolveLowerThirdX,
 } from '../../lib/overlayPlacement';
+import { overlayCanvasPercentSize } from '../../lib/mediaImagePlacement';
 import { cn } from '../../lib/utils';
 
 interface LayerHighlightProps {
@@ -41,7 +43,7 @@ function HighlightBox({
 }
 
 export function LayerHighlight({ layerId, layers, label, hideWhenDraggable }: LayerHighlightProps) {
-  if (hideWhenDraggable && (layerId === 'logo' || layerId === 'lower-third' || layerId.startsWith('image:'))) {
+  if (hideWhenDraggable && isDraggableLayer(layerId)) {
     return null;
   }
 
@@ -75,6 +77,66 @@ export function LayerHighlight({ layerId, layers, label, hideWhenDraggable }: La
       />
     );
   }
+  if (layerId === 'weather') {
+    return (
+      <HighlightBox
+        label={label}
+        style={{
+          ...placementStyle(resolveCornerPlacement(layers.weather.position, layers.weather)),
+          width: '32%',
+          height: '18%',
+        }}
+      />
+    );
+  }
+  if (layerId === 'ad-zone') {
+    return (
+      <HighlightBox
+        label={label}
+        style={{
+          ...placementStyle(resolveCornerPlacement(layers.adZone.position, layers.adZone)),
+          width: `${layers.adZone.widthPercent}%`,
+          height: `${Math.max(9, Math.round((layers.adZone.widthPercent * 9) / 16))}%`,
+        }}
+      />
+    );
+  }
+  if (layerId === 'scoreboard') {
+    return (
+      <HighlightBox
+        label={label}
+        style={{
+          ...placementStyle(resolveCornerPlacement(layers.scoreboard.position, layers.scoreboard)),
+          width: '30%',
+          height: '12%',
+        }}
+      />
+    );
+  }
+  if (layerId === 'countdown') {
+    return (
+      <HighlightBox
+        label={label}
+        style={{
+          ...placementStyle(resolveCornerPlacement(layers.countdown.position, layers.countdown)),
+          width: '18%',
+          height: '30%',
+        }}
+      />
+    );
+  }
+  if (layerId === 'sponsor-bug') {
+    return (
+      <HighlightBox
+        label={label}
+        style={{
+          ...placementStyle(resolveCornerPlacement(layers.sponsorBug.position, layers.sponsorBug)),
+          width: `${Math.max(12, layers.sponsorBug.size)}%`,
+          height: '8%',
+        }}
+      />
+    );
+  }
   if (layerId === 'crawler') {
     return <HighlightBox className="bottom-0 left-0 right-0 h-[7%]" label={label} />;
   }
@@ -85,13 +147,17 @@ export function LayerHighlight({ layerId, layers, label, hideWhenDraggable }: La
     const imgId = layerId.slice(6);
     const img = layers.imageOverlays.find((o) => o.id === imgId);
     if (!img) return null;
+    if (img.fillScreen) {
+      return <HighlightBox className="inset-0" label={label} />;
+    }
+    const size = overlayCanvasPercentSize(img.naturalWidth, img.naturalHeight, img.scale);
     return (
       <HighlightBox
         label={label}
         style={{
           ...placementStyle(resolveCornerPlacement(img.position, img)),
-          width: '22%',
-          height: '12%',
+          width: `${size.widthPct}%`,
+          height: `${size.heightPct}%`,
         }}
       />
     );

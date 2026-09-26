@@ -6,12 +6,16 @@ import {
   deletePrismScene,
 } from '../../lib/prism/prismSceneService';
 import type { PrismLowerThird, PrismSceneObject, PrismSceneRecord } from '../../types/prismFeed';
+import type { MotionTemplateOverrides } from '../../lib/prism/motionGraphics';
+import type { PrismBrandKit } from '../../lib/prism/brandKit';
 import type { ChromaKeySettings } from '../../lib/prism/chromaKey';
 import type { PrismProductionMode } from '../../lib/prism/virtualSets';
 import type { PrismNodeGraph } from '../../lib/prism/nodeGraph';
 import type { PrismSecondarySlot } from '../../types/prismCameras';
 import { prismCloudScenesForPlan } from '../../config/products';
 import type { PlanTier } from '../../types/plans';
+import type { PhotorealStudioState } from '../../lib/virtualStudio/types';
+import { serializeBindings, serializeScreenSource } from '../../lib/virtualStudio/screenSources';
 
 interface SceneManagerPanelProps {
   planId: PlanTier;
@@ -21,12 +25,18 @@ interface SceneManagerPanelProps {
   cameraYaw: number;
   cameraPitch: number;
   cameraZoom: number;
+  cameraFov?: number;
+  cameraTarget?: [number, number, number];
   showShadows: boolean;
   showReflections: boolean;
   nodeGraph: PrismNodeGraph;
   secondarySlots: PrismSecondarySlot[];
   lowerThird: PrismLowerThird;
   sceneObjects: PrismSceneObject[];
+  /** 3D motion graphics brand kit + template overrides (round-tripped). */
+  motion: { brand?: PrismBrandKit; overrides?: MotionTemplateOverrides };
+  renderEngine: 'classic' | 'photoreal';
+  photoreal: PhotorealStudioState;
   onLoad: (scene: PrismSceneRecord) => void;
 }
 
@@ -38,12 +48,17 @@ export function SceneManagerPanel({
   cameraYaw,
   cameraPitch,
   cameraZoom,
+  cameraFov,
+  cameraTarget,
   showShadows,
   showReflections,
   nodeGraph,
   secondarySlots,
   lowerThird,
   sceneObjects,
+  motion,
+  renderEngine,
+  photoreal,
   onLoad,
 }: SceneManagerPanelProps) {
   const quota = prismCloudScenesForPlan(planId);
@@ -53,20 +68,34 @@ export function SceneManagerPanel({
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setLoading(true);
     try {
       setScenes(await listPrismScenes());
     } catch {
       setScenes([]);
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    // Initial load: async continuation, so no synchronous setState in the effect.
+    let alive = true;
+    listPrismScenes()
+      .then((s) => {
+        if (alive) setScenes(s);
+      })
+      .catch(() => {
+        if (alive) setScenes([]);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -85,6 +114,8 @@ export function SceneManagerPanel({
         cameraYaw,
         cameraPitch,
         cameraZoom,
+        cameraFov,
+        cameraTarget,
         showShadows,
         showReflections,
         extendedState: {
@@ -92,10 +123,34 @@ export function SceneManagerPanel({
           secondarySlots,
           lowerThird,
           sceneObjects,
+          motion: {
+            ...(motion.brand ? { brand: motion.brand } : {}),
+            ...(motion.overrides ? { overrides: motion.overrides } : {}),
+          },
+          photoreal: {
+            renderEngine,
+            sceneId: photoreal.sceneId,
+            bindings: serializeBindings(photoreal.bindings),
+            ...(serializeScreenSource(photoreal.backdrop)
+              ? { backdrop: serializeScreenSource(photoreal.backdrop)! }
+              : {}),
+            lighting: photoreal.lighting,
+            tickerSpeed: photoreal.tickerSpeed,
+            shots: photoreal.shots ?? [],
+            temperature: photoreal.temperature,
+            exposure: photoreal.exposure,
+            accent: photoreal.accent,
+            ...(photoreal.effects ? { effects: photoreal.effects } : {}),
+            elements: photoreal.elements ?? [],
+            rundown: photoreal.rundown ?? [],
+            snapToGrid: photoreal.snapToGrid ?? false,
+            ...(photoreal.talentPlacement ? { talentPlacement: photoreal.talentPlacement } : {}),
+            ...(photoreal.transition ? { transition: photoreal.transition } : {}),
+          },
         },
       });
       setName('');
-      await refresh();
+      await refresh(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
     } finally {
@@ -106,7 +161,7 @@ export function SceneManagerPanel({
   const handleDelete = async (id: string) => {
     try {
       await deletePrismScene(id);
-      await refresh();
+      await refresh(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed');
     }
@@ -115,7 +170,7 @@ export function SceneManagerPanel({
   return (
     <div className="space-y-3">
       <p className="text-[10px] text-mixer-muted">
-        {scenes.length}/{quota} cloud scenes · saves pipeline, PiP, graphics, and 3D props
+        {scenes.length}/{quota} cloud scenes · saves pipeline, PiP, graphics, 3D props, and photoreal studio
       </p>
       <div className="flex gap-2">
         <input

@@ -1,0 +1,33 @@
+# Native systemd unit (alternative to Docker) — Ubuntu/Debian VPS.
+#
+# Install:
+#   sudo apt install nodejs ffmpeg
+#   curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+#     | sudo tee /usr/local/bin/cloudflared && sudo chmod +x /usr/local/bin/cloudflared
+#   cd /opt/cloudcast && npm ci
+#   sudo cp tools/broadcast-relay/systemd/cloudcast-relay.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now cloudcast-relay
+#
+# Requires /opt/cloudcast/.env with RELAY_TOKEN and RELAY_TUNNEL_TOKEN.
+
+[Unit]
+Description=CloudCast broadcast relay (FFmpeg RTMP + Cloudflare Tunnel)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/cloudcast
+EnvironmentFile=/opt/cloudcast/.env
+Environment=NODE_ENV=production
+Environment=RELAY_HOST=127.0.0.1
+Environment=RELAY_PORT=8090
+ExecStart=/usr/bin/node tools/broadcast-relay/serve.mjs
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

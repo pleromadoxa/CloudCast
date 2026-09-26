@@ -159,6 +159,7 @@ export function ReplayLayout({ hidden = false }: ReplayLayoutProps) {
   const buffer = useReplayBuffer(maxBuffer, activeStream, {
     fps: DEFAULT_REPLAY_FPS,
     houseAnchorMs,
+    enabled: !hidden,
   });
   const banks = useReplayBanks(maxBanks);
 
@@ -862,7 +863,7 @@ export function ReplayLayout({ hidden = false }: ReplayLayoutProps) {
               isLoading={cloudcast.sessionLoading}
               onRegenerate={() => { void cloudcast.regenerateCode(); }}
               isRegenerating={cloudcast.isRegenerating}
-              className="hidden md:flex"
+              className="dashboard-header-access shrink-0"
             />
           )}
           <Link to="/dashboard" className="hidden items-center gap-1 text-[10px] font-bold tracking-wider text-mixer-muted hover:text-white sm:inline-flex">

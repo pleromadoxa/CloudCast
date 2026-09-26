@@ -9,6 +9,8 @@ import {
   ExternalLink,
   LayoutGrid,
   LogOut,
+  Maximize2,
+  Minimize2,
   MonitorPlay,
   RefreshCw,
   Signal,
@@ -28,11 +30,13 @@ import { useAuth } from '../../context/AuthContext';
 import { useProduction } from '../../context/ProductionContext';
 import { ConfirmStopStreamModal } from '../mixer/ConfirmStopStreamModal';
 import { useDashboardState } from '../../hooks/useDashboardState';
+import { useMixerMediaHydration } from '../../hooks/useMixerMediaHydration';
 import { useNetwork } from '../../context/NetworkContext';
 import { useBroadcastAutoResume } from '../../hooks/useBroadcastAutoResume';
 import { useGoLive, type StreamNotice } from '../../hooks/useGoLive';
 import { useMixerConnectivityRecovery } from '../../hooks/useMixerConnectivityRecovery';
 import { ConnectivityBanner } from '../mixer/ConnectivityBanner';
+import { AppFreshnessBanner } from '../system/AppFreshnessBanner';
 import { useMixerEngine } from '../../hooks/useMixerEngine';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { CompositeMonitor } from '../monitor/CompositeMonitor';
@@ -58,7 +62,15 @@ import { CLOUDCAST_NAV_LOGO, resolveDeviceLimit } from '../../lib/branding';
 import { mergeIpCameraIntoDevices } from '../../lib/ipCameraDevice';
 import { mergeDisplayFeedIntoDevices, isDisplayFeedDevice } from '../../lib/displayFeedDevice';
 import { mergePrismFeedIntoDevices, isPrismFeedDevice } from '../../lib/prismFeedDevice';
+import { mergeMediaFeedIntoDevices, isMediaFeedDevice } from '../../lib/mediaFeedDevice';
+import { mergeBrowserFeedIntoDevices, isBrowserFeedDevice } from '../../lib/browserFeedDevice';
 import { REGAL_DISPLAY_DEVICE_ID } from '../../types/displayFeed';
+import { REGAL_MEDIA_DEVICE_ID } from '../../types/mediaFeed';
+import { REGAL_BROWSER_DEVICE_ID } from '../../types/browserFeed';
+import { MediaFeedProvider } from '../../context/MediaFeedContext';
+import { BrowserFeedProvider } from '../../context/BrowserFeedContext';
+import { MediaFeedAudioBridge } from '../media/MediaFeedAudioBridge';
+import { useMediaFeedOptional } from '../../context/MediaFeedContext';
 import { canAccessProduct, resolveProductPlan } from '../../lib/productEntitlements';
 import { useIpCameraConfig } from '../../hooks/useIpCameraConfig';
 import { updateDeviceAudioSettings } from '../../lib/streamingService';
@@ -73,7 +85,7 @@ import { logReplayAudit } from '../../lib/replayAuditService';
 import { cn } from '../../lib/utils';
 import { buildLayerStack } from '../mixer/panels/layers/buildLayerStack';
 import type { LayerStackId } from '../mixer/panels/layers/layerStackTypes';
-import { isDraggableLayer, isLayerVisibleOnStagingPreview } from '../../lib/overlayPlacement';
+import { isDraggableLayer, isLayerVisibleOnProgram, isLayerVisibleOnStagingPreview } from '../../lib/overlayPlacement';
 import { ProgramPresetToolbar } from '../presets/ProgramPresetToolbar';
 import { usePrismFeedOptional } from '../../context/PrismFeedContext';
 import { useDisplayFeedOptional } from '../../context/DisplayFeedContext';
@@ -82,6 +94,68 @@ import { buildMixerOutputUrl } from '../../lib/pgmOutputSync';
 import { usePgmOutputPublisher } from '../../lib/pgmOutputTransport';
 import { useVerticalWorkspaceSplit } from '../../hooks/useVerticalWorkspaceSplit';
 import { MultiviewModal } from '../mixer/MultiviewModal';
+
+function DashboardMediaAudioSync({
+  bridgeLink,
+  pgmDeviceId,
+  devicePgmStreamRef,
+  registerPgmPlaybackStream,
+  registerPgmSupplementStream,
+}: {
+  bridgeLink: MixerBridgeLink | null;
+  pgmDeviceId: string | null;
+  devicePgmStreamRef: React.MutableRefObject<MediaStream | null>;
+  registerPgmPlaybackStream: (stream: MediaStream | null) => void;
+  registerPgmSupplementStream: (stream: MediaStream | null) => void;
+}) {
+  const mediaFeed = useMediaFeedOptional();
+
+  useEffect(() => {
+    if (bridgeLink) return;
+    const isMediaPgm = pgmDeviceId === REGAL_MEDIA_DEVICE_ID;
+    // Keep the Media stream registered while it exists — mute is gain-only in the bridge.
+    const programMediaStream = mediaFeed?.programStream ?? null;
+
+    if (isMediaPgm) {
+      registerPgmPlaybackStream(programMediaStream);
+      registerPgmSupplementStream(null);
+      return;
+    }
+
+    registerPgmPlaybackStream(devicePgmStreamRef.current);
+    registerPgmSupplementStream(programMediaStream);
+  }, [
+    bridgeLink,
+    pgmDeviceId,
+    mediaFeed?.programStream,
+    registerPgmPlaybackStream,
+    registerPgmSupplementStream,
+    devicePgmStreamRef,
+  ]);
+
+  return <MediaFeedAudioBridge />;
+}
+
+function DashboardMediaSupplementGainSync({
+  pgmDeviceId,
+  mediaInputGain,
+}: {
+  pgmDeviceId: string | null;
+  mediaInputGain: number;
+}) {
+  const { setPgmSupplementGain } = usePgmAudio();
+  const mediaFeed = useMediaFeedOptional();
+  const mediaOnPgm = pgmDeviceId === REGAL_MEDIA_DEVICE_ID;
+  const mediaSupplementActive = Boolean(!mediaOnPgm && mediaFeed?.programStream);
+  const supplementGain =
+    mediaSupplementActive && mediaFeed?.programAudioAllowed ? mediaInputGain : 0;
+
+  useEffect(() => {
+    setPgmSupplementGain(supplementGain);
+  }, [supplementGain, setPgmSupplementGain]);
+
+  return null;
+}
 
 export function DashboardLayout({ active = true }: { active?: boolean }) {
   const {
@@ -98,7 +172,8 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
     isRegenerating,
     unpairDevice,
   } = useCloudCast();
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, user, updateDashboardPreferences } = useAuth();
+  const [dashboardPrefsSaving, setDashboardPrefsSaving] = useState(false);
   const { setProductionOnAir, displayRouteRequest, clearDisplayRoute, replayPush, clearReplayRundown, advanceReplayRundown, replayRundownRemaining } = useProduction();
   const handleReturnToLive = useCallback(() => {
     if (replayPush) {
@@ -150,9 +225,18 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
     clearReplayRundown();
   }, [replayPush, replayRundownRemaining.length, advanceReplayRundown, clearReplayRundown, session?.sessionId]);
   const { isOnline, isRecovering, offlineSince, reconnectToken, recheckConnectivity } = useNetwork();
-  const { registerPgmPlaybackStream, setPgmGain, getBroadcastAudioStream } = usePgmAudio();
+  const { registerPgmPlaybackStream, registerPgmSupplementStream, setPgmGain, setPgmPrimaryGain, getBroadcastAudioStream } = usePgmAudio();
   const pgmVideoRef = useRef<HTMLVideoElement | null>(null);
+  const devicePgmStreamRef = useRef<MediaStream | null>(null);
   const pgmOutputRef = useRef<HTMLDivElement | null>(null);
+  const broadcastOutputRef = useRef<HTMLDivElement | null>(null);
+
+  /** Prefer fixed 1280×720 encode clone when ON AIR; fall back to visible PGM monitor. */
+  const getBroadcastCaptureContainer = useCallback(
+    () => broadcastOutputRef.current ?? pgmOutputRef.current,
+    [],
+  );
+
   const pgmBroadcast = usePgmBroadcast();
   const externalDisplay = useExternalDisplay();
   const [shortcutAssigning, setShortcutAssigning] = useState(false);
@@ -230,9 +314,13 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
 
   const mergedDevices = useMemo(
     () =>
-      mergePrismFeedIntoDevices(
-        mergeDisplayFeedIntoDevices(mergeIpCameraIntoDevices(devices, ipCamera.config)),
-        showPrismFeed,
+      mergeBrowserFeedIntoDevices(
+        mergeMediaFeedIntoDevices(
+          mergePrismFeedIntoDevices(
+            mergeDisplayFeedIntoDevices(mergeIpCameraIntoDevices(devices, ipCamera.config)),
+            showPrismFeed,
+          ),
+        ),
       ),
     [devices, ipCamera.config, showPrismFeed],
   );
@@ -244,6 +332,12 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
   const operatorLabel = profile?.full_name ?? profile?.email ?? 'TD operator';
   const videoPlanId = resolveProductPlan(profile, 'video_mixer');
   const canCloud = videoPlanId !== 'free';
+  useMixerMediaHydration({
+    enabled: active && Boolean(user?.id),
+    userId: user?.id,
+    layers: controls.layers,
+    onPatchLayers: mixer.patchLayers,
+  });
   const operatorLocks = useVideoOperatorLocks({
     sessionId,
     operatorLabel,
@@ -300,7 +394,7 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
     setActivePanel: () => mixer.setActivePanel('stream'),
     startBroadcast: (destinations) =>
       pgmBroadcast.startBroadcast(destinations, {
-        getOutputContainer: () => pgmOutputRef.current,
+        getOutputContainer: getBroadcastCaptureContainer,
         getAudioVideo: () => pgmVideoRef.current,
         getBroadcastAudioStream,
         getFadeToBlackLevel: () => engine.fadeToBlackLevel,
@@ -350,7 +444,7 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
     realtimeChannel: session?.realtimeChannel,
     enabled: Boolean(session?.sessionId),
     getSources: () => ({
-      getOutputContainer: () => pgmOutputRef.current,
+      getOutputContainer: getBroadcastCaptureContainer,
       getAudioVideo: () => pgmVideoRef.current,
       getBroadcastAudioStream,
       getFadeToBlackLevel: () => engine.fadeToBlackLevel,
@@ -362,8 +456,7 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
     sessionLoading,
     isSignalingConnected,
     broadcastStatus: pgmBroadcast.status,
-    pgmDevice,
-    getPgmOutputContainer: () => pgmOutputRef.current,
+    getPgmOutputContainer: getBroadcastCaptureContainer,
     resumeBroadcast,
     setOnAir: (onAir) => mixer.toggleOnAir(onAir),
     setStreamNotice,
@@ -375,8 +468,7 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
     devices: mergedDevices,
     isOnAir: controls.isOnAir,
     broadcastStatus: pgmBroadcast.status,
-    pgmDevice,
-    getPgmOutputContainer: () => pgmOutputRef.current,
+    getPgmOutputContainer: getBroadcastCaptureContainer,
     onReconnectSession: reconnect,
     resumeBroadcast,
     setStreamNotice,
@@ -394,18 +486,33 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
 
   useEffect(() => {
     if (!displayRouteRequest) return;
+    const prevPgm = controls.pgmDeviceId;
+    const prevSub = controls.subDeviceId;
+    const fillCamera =
+      prevPgm && prevPgm !== REGAL_DISPLAY_DEVICE_ID
+        ? prevPgm
+        : prevSub && prevSub !== REGAL_DISPLAY_DEVICE_ID
+          ? prevSub
+          : null;
+
     if (displayRouteRequest === 'pst') {
       mixer.sendToPst(REGAL_DISPLAY_DEVICE_ID);
     } else {
       engine.resetProgress();
       mixer.cutToDevice(REGAL_DISPLAY_DEVICE_ID);
+      if (fillCamera) mixer.sendToSub(fillCamera);
     }
     if (displayFeed?.state.keyMode) {
       mixer.setOutputMode('key');
-      mixer.patchKey({ keyType: 'chroma', color: CHROMA_KEY_GREEN, enabled: true });
+      mixer.patchKey({
+        keyType: 'chroma',
+        color: CHROMA_KEY_GREEN,
+        enabled: true,
+        fillSource: 'transparent',
+      });
     }
     clearDisplayRoute();
-  }, [displayRouteRequest, mixer, engine, clearDisplayRoute, displayFeed?.state.keyMode]);
+  }, [displayRouteRequest, mixer, engine, clearDisplayRoute, displayFeed?.state.keyMode, controls.pgmDeviceId, controls.subDeviceId]);
 
   useEffect(() => {
     if (!displayFeed?.state.keyMode) return;
@@ -417,9 +524,12 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
     if (controls.key.keyType !== 'chroma' || controls.key.color !== CHROMA_KEY_GREEN) {
       mixer.patchKey({ keyType: 'chroma', color: CHROMA_KEY_GREEN });
     }
+    if (controls.key.fillSource !== 'transparent') {
+      mixer.patchKey({ fillSource: 'transparent' });
+    }
     if (controls.outputMode !== 'key' || !controls.key.enabled) {
       mixer.setOutputMode('key');
-      mixer.patchKey({ enabled: true, keyType: 'chroma', color: CHROMA_KEY_GREEN });
+      mixer.patchKey({ enabled: true, keyType: 'chroma', color: CHROMA_KEY_GREEN, fillSource: 'transparent' });
     }
   }, [
     displayFeed?.state.keyMode,
@@ -427,6 +537,7 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
     controls.pstDeviceId,
     controls.key.keyType,
     controls.key.color,
+    controls.key.fillSource,
     controls.key.enabled,
     controls.outputMode,
     mixer,
@@ -505,15 +616,30 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
 
   const handleTake = useCallback(() => {
     if (operatorLocks.readOnly || !controls.pstDeviceId || controls.pstDeviceId === controls.pgmDeviceId) return;
-    mixer.beginTransition();
-    engine.performTake();
+    if (controls.transition.autoTrans) {
+      mixer.beginTransition();
+      engine.performTake();
+    } else {
+      engine.resetProgress();
+      mixer.cutToPreview();
+    }
     void logVideoAudit({
       eventType: 'take',
       sessionId,
       deviceId: controls.pstDeviceId,
       label: deviceDisplayLabel(pstDevice) ?? undefined,
     });
-  }, [operatorLocks.readOnly, engine, mixer, controls.pstDeviceId, controls.pgmDeviceId, sessionId, pstDevice, deviceDisplayLabel]);
+  }, [
+    operatorLocks.readOnly,
+    engine,
+    mixer,
+    controls.pstDeviceId,
+    controls.pgmDeviceId,
+    controls.transition.autoTrans,
+    sessionId,
+    pstDevice,
+    deviceDisplayLabel,
+  ]);
 
   const handleSendToPgm = useCallback(
     (deviceId: string) => {
@@ -580,14 +706,40 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
 
   const handlePgmPlaybackStream = useCallback(
     (stream: MediaStream | null) => {
+      devicePgmStreamRef.current = stream;
       if (bridgeLink) return;
+      if (controls.pgmDeviceId === REGAL_MEDIA_DEVICE_ID) return;
       registerPgmPlaybackStream(stream);
     },
-    [bridgeLink, registerPgmPlaybackStream],
+    [bridgeLink, controls.pgmDeviceId, registerPgmPlaybackStream],
   );
+
+  const handlePreviewMedia = useCallback(() => {
+    if (operatorLocks.readOnly) return;
+    mixer.sendToPst(REGAL_MEDIA_DEVICE_ID);
+  }, [operatorLocks.readOnly, mixer]);
+
+  const handlePreviewBrowser = useCallback(() => {
+    if (operatorLocks.readOnly) return;
+    mixer.sendToPst(REGAL_BROWSER_DEVICE_ID);
+  }, [operatorLocks.readOnly, mixer]);
+
+  const handleTakeBrowser = useCallback(() => {
+    if (operatorLocks.readOnly) return;
+    mixer.cutToDevice(REGAL_BROWSER_DEVICE_ID);
+  }, [operatorLocks.readOnly, mixer]);
+
+  const handleTakeMedia = useCallback(() => {
+    if (operatorLocks.readOnly) return;
+    mixer.cutToDevice(REGAL_MEDIA_DEVICE_ID);
+  }, [operatorLocks.readOnly, mixer]);
 
   const handlePgmOutputRef = useCallback((el: HTMLDivElement | null) => {
     pgmOutputRef.current = el;
+  }, []);
+
+  const handleBroadcastOutputRef = useCallback((el: HTMLDivElement | null) => {
+    broadcastOutputRef.current = el;
   }, []);
 
   useEffect(() => {
@@ -762,11 +914,99 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
     };
   }, [controls.fullscreenPgm, mixer]);
 
-  const pgmVolume = pgmDevice ? mixer.getVolumeForDevice(pgmDevice.deviceId) : 0;
+  const masterBusGain = mixer.getMasterBusGain();
+  const pgmInputGain = controls.pgmDeviceId ? mixer.getInputBusGain(controls.pgmDeviceId) : 0;
+  const mediaInputGain = mixer.getInputBusGain(REGAL_MEDIA_DEVICE_ID);
+  const pgmMonitorVolume = pgmDevice ? mixer.getVolumeForDevice(pgmDevice.deviceId) : 0;
+  const mediaOnPgm = controls.pgmDeviceId === REGAL_MEDIA_DEVICE_ID;
 
   useEffect(() => {
-    setPgmGain(pgmVolume);
-  }, [pgmVolume, setPgmGain]);
+    setPgmGain(masterBusGain);
+  }, [masterBusGain, setPgmGain]);
+
+  useEffect(() => {
+    setPgmPrimaryGain(mediaOnPgm ? mediaInputGain : pgmInputGain);
+  }, [mediaOnPgm, mediaInputGain, pgmInputGain, setPgmPrimaryGain]);
+
+  const realDevices = mergedDevices.filter(
+    (d) =>
+      isRealDevice(d) &&
+      !isDisplayFeedDevice(d) &&
+      !isPrismFeedDevice(d) &&
+      !isMediaFeedDevice(d) &&
+      !isBrowserFeedDevice(d),
+  );
+  const aspectRatio = controls.display.aspectRatio;
+
+  const graphicsPanelOpen =
+    controls.openPanels.includes('layers') || controls.openPanels.includes('media');
+
+  const graphicsHighlight = useMemo(() => {
+    if (!graphicsPanelOpen || !controls.selectedGraphicsLayerId) {
+      return { id: null as LayerStackId | null, label: '' };
+    }
+    const id = controls.selectedGraphicsLayerId as LayerStackId;
+    const item = buildLayerStack(controls.layers, controls.pgmLayers).find((s) => s.id === id);
+    if (controls.openPanels.includes('media')) {
+      if (!isLayerVisibleOnStagingPreview(id, controls.layers)) {
+        return { id: null, label: '' };
+      }
+      return { id, label: item?.label ?? 'Media' };
+    }
+    if (!item?.isPreview) {
+      return { id: null, label: '' };
+    }
+    return { id, label: item.label };
+  }, [graphicsPanelOpen, controls.openPanels, controls.selectedGraphicsLayerId, controls.layers, controls.pgmLayers]);
+
+  const graphicsDragEnabled = useMemo(() => {
+    if (!graphicsHighlight.id) return false;
+    return (
+      isDraggableLayer(graphicsHighlight.id) &&
+      isLayerVisibleOnStagingPreview(graphicsHighlight.id, controls.layers)
+    );
+  }, [graphicsHighlight.id, controls.layers]);
+
+  const pgmGraphicsHighlight = useMemo(() => {
+    if (!controls.openPanels.includes('media') || !controls.selectedGraphicsLayerId) {
+      return { id: null as LayerStackId | null, label: '' };
+    }
+    const id = controls.selectedGraphicsLayerId as LayerStackId;
+    if (!isDraggableLayer(id) || !isLayerVisibleOnProgram(id, controls.pgmLayers)) {
+      return { id: null, label: '' };
+    }
+    const item = buildLayerStack(controls.layers, controls.pgmLayers).find((s) => s.id === id);
+    return { id, label: item?.label ?? 'Media' };
+  }, [controls.openPanels, controls.selectedGraphicsLayerId, controls.layers, controls.pgmLayers]);
+
+  const pgmMediaDragEnabled = Boolean(pgmGraphicsHighlight.id);
+
+  const displayAutoKey = Boolean(
+    displayFeed?.state.keyMode &&
+      (controls.pgmDeviceId === REGAL_DISPLAY_DEVICE_ID ||
+        controls.pstDeviceId === REGAL_DISPLAY_DEVICE_ID),
+  );
+
+  const needsPgmPipeline =
+    active || controls.isOnAir || Boolean(replayPush) || externalDisplay.isOpen;
+  const showPreviewMonitors = active && !controls.fullscreenPgm;
+  const simpleView = controls.simpleProductionView;
+  const showSourceStrip = showPreviewMonitors && !simpleView;
+
+  const broadcastRenderActive =
+    needsPgmPipeline &&
+    (controls.isOnAir ||
+      pgmBroadcast.status === 'connecting' ||
+      pgmBroadcast.status === 'live' ||
+      pgmBroadcast.status === 'reconnecting');
+
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const trailingChromeRef = useRef<HTMLDivElement>(null);
+  const { deckHeight, isDragging, splitHandleProps } = useVerticalWorkspaceSplit({
+    workspaceRef,
+    trailingChromeRef,
+    enabled: !controls.fullscreenPgm,
+  });
 
   if (!isSupabaseConfigured()) {
     return (
@@ -780,39 +1020,6 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
     );
   }
 
-  const realDevices = mergedDevices.filter(
-    (d) => isRealDevice(d) && !isDisplayFeedDevice(d) && !isPrismFeedDevice(d),
-  );
-  const aspectRatio = controls.display.aspectRatio;
-
-  const graphicsHighlight = useMemo(() => {
-    if (!controls.openPanels.includes('layers') || !controls.selectedGraphicsLayerId) {
-      return { id: null as LayerStackId | null, label: '' };
-    }
-    const id = controls.selectedGraphicsLayerId as LayerStackId;
-    const item = buildLayerStack(controls.layers, controls.pgmLayers).find((s) => s.id === id);
-    if (!item?.isPreview) {
-      return { id: null, label: '' };
-    }
-    return { id, label: item.label };
-  }, [controls.openPanels, controls.selectedGraphicsLayerId, controls.layers, controls.pgmLayers]);
-
-  const graphicsDragEnabled = useMemo(() => {
-    if (!graphicsHighlight.id) return false;
-    return (
-      isDraggableLayer(graphicsHighlight.id) &&
-      isLayerVisibleOnStagingPreview(graphicsHighlight.id, controls.layers)
-    );
-  }, [graphicsHighlight.id, controls.layers]);
-
-  const workspaceRef = useRef<HTMLDivElement>(null);
-  const trailingChromeRef = useRef<HTMLDivElement>(null);
-  const { deckHeight, isDragging, splitHandleProps } = useVerticalWorkspaceSplit({
-    workspaceRef,
-    trailingChromeRef,
-    enabled: !controls.fullscreenPgm,
-  });
-
   const monitorSection = (
     <div
       className={cn(
@@ -821,7 +1028,7 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
       )}
     >
       <div className="dashboard-monitors-row flex min-h-0 flex-1 gap-1 p-1">
-        {!controls.fullscreenPgm && (
+        {showPreviewMonitors && (
           <PreviewMonitor
             devices={sourceDevices}
             slotCount={deviceLimit}
@@ -848,8 +1055,11 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
             onSelectSource={handleFocusSource}
             onCutToSource={handleSendToPgm}
             aspectRatio={aspectRatio}
+            pgmDevice={pgmDevice}
+            displayAutoKey={displayAutoKey}
           />
         )}
+        {needsPgmPipeline && (
         <CompositeMonitor
           label="PGM"
           device={pgmDevice}
@@ -866,18 +1076,28 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
           overlay={pgmDevice ? mixer.getOverlayForDevice(pgmDevice.deviceId) : 'none'}
           quality={pgmDevice ? mixer.getQualityForDevice(pgmDevice.deviceId) : 'auto'}
           audioMuted={controls.audio.masterMuted}
-          volume={pgmVolume}
+          volume={pgmMonitorVolume}
           isOnAir={controls.isOnAir}
           aspectRatio={aspectRatio}
           audioDeviceId={pgmAudioDeviceId}
           onPgmVideoRef={handlePgmVideoRef}
           onPgmPlaybackStream={handlePgmPlaybackStream}
           onPgmOutputRef={handlePgmOutputRef}
+          pgmDeviceId={controls.pgmDeviceId}
+          pstDeviceId={controls.pstDeviceId}
+          pgmDevice={pgmDevice}
+          displayAutoKey={displayAutoKey}
           replayTake={replayPush}
           onReplayEnded={handleReplayEnded}
+          stagingPreview={pgmMediaDragEnabled}
+          highlightLayerId={pgmGraphicsHighlight.id}
+          highlightLayerLabel={pgmGraphicsHighlight.label}
+          graphicsDragEnabled={pgmMediaDragEnabled}
+          onPatchLayers={pgmMediaDragEnabled ? guard(mixer.graphics.patchPgmLayers) : undefined}
         />
+        )}
       </div>
-      {!controls.fullscreenPgm && (
+      {showSourceStrip && (
         <SourceStrip
           devices={sourceDevices}
           pstDeviceId={controls.pstDeviceId}
@@ -897,13 +1117,41 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
   );
 
   return (
+    <MediaFeedProvider
+      layers={controls.layers}
+      pgmLayers={controls.pgmLayers}
+      selectedLayerId={(controls.selectedGraphicsLayerId ?? 'lower-third') as LayerStackId}
+      pstDeviceId={controls.pstDeviceId}
+      pgmDeviceId={controls.pgmDeviceId}
+      audio={controls.audio}
+      onToggleViewAudioMute={mixer.toggleViewAudioMute}
+      onToggleInputMute={mixer.toggleInputMute}
+    >
+    <BrowserFeedProvider
+      pstDeviceId={controls.pstDeviceId}
+      pgmDeviceId={controls.pgmDeviceId}
+      audio={controls.audio}
+      onToggleViewAudioMute={mixer.toggleViewAudioMute}
+      onToggleInputMute={mixer.toggleInputMute}
+    >
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-mixer-bg">
+      <DashboardMediaAudioSync
+        bridgeLink={bridgeLink}
+        pgmDeviceId={controls.pgmDeviceId}
+        devicePgmStreamRef={devicePgmStreamRef}
+        registerPgmPlaybackStream={registerPgmPlaybackStream}
+        registerPgmSupplementStream={registerPgmSupplementStream}
+      />
+      <DashboardMediaSupplementGainSync
+        pgmDeviceId={controls.pgmDeviceId}
+        mediaInputGain={mediaInputGain}
+      />
       <ConfirmStopStreamModal
         open={showStopConfirm}
         onConfirm={confirmStopStream}
         onCancel={cancelStopStream}
       />
-      {!controls.fullscreenPgm && <PlatformBroadcastBanner />}
+      {!controls.fullscreenPgm && !simpleView && <PlatformBroadcastBanner />}
       {replayPush && (
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-emerald-500/40 bg-emerald-950/50 px-3 py-2 sm:px-4">
           <div className="flex items-center gap-2 text-[10px] font-bold tracking-wider text-emerald-200">
@@ -921,41 +1169,77 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
         </div>
       )}
       {!controls.fullscreenPgm && (
-        <header className="dashboard-header flex shrink-0 items-center justify-between gap-2 border-b border-mixer-border bg-mixer-panel px-3 py-2 sm:px-4">
-          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-            <CloudCastLogo variant={CLOUDCAST_NAV_LOGO.variant} className={CLOUDCAST_NAV_LOGO.className} />
-            <span className="dashboard-header-tagline hidden text-[10px] text-mixer-muted md:inline">
-              VIDEO MIXER
-            </span>
-            {profile && (
-              <span className="rounded bg-white/5 px-2 py-0.5 text-[9px] font-bold tracking-wider text-mixer-muted">
-                {profile.plan.name.toUpperCase()}
+        <header className="dashboard-header flex shrink-0 flex-col gap-1 border-b border-mixer-border bg-mixer-panel px-3 py-2 sm:px-4">
+          <div className="dashboard-header-top flex min-w-0 items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+              <CloudCastLogo variant={CLOUDCAST_NAV_LOGO.variant} className={CLOUDCAST_NAV_LOGO.className} />
+              <span className="dashboard-header-tagline hidden text-[10px] text-mixer-muted md:inline">
+                VIDEO MIXER
               </span>
-            )}
-            {controls.isRecording && <span className="animate-pulse text-[10px] font-bold text-mixer-red">● REC</span>}
-            {externalDisplay.isOpen && (
-              <span className="text-[10px] font-bold text-mixer-green">
-                ● {externalDisplay.targetScreen?.label ?? 'EXT OUTPUT'}
-              </span>
-            )}
+              {profile && !simpleView && (
+                <span className="rounded bg-white/5 px-2 py-0.5 text-[9px] font-bold tracking-wider text-mixer-muted">
+                  {profile.plan.name.toUpperCase()}
+                </span>
+              )}
+              {simpleView && (
+                <span className="rounded bg-violet-600/25 px-2 py-0.5 text-[9px] font-bold tracking-wider text-violet-200">
+                  SIMPLE
+                </span>
+              )}
+              {controls.isRecording && <span className="animate-pulse text-[10px] font-bold text-mixer-red">● REC</span>}
+              {externalDisplay.isOpen && (
+                <span className="text-[10px] font-bold text-mixer-green">
+                  ● {externalDisplay.targetScreen?.label ?? 'EXT OUTPUT'}
+                </span>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={mixer.toggleSimpleProductionView}
+                className={cn(
+                  'dashboard-simple-toggle mixer-btn flex items-center gap-1.5 px-2 py-1 text-[9px] font-bold tracking-wider',
+                  simpleView && 'border-violet-400/50 bg-violet-600/20 text-violet-100',
+                )}
+                title={
+                  simpleView
+                    ? 'Restore full dashboard — all panels, source strip, and navigation'
+                    : 'Simple production view — hide non-essential chrome for small live events'
+                }
+              >
+                {simpleView ? (
+                  <>
+                    <Maximize2 className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">FULL VIEW</span>
+                  </>
+                ) : (
+                  <>
+                    <Minimize2 className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">SIMPLE</span>
+                  </>
+                )}
+              </button>
+              <AccessCodePanel
+              session={session}
+              isLoading={sessionLoading}
+              onRegenerate={regenerateCode}
+              isRegenerating={isRegenerating}
+              product="video"
+              error={error}
+              onRetry={reconnect}
+              className="dashboard-header-access shrink-0"
+            />
+            </div>
           </div>
-          <AccessCodePanel
-            session={session}
-            isLoading={sessionLoading}
-            onRegenerate={regenerateCode}
-            isRegenerating={isRegenerating}
-            product="video"
-            error={error}
-            onRetry={reconnect}
-            className="min-w-0 flex"
-          />
-          <VideoBridgePanel
-            mode="video"
-            sessionId={session?.sessionId}
-            onLinkChange={setBridgeLink}
-            className="hidden xl:flex"
-          />
-          <div className="dashboard-header-actions flex shrink-0 items-center gap-2 text-[10px] sm:gap-4">
+          {!simpleView && (
+          <div className="dashboard-header-bottom flex min-w-0 items-center justify-end gap-2">
+            <VideoBridgePanel
+              mode="video"
+              sessionId={session?.sessionId}
+              onLinkChange={setBridgeLink}
+              className="hidden xl:flex shrink-0"
+            />
+            <div className="dashboard-header-actions flex shrink-0 items-center gap-2 text-[10px] sm:gap-4">
             <ProgramPresetToolbar />
             <ExternalDisplayButton
               isOpen={externalDisplay.isOpen}
@@ -968,12 +1252,16 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
             <Link to="/hub" className="hidden items-center gap-1 text-mixer-muted hover:text-white lg:inline-flex" title="All products">
               <LayoutGrid className="h-3.5 w-3.5" /> HUB
             </Link>
-            <Link to="/replay" className="hidden items-center gap-1 text-mixer-muted hover:text-white xl:inline-flex">
-              <Clapperboard className="h-3.5 w-3.5" /> REPLAY
-            </Link>
-            <Link to="/audio" className="hidden items-center gap-1 text-mixer-muted hover:text-white xl:inline-flex">
-              <SlidersHorizontal className="h-3.5 w-3.5" /> AUDIO
-            </Link>
+            {canAccessProduct(profile, 'instant_replay') && (
+              <Link to="/replay" className="hidden items-center gap-1 text-mixer-muted hover:text-white xl:inline-flex">
+                <Clapperboard className="h-3.5 w-3.5" /> REPLAY
+              </Link>
+            )}
+            {canAccessProduct(profile, 'audio_mixer') && (
+              <Link to="/audio" className="hidden items-center gap-1 text-mixer-muted hover:text-white xl:inline-flex">
+                <SlidersHorizontal className="h-3.5 w-3.5" /> AUDIO
+              </Link>
+            )}
             {canAccessPrism && (
               <Link
                 to="/prism"
@@ -991,8 +1279,8 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
             <Link to="/profile" className="hidden text-mixer-muted hover:text-white lg:inline">
               Profile
             </Link>
-            <Link to="/pricing" className="hidden text-mixer-muted hover:text-white xl:inline">
-              Upgrade
+            <Link to="/pricing" className="hidden text-mixer-muted hover:text-white xl:inline" title="Plans — paid upgrades coming soon">
+              Plans
             </Link>
             <span className="dashboard-header-meta hidden items-center gap-1.5 text-mixer-muted xl:flex">
               <Circle className={cn('h-2 w-2 fill-current', isPresenceConnected ? 'text-mixer-green' : 'text-mixer-red')} />
@@ -1007,8 +1295,8 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
                 OTHER TAB
               </span>
             )}
-            <span><span className="font-bold text-mixer-red">{liveDevices.length}</span> LIVE</span>
-            <span><span className="font-bold text-mixer-text">{realDevices.length}</span>/{deviceLimit}</span>
+            <span className="dashboard-header-stat"><span className="font-bold text-mixer-red">{liveDevices.length}</span> LIVE</span>
+            <span className="dashboard-header-stat"><span className="font-bold text-mixer-text">{realDevices.length}</span>/{deviceLimit}</span>
             <button
               type="button"
               onClick={refreshDevices}
@@ -1018,7 +1306,29 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
               <RefreshCw className="h-3 w-3" />
             </button>
             <button type="button" onClick={() => signOut()} className="mixer-btn p-1" title="Sign out"><LogOut className="h-3 w-3" /></button>
+            </div>
           </div>
+          )}
+          {simpleView && (
+            <div className="dashboard-header-bottom flex min-w-0 items-center justify-end gap-2 text-[10px]">
+              <span className="dashboard-header-stat font-bold text-mixer-red">{liveDevices.length} LIVE</span>
+              <span className="dashboard-header-stat text-mixer-muted">{realDevices.length}/{deviceLimit} paired</span>
+              {controls.isOnAir && (
+                <span className="animate-pulse font-bold text-mixer-red">● ON AIR</span>
+              )}
+              <button
+                type="button"
+                onClick={refreshDevices}
+                className="mixer-btn p-1"
+                title="Refresh paired devices"
+              >
+                <RefreshCw className="h-3 w-3" />
+              </button>
+              <button type="button" onClick={() => signOut()} className="mixer-btn p-1" title="Sign out">
+                <LogOut className="h-3 w-3" />
+              </button>
+            </div>
+          )}
         </header>
       )}
 
@@ -1050,14 +1360,18 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
         />
       )}
 
-      {error && isOnline && !controls.fullscreenPgm && (
+      {!controls.fullscreenPgm && !simpleView && (
+        <AppFreshnessBanner className="shrink-0 flex items-center gap-2 border-b border-sky-500/30 bg-sky-500/10 px-4 py-2 text-[11px] text-sky-100" />
+      )}
+
+      {error && isOnline && (
         <div className="shrink-0 border-b border-mixer-red/30 bg-mixer-red/10 px-4 py-1 text-[10px] text-mixer-red">
           {error}
           <button type="button" onClick={reconnect} className="ml-2 underline">RETRY</button>
         </div>
       )}
 
-      {!controls.fullscreenPgm && (
+      {!controls.fullscreenPgm && !simpleView && (
         <StreamStatusBanner
           notice={deckNotice ?? streamNotice}
           isValidating={isStreamValidating}
@@ -1077,13 +1391,21 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
         </div>
       )}
 
-      <div ref={workspaceRef} className="dashboard-workspace flex min-h-0 flex-1 flex-col overflow-hidden">
-        {controls.fullscreenPgm ? (
+      <div
+        ref={workspaceRef}
+        className={cn(
+          'dashboard-workspace flex min-h-0 flex-1 flex-col overflow-hidden',
+          simpleView && 'dashboard-workspace--simple',
+        )}
+      >
+        {!active && !needsPgmPipeline ? null : controls.fullscreenPgm ? (
           monitorSection
         ) : (
           <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
             {monitorSection}
 
+            {active && (
+              <>
             <WorkspaceSplitHandle isDragging={isDragging} {...splitHandleProps} />
 
             <div className="dashboard-deck-wrap" style={{ height: deckHeight }}>
@@ -1110,6 +1432,8 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
                   onCommitTbar={handleCommitTbar}
                   onGoLive={handleGoLive}
                   isStreamValidating={isStreamValidating}
+                  broadcastStatus={pgmBroadcast.status}
+                  isBroadcastTransmitting={pgmBroadcast.isTransmitting}
                   streamNotice={streamNotice}
                   onTestStreamConnection={handleTestStreamConnection}
                   onToggleRecording={handleToggleRecording}
@@ -1133,6 +1457,8 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
                   onSetQuality={mixer.setDefaultQuality}
                   onSetAspectRatio={mixer.setAspectRatio}
                   onSetViewMode={mixer.setViewMode}
+                  onSetMixerViewMode={mixer.setMixerViewMode}
+                  onToggleSimpleProductionView={mixer.toggleSimpleProductionView}
                   onSetKeyboardShortcuts={mixer.setKeyboardShortcuts}
                   onToggleExternalDisplay={() => { void externalDisplay.toggle(); }}
                   onShortcutAssigningChange={setShortcutAssigning}
@@ -1148,11 +1474,26 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
                   ipCameraAllowed={ipCamera.allowed}
                   ipCameraConfig={ipCamera.config}
                   ipCameraSlot={deviceLimit}
+                  dashboardPreferences={profile?.dashboard_preferences}
+                  dashboardPrefsSaving={dashboardPrefsSaving}
+                  onUpdateDashboardPreferences={async (prefs) => {
+                    setDashboardPrefsSaving(true);
+                    try {
+                      await updateDashboardPreferences(prefs);
+                    } finally {
+                      setDashboardPrefsSaving(false);
+                    }
+                  }}
                   onSaveIpCamera={ipCamera.save}
                   onRemoveIpCamera={ipCamera.remove}
+                  onPreviewMedia={handlePreviewMedia}
+                  onPreviewBrowser={handlePreviewBrowser}
+                  onTakeBrowser={handleTakeBrowser}
+                  onTakeMedia={handleTakeMedia}
                 />
               </div>
 
+              {!simpleView && (
               <div ref={trailingChromeRef} className="dashboard-workspace-chrome shrink-0">
                 <div className="flex shrink-0 items-center gap-1.5 overflow-hidden border-t border-mixer-border bg-[#0d0d0d] px-2 py-1">
                   {canAccessPrism && (
@@ -1220,9 +1561,62 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
                   )}
                 </div>
               </div>
+              )}
+            </>
+            )}
           </div>
         )}
       </div>
+
+      {broadcastRenderActive && (
+        <div
+          aria-hidden
+          data-broadcast-capture
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: 1280,
+            height: 720,
+            pointerEvents: 'none',
+            zIndex: -1,
+            // Keep opacity at 1 so browsers keep decoding video frames for capture.
+            // Translate off-screen instead of clip-path so Chromium still decodes.
+            transform: 'translate(-100vw, -100vh)',
+          }}
+        >
+          <CompositeMonitor
+            label="PGM"
+            device={pgmDevice}
+            subDevice={controls.outputMode === 'pip' || controls.outputMode === 'key' ? subDevice : null}
+            fromDevice={transitionFromDevice ?? pgmDevice}
+            toDevice={pstDevice}
+            transitionProgress={transitionProgress}
+            transitionType={controls.transition.type}
+            fadeToBlackLevel={engine.fadeToBlackLevel}
+            outputMode={controls.outputMode}
+            pip={controls.pip}
+            keySettings={controls.key}
+            layers={controls.pgmLayers}
+            overlay={pgmDevice ? mixer.getOverlayForDevice(pgmDevice.deviceId) : 'none'}
+            quality={pgmDevice ? mixer.getQualityForDevice(pgmDevice.deviceId) : 'auto'}
+            audioMuted
+            volume={0}
+            isOnAir={controls.isOnAir}
+            aspectRatio={aspectRatio}
+            onPgmOutputRef={handleBroadcastOutputRef}
+            pgmDeviceId={controls.pgmDeviceId}
+            pstDeviceId={controls.pstDeviceId}
+            pgmDevice={pgmDevice}
+            displayAutoKey={displayAutoKey}
+            showClock={false}
+            cleanOutput
+            captureClone
+            replayTake={replayPush}
+            onReplayEnded={handleReplayEnded}
+          />
+        </div>
+      )}
 
       {externalDisplay.portalTarget &&
         createPortal(
@@ -1241,13 +1635,18 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
             layers={controls.pgmLayers}
             overlay={pgmDevice ? mixer.getOverlayForDevice(pgmDevice.deviceId) : 'none'}
             quality={pgmDevice ? mixer.getQualityForDevice(pgmDevice.deviceId) : 'auto'}
-            audioMuted={controls.audio.masterMuted}
-            volume={pgmVolume}
+            audioMuted
+            volume={0}
             isOnAir={controls.isOnAir}
             aspectRatio={aspectRatio}
-            audioDeviceId={pgmAudioDeviceId}
+            pgmDeviceId={controls.pgmDeviceId}
+            pstDeviceId={controls.pstDeviceId}
+            pgmDevice={pgmDevice}
+            displayAutoKey={displayAutoKey}
             showClock={false}
             cleanOutput
+            captureClone
+            embedded
             replayTake={replayPush}
             onReplayEnded={handleReplayEnded}
           />,
@@ -1271,5 +1670,7 @@ export function DashboardLayout({ active = true }: { active?: boolean }) {
         />
       )}
     </div>
+    </BrowserFeedProvider>
+    </MediaFeedProvider>
   );
 }

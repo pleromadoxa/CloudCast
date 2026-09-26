@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { Device, OverlayType, StreamQuality } from '../../types/device';
 import { ChromaKeyLayer } from '../overlays/ChromaKeyLayer';
 import type { KeySettings, LayerSettings, OutputMode, PipSettings, TransitionType, VideoAspectRatio } from '../../types/mixer';
 import { PIP_SIZE_MAP } from '../../types/mixer';
+import { shotFeedRolesForDevice } from '../../lib/shotFeedRoles';
 import { cn } from '../../lib/utils';
 import { StreamPlayer } from '../stream/StreamPlayer';
 import { VideoOverlay } from '../overlays/VideoOverlay';
@@ -10,6 +11,9 @@ import { AspectRatioFrame } from './AspectRatioFrame';
 import type { LayerStackId } from '../mixer/panels/layers/layerStackTypes';
 import type { ReplayPushRequest } from '../../types/replay';
 import { ReplayPgmBusPlayer } from '../replay/ReplayPgmBusPlayer';
+import { isDisplayFeedDevice } from '../../lib/displayFeedDevice';
+import { isMediaFeedDevice } from '../../lib/mediaFeedDevice';
+import { resolveKeyFillDevice } from '../../lib/keyFillRouting';
 
 interface CompositeMonitorProps {
   label: 'PST' | 'PGM';
@@ -45,11 +49,18 @@ interface CompositeMonitorProps {
   onPgmOutputRef?: (el: HTMLDivElement | null) => void;
   /** When set, PST monitor must not route the same feed to speakers (PGM bus owns it). */
   pgmDeviceId?: string | null;
+  /** Program device — used as overlay fill when Regal Display is on PST. */
+  pgmDevice?: Device | null;
+  pstDeviceId?: string | null;
+  /** Regal Display KEY mode — only the display feed gets auto-keyed, not PGM (e.g. Prism). */
+  displayAutoKey?: boolean;
   /** Borderless fullscreen layout for external program output window. */
   cleanOutput?: boolean;
   /** Render video content only — parent supplies monitor chrome and aspect frame. */
   embedded?: boolean;
   /** Instant replay clip routed on the PGM program bus. */
+  /** Off-screen encode duplicate — must not claim browser iframe or fight PGM shot refs. */
+  captureClone?: boolean;
   replayTake?: ReplayPushRequest | null;
   onReplayEnded?: () => void;
 }
@@ -80,6 +91,8 @@ function TransitionBlend({
   audioDeviceId = null,
   onBusPlaybackStream,
   onPgmVideoRef,
+  pstDeviceId = null,
+  pgmDeviceId = null,
 }: {
   fromDevice: Device | null;
   toDevice: Device | null;
@@ -92,9 +105,14 @@ function TransitionBlend({
   audioDeviceId?: string | null;
   onBusPlaybackStream?: (stream: MediaStream | null) => void;
   onPgmVideoRef?: (el: HTMLVideoElement | null) => void;
+  pstDeviceId?: string | null;
+  pgmDeviceId?: string | null;
 }) {
   const p = progress / 100;
   const busDevice = p >= 0.5 ? toDevice : fromDevice;
+  const fromRoles = shotFeedRolesForDevice(fromDevice?.deviceId, pstDeviceId, pgmDeviceId);
+  const toRoles = shotFeedRolesForDevice(toDevice?.deviceId, pstDeviceId, pgmDeviceId);
+  const thumb = { compact: true as const, ...SILENT_PLAYER };
 
   const pgmBusPlayer = onBusPlaybackStream ? (
     <StreamPlayer
@@ -106,6 +124,8 @@ function TransitionBlend({
       volume={volume}
       showLabel={false}
       enableSpeakerPlayback={false}
+      mediaFeedRole="pgm"
+      browserFeedRole="pgm"
       className="pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0"
       onVideoRef={onPgmVideoRef}
       onBusPlaybackStream={onBusPlaybackStream}
@@ -121,7 +141,8 @@ function TransitionBlend({
           quality={quality}
           showLabel={false}
           className="absolute inset-0"
-          {...SILENT_PLAYER}
+          {...thumb}
+          {...fromRoles}
         />
         <div className="absolute inset-0 overflow-hidden" style={{ clipPath: `inset(0 ${100 - p * 100}% 0 0)` }}>
           <StreamPlayer
@@ -130,7 +151,8 @@ function TransitionBlend({
             quality={quality}
             showLabel={false}
             className="absolute inset-0"
-            {...SILENT_PLAYER}
+            {...thumb}
+            {...toRoles}
           />
         </div>
         {pgmBusPlayer}
@@ -148,7 +170,8 @@ function TransitionBlend({
           showLabel={false}
           className="absolute inset-0"
           style={{ opacity: p < 0.5 ? 1 - p * 2 : 0 }}
-          {...SILENT_PLAYER}
+          {...thumb}
+          {...fromRoles}
         />
         <div className="absolute inset-0 bg-black" style={{ opacity: p < 0.5 ? p * 2 : 2 - p * 2 }} />
         <StreamPlayer
@@ -158,7 +181,8 @@ function TransitionBlend({
           showLabel={false}
           className="absolute inset-0"
           style={{ opacity: p < 0.5 ? 0 : (p - 0.5) * 2 }}
-          {...SILENT_PLAYER}
+          {...thumb}
+          {...toRoles}
         />
         {pgmBusPlayer}
       </div>
@@ -175,7 +199,8 @@ function TransitionBlend({
         showLabel={false}
         className="absolute inset-0"
         style={{ opacity: 1 - p }}
-        {...SILENT_PLAYER}
+        {...thumb}
+        {...fromRoles}
       />
       <StreamPlayer
         device={toDevice}
@@ -184,7 +209,8 @@ function TransitionBlend({
         showLabel={false}
         className="absolute inset-0"
         style={{ opacity: p }}
-        {...SILENT_PLAYER}
+        {...thumb}
+        {...toRoles}
       />
       {pgmBusPlayer}
     </div>
@@ -221,18 +247,48 @@ export function CompositeMonitor({
   onPgmPlaybackStream,
   onPgmOutputRef,
   pgmDeviceId = null,
+  pgmDevice = null,
+  pstDeviceId = null,
+  displayAutoKey = false,
   cleanOutput = false,
   embedded = false,
+  captureClone = false,
   replayTake = null,
   onReplayEnded,
 }: CompositeMonitorProps) {
   const sameAsPgm = Boolean(device && pgmDeviceId && device.deviceId === pgmDeviceId);
   const isPgm = label === 'PGM';
+  const mediaFeedRole = captureClone && isPgm ? 'pgm' : captureClone ? 'strip' : isPgm ? 'pgm' : 'pst';
+  const browserFeedRole = captureClone ? 'strip' : isPgm ? 'pgm' : 'pst';
+  const displayOverlayKey = Boolean(device && isDisplayFeedDevice(device));
+  const effectiveKeySettings: KeySettings = displayOverlayKey
+    ? { ...keySettings, fillSource: 'transparent' }
+    : keySettings.fillSource === 'transparent'
+      ? { ...keySettings, fillSource: 'camera' }
+      : keySettings;
+  const keyFillDevice = resolveKeyFillDevice({
+    keyedDevice: device,
+    subDevice: subDevice ?? null,
+    pgmDevice: pgmDevice ?? null,
+    pstDeviceId: pstDeviceId ?? null,
+    pgmDeviceId,
+  });
   const showPip =
     outputMode === 'pip' && subDevice && device && subDevice.deviceId !== device.deviceId;
   const keyFillReady =
-    keySettings.fillSource === 'preset' || Boolean(subDevice);
-  const showKey = outputMode === 'key' && keySettings.enabled && device && keyFillReady;
+    effectiveKeySettings.fillSource === 'preset' ||
+    effectiveKeySettings.fillSource === 'transparent' ||
+    Boolean(keyFillDevice);
+  const keyActiveForMonitor =
+    outputMode === 'key' &&
+    effectiveKeySettings.enabled &&
+    (displayAutoKey ? displayOverlayKey : true);
+  const showKey = keyActiveForMonitor && Boolean(device) && keyFillReady;
+  const showExternalKeyFill =
+    showKey &&
+    effectiveKeySettings.fillSource === 'transparent' &&
+    Boolean(keyFillDevice) &&
+    keyFillDevice!.deviceId !== device?.deviceId;
   const isTransitioning =
     isPgm &&
     !replayTake &&
@@ -244,13 +300,28 @@ export function CompositeMonitor({
   const [keyMainVideo, setKeyMainVideo] = useState<HTMLVideoElement | null>(null);
   const [keyFillVideo, setKeyFillVideo] = useState<HTMLVideoElement | null>(null);
 
-  const handleVideoRef = (el: HTMLVideoElement | null) => {
-    if (isPgm) onPgmVideoRef?.(el);
-  };
+  const overlayLayers =
+    device && isMediaFeedDevice(device)
+      ? {
+          ...layers,
+          videoOverlays: layers.videoOverlays.filter((o) => !o.liveOnPgm),
+          imageOverlays: layers.imageOverlays.filter((o) => !o.liveOnPgm),
+        }
+      : layers;
 
-  const handleBusPlaybackStream = (stream: MediaStream | null) => {
-    if (isPgm) onPgmPlaybackStream?.(stream);
-  };
+  const handleVideoRef = useCallback(
+    (el: HTMLVideoElement | null) => {
+      if (isPgm && !captureClone) onPgmVideoRef?.(el);
+    },
+    [isPgm, captureClone, onPgmVideoRef],
+  );
+
+  const handleBusPlaybackStream = useCallback(
+    (stream: MediaStream | null) => {
+      if (isPgm && !captureClone) onPgmPlaybackStream?.(stream);
+    },
+    [isPgm, captureClone, onPgmPlaybackStream],
+  );
 
   const monitorBody = (
     <div
@@ -279,34 +350,56 @@ export function CompositeMonitor({
                 audioDeviceId={isPgm ? audioDeviceId : null}
                 onBusPlaybackStream={isPgm ? handleBusPlaybackStream : undefined}
                 onPgmVideoRef={isPgm ? handleVideoRef : undefined}
+                pstDeviceId={pstDeviceId}
+                pgmDeviceId={pgmDeviceId}
               />
             ) : showKey ? (
               <>
+                {showExternalKeyFill && keyFillDevice && (
+                  <StreamPlayer
+                    device={keyFillDevice}
+                    quality={quality}
+                    audioMuted
+                    showLabel={false}
+                    compact
+                    className="absolute inset-0"
+                    displayFeedLive={false}
+                    mediaFeedRole="strip"
+                    browserFeedRole="strip"
+                  />
+                )}
                 <div className="pointer-events-none absolute inset-0 opacity-0">
                   <StreamPlayer
                     device={device}
                     quality={quality}
                     audioMuted
                     showLabel={false}
+                    compact
                     className="absolute inset-0"
                     onVideoRef={setKeyMainVideo}
                     displayFeedLive={isPgm}
+                    mediaFeedRole={mediaFeedRole}
+                    browserFeedRole={browserFeedRole}
+                    registerShot={!captureClone}
                   />
-                  {keySettings.fillSource === 'camera' && subDevice && (
+                  {effectiveKeySettings.fillSource === 'camera' && keyFillDevice && (
                     <StreamPlayer
-                      device={subDevice}
+                      device={keyFillDevice}
                       quality={quality}
                       audioMuted
                       showLabel={false}
+                      compact
                       className="absolute inset-0"
                       onVideoRef={setKeyFillVideo}
+                      mediaFeedRole="strip"
+                      browserFeedRole="strip"
                     />
                   )}
                 </div>
                 <ChromaKeyLayer
                   mainVideo={keyMainVideo}
                   keyVideo={keyFillVideo}
-                  keySettings={keySettings}
+                  keySettings={effectiveKeySettings}
                 />
                 {isPgm && (
                   <StreamPlayer
@@ -316,6 +409,8 @@ export function CompositeMonitor({
                     volume={volume}
                     audioDeviceId={audioDeviceId}
                     showLabel={false}
+                    mediaFeedRole="pgm"
+                    browserFeedRole="pgm"
                     className="pointer-events-none absolute h-0 w-0 opacity-0"
                     onVideoRef={handleVideoRef}
                     onBusPlaybackStream={handleBusPlaybackStream}
@@ -332,6 +427,9 @@ export function CompositeMonitor({
                 audioDeviceId={isPgm ? audioDeviceId : null}
                 showLabel={false}
                 className="absolute inset-0"
+                mediaFeedRole={mediaFeedRole}
+                browserFeedRole={browserFeedRole}
+                registerShot={!captureClone}
                 onVideoRef={isPgm ? handleVideoRef : undefined}
                 onBusPlaybackStream={isPgm ? handleBusPlaybackStream : undefined}
                 enableSpeakerPlayback={!isPgm && !sameAsPgm}
@@ -349,16 +447,16 @@ export function CompositeMonitor({
                   border: pip.border ? '2px solid rgba(255,255,255,0.7)' : 'none',
                 }}
               >
-                <StreamPlayer device={subDevice} quality={quality} audioMuted compact showLabel />
+                <StreamPlayer device={subDevice} quality={quality} audioMuted compact showLabel mediaFeedRole="strip" browserFeedRole="strip" />
               </div>
             )}
 
             <VideoOverlay
               type={overlay}
               deviceLabel={device?.label ?? ''}
-              layers={layers}
-              showSafeZone={layers.showSafeZone}
-              showCrosshair={layers.showCrosshair}
+              layers={overlayLayers}
+              showSafeZone={overlayLayers.showSafeZone}
+              showCrosshair={overlayLayers.showCrosshair}
               stagingPreview={stagingPreview}
               highlightLayerId={stagingPreview ? highlightLayerId : null}
               highlightLayerLabel={highlightLayerLabel}
@@ -380,7 +478,7 @@ export function CompositeMonitor({
     <div
       className={cn(
         'flex flex-col',
-        cleanOutput ? 'h-full w-full' : 'mixer-monitor flex-1',
+        cleanOutput ? 'h-full w-full' : 'mixer-monitor min-h-0 min-w-0 flex-1 overflow-hidden',
         !cleanOutput && isPgm && isOnAir && 'mixer-monitor-pgm',
       )}
     >

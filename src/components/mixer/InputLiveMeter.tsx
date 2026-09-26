@@ -21,6 +21,7 @@ interface InputLiveMeterProps {
   layout?: VisualizerLayout;
   size?: VisualizerSize;
   className?: string;
+  overrideStream?: MediaStream | null;
 }
 
 export function InputLiveMeter({
@@ -33,18 +34,19 @@ export function InputLiveMeter({
   layout = 'stack',
   size,
   className,
+  overrideStream,
 }: InputLiveMeterProps) {
-  const { getMeshStream, meshStreams } = useCloudCast();
+  const { getMeshStream, meshStreamVersions } = useCloudCast();
   const resolveStream = useAudioStreamResolver();
   const mixerMeters = useAudioMixerMeters();
   const streamId = resolveAudioStreamDeviceId(deviceId, getAudioSourceForDevice, linkedUsbAudio);
-  const stream = resolveStream?.(streamId) ?? getMeshStream(streamId);
+  const stream = overrideStream ?? resolveStream?.(streamId) ?? getMeshStream(streamId);
   const processedAnalyser = mixerMeters?.getChannelAnalyser(deviceId) ?? null;
   const streamRevision = useStreamAudioRevision(stream);
 
   return (
     <InputAudioVisualizer
-      key={`${streamId}-${stream?.id ?? 'none'}-${meshStreams.size}-${streamRevision}-${processedAnalyser ? 'dsp' : 'raw'}`}
+      key={`${streamId}-${stream?.id ?? 'none'}-${meshStreamVersions.get(deviceId ?? '') ?? 0}-${streamRevision}-${processedAnalyser ? 'dsp' : 'raw'}`}
       stream={processedAnalyser ? null : stream}
       analyser={processedAnalyser}
       enabled={enabled}

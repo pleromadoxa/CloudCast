@@ -1,4 +1,5 @@
 import { Mic, MicOff } from 'lucide-react';
+import { memo } from 'react';
 import type { Device, OverlayType, StreamQuality } from '../../types/device';
 import { isRealDevice, isVideoDevice } from '../../types/device';
 import type { ViewMode } from '../../types/controls';
@@ -27,7 +28,7 @@ interface PreviewSourceGridProps {
   onCutToSource?: (deviceId: string) => void;
 }
 
-function PreviewTile({
+const PreviewTile = memo(function PreviewTile({
   device,
   index,
   isPst,
@@ -95,6 +96,8 @@ function PreviewTile({
             volume={monitorVolume}
             audioDeviceId={monitorAudioDeviceId}
             enableSpeakerPlayback={isPst && device.deviceId !== pgmDeviceId && !isPgm}
+            mediaFeedRole={isPst ? 'pst' : isPgm ? 'pgm' : 'strip'}
+            browserFeedRole={isPst ? 'pst' : isPgm ? 'pgm' : 'strip'}
             compact
             showLabel={false}
             className="h-full w-full"
@@ -144,7 +147,7 @@ function PreviewTile({
       </div>
     </div>
   );
-}
+});
 
 export function PreviewSourceGrid({
   devices,

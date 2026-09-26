@@ -13,6 +13,7 @@ export function loadDisplayFeedState(): DisplayFeedState {
       ...createDefaultDisplayFeedState(),
       ...parsed,
       scripturePresets: parsed.scripturePresets ?? [],
+      lyricsPresets: parsed.lyricsPresets ?? [],
       customTemplates: parsed.customTemplates ?? [],
       keyMode: parsed.keyMode ?? false,
       defaultBibleTranslation: parsed.defaultBibleTranslation ?? 'web',

@@ -5,6 +5,7 @@ import type { OverlayPosition, TransitionGraphicType } from '../../../types/over
 import type { KeySettings, LayerSettings, OutputMode, PipSettings } from '../../../types/mixer';
 import { normalizeLayerSettings } from '../../../lib/layerSettings';
 import { resizeImageForOverlay } from '../../../lib/imageResize';
+import { inferImageOverlayDefaults } from '../../../lib/mediaImagePlacement';
 import { planAllowsAdvancedGraphics, planAllowsChromaKey } from '../../../lib/planFeatures';
 import { loadSavedLowerThirdPresets } from '../../../lib/savedPresetsStorage';
 import type { SavedLowerThirdPreset } from '../../../types/overlays';
@@ -17,8 +18,14 @@ import { ChromaBackgroundPicker } from './layers/ChromaBackgroundPicker';
 import type { ChromaBackgroundId } from '../../../types/chromaBackgrounds';
 import { TransitionStingerEditor } from './layers/TransitionStingerEditor';
 import { LowerThirdProduction } from './layers/LowerThirdProduction';
+import { WeatherPanelEditor } from './layers/WeatherPanelEditor';
+import { AdZoneEditor } from './layers/AdZoneEditor';
+import { ScoreboardEditor } from './layers/ScoreboardEditor';
+import { CountdownEditor } from './layers/CountdownEditor';
+import { SponsorBugEditor } from './layers/SponsorBugEditor';
+import { TickerLinesEditor } from './layers/TickerLinesEditor';
 import type { LayerStackId } from './layers/layerStackTypes';
-import { reorderStackOrder } from '../../../lib/graphicsStackOrder';
+import { ensureStackId, reorderStackOrder } from '../../../lib/graphicsStackOrder';
 import { PRESET_PLACEMENT } from '../../../lib/overlayPlacement';
 import { MIXER_QUICK_TERMS } from '../../../config/mixerGuide';
 import { FeatureHint } from '../FeatureHint';
@@ -33,7 +40,13 @@ interface GraphicsActions {
   toggleCrawlerLive: (live: boolean) => void;
   toggleBreakingLive: (live: boolean) => void;
   toggleLiveButtonLive: (live: boolean) => void;
+  toggleWeatherLive: (live: boolean) => void;
+  toggleAdZoneLive: (live: boolean) => void;
+  toggleScoreboardLive: (live: boolean) => void;
+  toggleCountdownLive: (live: boolean) => void;
+  toggleSponsorBugLive: (live: boolean) => void;
   toggleImageLive: (id: string, live: boolean) => void;
+  toggleVideoLive: (id: string, live: boolean) => void;
   clearAllPgmGraphics: () => void;
   removeStackLayer: (id: LayerStackId) => void;
   fireTransition: (type: TransitionGraphicType, title: string, headline: string) => void;
@@ -82,6 +95,7 @@ export function LayersPanel({
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const logoRef = useRef<HTMLInputElement>(null);
+  const lowerThirdLogoRef = useRef<HTMLInputElement>(null);
   const chromaAllowed = planAllowsChromaKey(planId);
   const advancedGraphics = planAllowsAdvancedGraphics(planId);
 
@@ -91,7 +105,14 @@ export function LayersPanel({
   const selectedImage = selectedImageId ? layers.imageOverlays.find((o) => o.id === selectedImageId) : null;
 
   const isAdvancedLayer = (id: LayerStackId) =>
-    id === 'breaking' || id === 'crawler' || id === 'transition' || id.startsWith('image:');
+    id === 'breaking' ||
+    id === 'crawler' ||
+    id === 'transition' ||
+    id === 'weather' ||
+    id === 'ad-zone' ||
+    id === 'scoreboard' ||
+    id === 'countdown' ||
+    id.startsWith('image:');
 
   const toggleLayerPreview = useCallback((id: LayerStackId, on: boolean) => {
     if (!advancedGraphics && isAdvancedLayer(id)) return;
@@ -100,6 +121,11 @@ export function LayersPanel({
     else if (id === 'crawler') graphics.patchLayers({ showCrawler: on });
     else if (id === 'breaking') graphics.patchLayers({ showBreakingNews: on });
     else if (id === 'live-button') graphics.patchLayers({ showLiveButton: on });
+    else if (id === 'weather') graphics.patchLayers({ showWeather: on });
+    else if (id === 'ad-zone') graphics.patchLayers({ showAdZone: on });
+    else if (id === 'scoreboard') graphics.patchLayers({ showScoreboard: on });
+    else if (id === 'countdown') graphics.patchLayers({ showCountdown: on });
+    else if (id === 'sponsor-bug') graphics.patchLayers({ showSponsorBug: on });
     else if (id.startsWith('image:')) {
       const imgId = id.slice(6);
       graphics.patchLayers({
@@ -110,10 +136,16 @@ export function LayersPanel({
 
   const selectLayer = useCallback((id: LayerStackId) => {
     if (!advancedGraphics && isAdvancedLayer(id)) return;
+    // Re-insert layers the operator previously removed from the stack.
+    if (!id.startsWith('image:') && !id.startsWith('video:') && !layers.graphicsStackOrder.includes(id)) {
+      graphics.patchLayers({ graphicsStackOrder: ensureStackId(layers.graphicsStackOrder, id) });
+    }
     onSelectLayer(id);
     const item = stack.find((s) => s.id === id);
-    if (item?.canPreview && !item.isPreview) toggleLayerPreview(id, true);
-  }, [onSelectLayer, stack, toggleLayerPreview, advancedGraphics]);
+    // Removed layers are not in the stack yet — still stage their preview.
+    const canPreview = item ? item.canPreview : id !== 'transition' && id !== 'chroma';
+    if (canPreview && !item?.isPreview) toggleLayerPreview(id, true);
+  }, [onSelectLayer, stack, toggleLayerPreview, advancedGraphics, graphics, layers.graphicsStackOrder]);
 
   const toggleLayerLive = (id: LayerStackId, live: boolean) => {
     if (live) toggleLayerPreview(id, true);
@@ -122,7 +154,13 @@ export function LayersPanel({
     else if (id === 'crawler') graphics.toggleCrawlerLive(live);
     else if (id === 'breaking') graphics.toggleBreakingLive(live);
     else if (id === 'live-button') graphics.toggleLiveButtonLive(live);
+    else if (id === 'weather') graphics.toggleWeatherLive(live);
+    else if (id === 'ad-zone') graphics.toggleAdZoneLive(live);
+    else if (id === 'scoreboard') graphics.toggleScoreboardLive(live);
+    else if (id === 'countdown') graphics.toggleCountdownLive(live);
+    else if (id === 'sponsor-bug') graphics.toggleSponsorBugLive(live);
     else if (id.startsWith('image:')) graphics.toggleImageLive(id.slice(6), live);
+    else if (id.startsWith('video:')) graphics.toggleVideoLive(id.slice(6), live);
   };
 
   const handleReorder = useCallback((fromIndex: number, toIndex: number) => {
@@ -149,15 +187,15 @@ export function LayersPanel({
     setUploadError(null);
     try {
       const { dataUrl, width, height } = await resizeImageForOverlay(file);
+      const placement = inferImageOverlayDefaults(width, height);
       const overlay = {
         id: crypto.randomUUID(),
         name: file.name.replace(/\.[^.]+$/, '').slice(0, 20) || 'Graphic',
         dataUrl,
         naturalWidth: width,
         naturalHeight: height,
-        scale: 35,
+        ...placement,
         opacity: 100,
-        position: 'top-left' as OverlayPosition,
         visible: true,
         liveOnPgm: false,
       };
@@ -191,6 +229,23 @@ export function LayersPanel({
           imageDataUrl: dataUrl,
           naturalWidth: width,
           naturalHeight: height,
+        },
+      });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Logo upload failed');
+    }
+  };
+
+  const handleLowerThirdLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const { dataUrl } = await resizeImageForOverlay(file, 256, 256);
+      graphics.patchLayers({
+        lowerThirdCustomization: {
+          ...layers.lowerThirdCustomization,
+          logoDataUrl: dataUrl,
         },
       });
     } catch (err) {
@@ -365,6 +420,70 @@ export function LayersPanel({
             <>
             <div className="layer-editor-card mb-2">
               <LayerTextEntry layerId={selectedId} layers={layers} onPatch={graphics.patchLayers} />
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-[8px] text-mixer-muted">Plate logo</span>
+                {layers.lowerThirdCustomization.logoDataUrl ? (
+                  <img
+                    src={layers.lowerThirdCustomization.logoDataUrl}
+                    alt=""
+                    className="h-7 rounded object-contain"
+                  />
+                ) : (
+                  <span className="rounded border border-dashed border-mixer-border px-2 py-1 text-[8px] text-mixer-muted">
+                    None
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="mixer-btn px-2 py-0.5 text-[8px]"
+                  onClick={() => lowerThirdLogoRef.current?.click()}
+                >
+                  {layers.lowerThirdCustomization.logoDataUrl ? 'Replace' : 'Upload'}
+                </button>
+                {layers.lowerThirdCustomization.logoDataUrl && (
+                  <button
+                    type="button"
+                    className="text-[8px] text-mixer-muted underline hover:text-red-400"
+                    onClick={() =>
+                      graphics.patchLayers({
+                        lowerThirdCustomization: {
+                          ...layers.lowerThirdCustomization,
+                          logoDataUrl: null,
+                        },
+                      })
+                    }
+                  >
+                    Remove
+                  </button>
+                )}
+                <input
+                  ref={lowerThirdLogoRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleLowerThirdLogoUpload}
+                />
+              </div>
+              {layers.lowerThirdCustomization.logoDataUrl && (
+                <label className="mt-1 text-[8px] text-mixer-muted">
+                  Logo size {layers.lowerThirdCustomization.logoScale ?? 100}%
+                  <input
+                    type="range"
+                    min={40}
+                    max={200}
+                    value={layers.lowerThirdCustomization.logoScale ?? 100}
+                    onChange={(e) =>
+                      graphics.patchLayers({
+                        lowerThirdCustomization: {
+                          ...layers.lowerThirdCustomization,
+                          logoScale: Number(e.target.value),
+                        },
+                      })
+                    }
+                    className="w-full accent-mixer-red"
+                  />
+                </label>
+              )}
               <p className="mt-2 text-[8px] text-mixer-green">Drag the lower third on PST preview to move it horizontally.</p>
             </div>
             <LowerThirdProduction
@@ -422,17 +541,27 @@ export function LayersPanel({
           )}
 
           {selectedId === 'crawler' && (
-            <div className="layer-editor-card flex flex-col gap-2">
-              <LayerTextEntry layerId={selectedId} layers={layers} onPatch={graphics.patchLayers} />
-              <div className="flex flex-wrap gap-1">
-              {(['news-red', 'sport-black', 'minimal'] as const).map((s) => (
-                <button key={s} type="button" onClick={() => graphics.patchLayers({ crawler: { ...layers.crawler, style: s } })} className={cn('mixer-btn px-2 py-1 text-[8px]', layers.crawler.style === s && 'mixer-btn-active')}>{s.replace('-', ' ')}</button>
-              ))}
-              <label className="ml-auto flex items-center gap-1 text-[8px] text-mixer-muted">Speed
-                <input type="range" min={1} max={3} step={1} value={layers.crawler.speed} onChange={(e) => graphics.patchLayers({ crawler: { ...layers.crawler, speed: Number(e.target.value) as 1 | 2 | 3 } })} className="w-16" />
-              </label>
-              </div>
-            </div>
+            <TickerLinesEditor layers={layers} onPatch={graphics.patchLayers} />
+          )}
+
+          {selectedId === 'weather' && (
+            <WeatherPanelEditor layers={layers} onPatch={graphics.patchLayers} />
+          )}
+
+          {selectedId === 'ad-zone' && (
+            <AdZoneEditor layers={layers} onPatch={graphics.patchLayers} />
+          )}
+
+          {selectedId === 'scoreboard' && (
+            <ScoreboardEditor layers={layers} onPatch={graphics.patchLayers} />
+          )}
+
+          {selectedId === 'countdown' && (
+            <CountdownEditor layers={layers} onPatch={graphics.patchLayers} />
+          )}
+
+          {selectedId === 'sponsor-bug' && (
+            <SponsorBugEditor layers={layers} onPatch={graphics.patchLayers} />
           )}
 
           {selectedImage && selectedId.startsWith('image:') && (
@@ -528,23 +657,43 @@ export function LayersPanel({
                     <button
                       type="button"
                       onClick={() => onPatchKey({ fillSource: 'preset', enabled: true })}
-                      className={cn('mixer-btn flex-1 py-1 text-[9px]', keySettings.fillSource !== 'camera' && 'mixer-btn-active')}
+                      className={cn(
+                        'mixer-btn flex-1 py-1 text-[9px]',
+                        keySettings.fillSource === 'preset' && 'mixer-btn-active',
+                      )}
                     >
                       Preset BG
                     </button>
                     <button
                       type="button"
-                      onClick={() => onPatchKey({ fillSource: 'camera', enabled: true })}
-                      className={cn('mixer-btn flex-1 py-1 text-[9px]', keySettings.fillSource === 'camera' && 'mixer-btn-active')}
+                      onClick={() => onPatchKey({ fillSource: 'transparent', enabled: true })}
+                      className={cn(
+                        'mixer-btn flex-1 py-1 text-[9px]',
+                        keySettings.fillSource === 'transparent' && 'mixer-btn-active',
+                      )}
                     >
-                      Aux (Sub) camera
+                      Overlay
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onPatchKey({ fillSource: 'camera', enabled: true })}
+                      className={cn(
+                        'mixer-btn flex-1 py-1 text-[9px]',
+                        keySettings.fillSource === 'camera' && 'mixer-btn-active',
+                      )}
+                    >
+                      Aux cam
                     </button>
                   </div>
-                  {keySettings.fillSource !== 'camera' ? (
+                  {keySettings.fillSource === 'preset' ? (
                     <ChromaBackgroundPicker
                       selectedId={(keySettings.backgroundId || 'gradient-broadcast') as ChromaBackgroundId}
                       onSelect={(id) => onPatchKey({ backgroundId: id, fillSource: 'preset', enabled: true })}
                     />
+                  ) : keySettings.fillSource === 'transparent' ? (
+                    <FeatureHint>
+                      Overlay mode — green keys out to the Sub (aux) camera beneath. Use for Regal Display logos and lower thirds.
+                    </FeatureHint>
                   ) : (
                     <FeatureHint>{MIXER_QUICK_TERMS.auxSub}</FeatureHint>
                   )}

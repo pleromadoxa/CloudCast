@@ -7,10 +7,12 @@ const PALETTES = [
   { primary: '#3f3f46', accent: '#71717a', wood: '#78350f', fabric: '#44403c', metal: '#a1a1aa' },
   { primary: '#1e3a5f', accent: '#3b82f6', wood: '#92400e', fabric: '#1e40af', metal: '#94a3b8' },
   { primary: '#14532d', accent: '#22c55e', wood: '#713f12', fabric: '#166534', metal: '#86efac' },
-  { primary: '#4c1d95', accent: '#a855f7', wood: '#5c4033', fabric: '#581c87', metal: '#c4b5fd' },
+  // Aubergine & brass — deep, desaturated plum instead of neon violet.
+  { primary: '#3b2f4a', accent: '#b08d57', wood: '#5c4033', fabric: '#4a3d5c', metal: '#cbb893' },
   { primary: '#7f1d1d', accent: '#ef4444', wood: '#6b4423', fabric: '#991b1b', metal: '#fca5a5' },
   { primary: '#134e4a', accent: '#14b8a6', wood: '#854d0e', fabric: '#115e59', metal: '#5eead4' },
-  { primary: '#312e81', accent: '#6366f1', wood: '#44403c', fabric: '#3730a3', metal: '#a5b4fc' },
+  // Deep navy & brushed steel — a broadcast look, not glowing indigo.
+  { primary: '#26304a', accent: '#8fa3bf', wood: '#44403c', fabric: '#2c3a55', metal: '#b6c2d2' },
   { primary: '#422006', accent: '#f59e0b', wood: '#92400e', fabric: '#78350f', metal: '#fcd34d' },
 ];
 
@@ -498,8 +500,8 @@ function buildTvScreen(v: number): THREE.Group {
   const z = -2.48;
   const bezel = pbrSolid('#18181b', { metalness: 0.55, roughness: 0.28, envMapIntensity: 1.2 });
   const screen = pbrFromTexture('screen_glow', v, {
-    emissive: v % 2 === 0 ? '#38bdf8' : '#6366f1',
-    emissiveIntensity: 0.55,
+    emissive: v % 2 === 0 ? '#38bdf8' : '#4f86c6',
+    emissiveIntensity: 0.38,
     roughness: 0.15,
     metalness: 0.05,
   });
@@ -553,9 +555,10 @@ function buildOfficeChair(v: number): THREE.Group {
   return g;
 }
 
-function buildWhiteboard(_v: number): THREE.Group {
+function buildWhiteboard(v: number): THREE.Group {
   const g = new THREE.Group();
-  g.add(box(1.8, 1.0, 0.04, mat('#fafafa'), 0, 1.5, -2.6));
+  const face = v % 2 < 1 ? '#fafafa' : '#f4f4f5';
+  g.add(box(1.8, 1.0, 0.04, mat(face), 0, 1.5, -2.6));
   g.add(box(1.82, 1.02, 0.02, mat('#71717a', { metalness: 0.5 }), 0, 1.5, -2.62));
   return g;
 }
@@ -564,7 +567,7 @@ function buildLedPanel(v: number): THREE.Group {
   const g = new THREE.Group();
   const p = pal(v);
   g.add(box(3.5, 2.0, 0.08, mat('#0a0a0a'), 0, 1.8, -3));
-  g.add(box(3.4, 1.9, 0.02, mat(p.accent, { emissive: p.accent, emissiveIntensity: 0.55 }), 0, 1.8, -2.95));
+  g.add(box(3.4, 1.9, 0.02, mat(p.accent, { emissive: p.accent, emissiveIntensity: 0.32 }), 0, 1.8, -2.95));
   return g;
 }
 
@@ -709,12 +712,13 @@ function buildTrackLight(v: number): THREE.Group {
   return g;
 }
 
-function buildCeilingLight(_v: number): THREE.Group {
+function buildCeilingLight(v: number): THREE.Group {
   const g = new THREE.Group();
   const trim = pbrSolid('#fafafa', { roughness: 0.35 });
   g.add(cyl(0.35, 0.35, 0.04, trim, 0, 2.88, -1.5));
-  g.add(cyl(0.28, 0.28, 0.02, pbrSolid('#fef9c3', { emissive: '#fde047', emissiveIntensity: 0.7 }), 0, 2.86, -1.5));
-  const light = new THREE.PointLight('#fffbeb', 0.45, 8);
+  const glow = v % 2 < 1 ? '#fde047' : '#fde68a';
+  g.add(cyl(0.28, 0.28, 0.02, pbrSolid('#fef9c3', { emissive: glow, emissiveIntensity: 0.7 }), 0, 2.86, -1.5));
+  const light = new THREE.PointLight('#fffbeb', 0.45 + (v % 3) * 0.08, 8);
   light.position.set(0, 2.82, -1.5);
   g.add(light);
   return g;
@@ -734,8 +738,10 @@ function buildWallShelf(v: number): THREE.Group {
   g.add(box(w, 0.035, 0.28, woodMat(v), 0, 1.5, -2.82));
   g.add(box(0.04, 0.04, 0.28, metalMat('#71717a', v), -w / 2 + 0.04, 1.48, -2.82));
   g.add(box(0.04, 0.04, 0.28, metalMat('#71717a', v), w / 2 - 0.04, 1.48, -2.82));
+  // Natural book-cloth tones (forest, burgundy, navy, sand, charcoal).
+  const bookColors = ['#2f4a3c', '#6e2b2b', '#2c3a55', '#b3a284', '#3f3f46'];
   for (let i = 0; i < 2 + (v % 3); i++) {
-    g.add(box(0.06, 0.22, 0.14, pbrSolid('#6366f1', { roughness: 0.7 }), -w / 2 + 0.2 + i * 0.25, 1.62, -2.78));
+    g.add(box(0.06, 0.22, 0.14, pbrSolid(bookColors[(v + i) % bookColors.length], { roughness: 0.7 }), -w / 2 + 0.2 + i * 0.25, 1.62, -2.78));
   }
   return g;
 }

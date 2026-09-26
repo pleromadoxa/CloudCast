@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useDisplayFeedOptional } from '../../context/DisplayFeedContext';
 import { DISPLAY_CANVAS_HEIGHT, DISPLAY_CANVAS_WIDTH } from '../../lib/displayCanvas';
 import { paintDisplaySlideToCanvas } from '../../lib/displaySlideCanvasDraw';
+import { useOwnedVideoOutRef } from '../../lib/videoOutRef';
 import { cn } from '../../lib/utils';
 
 interface DisplayFeedVideoCaptureProps {
@@ -26,9 +27,13 @@ export function DisplayFeedVideoCapture({
   const display = useDisplayFeedOptional();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const captureTrackRef = useRef<MediaStreamTrack | null>(null);
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>());
+  const { bindVideoOutRef } = useOwnedVideoOutRef(onVideoRef);
 
-  const slide = live ? display?.liveSlide : display?.previewSlide;
+  const slide = live
+    ? (display?.liveSlide ?? display?.previewSlide)
+    : display?.previewSlide;
   const keyMode = display?.state.keyMode ?? false;
   const holdBg = display?.state.holdBackground;
   const label = live
@@ -36,6 +41,14 @@ export function DisplayFeedVideoCapture({
       ? 'Display Feed · LIVE'
       : 'Display Feed · HOLD'
     : 'Display Feed · PREVIEW';
+
+  const bindCaptureVideoRef = useCallback(
+    (el: HTMLVideoElement | null) => {
+      videoRef.current = el;
+      bindVideoOutRef(el);
+    },
+    [bindVideoOutRef],
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -45,16 +58,33 @@ export function DisplayFeedVideoCapture({
     canvas.width = DISPLAY_CANVAS_WIDTH;
     canvas.height = DISPLAY_CANVAS_HEIGHT;
 
+    canvas.style.position = 'fixed';
+    canvas.style.left = '-9999px';
+    canvas.style.top = '0';
+    canvas.style.width = `${DISPLAY_CANVAS_WIDTH}px`;
+    canvas.style.height = `${DISPLAY_CANVAS_HEIGHT}px`;
+    canvas.style.pointerEvents = 'none';
+    canvas.setAttribute('aria-hidden', 'true');
+    if (!canvas.parentElement) {
+      document.body.appendChild(canvas);
+    }
+
     const stream = canvas.captureStream(30);
+    captureTrackRef.current = stream.getVideoTracks()[0] ?? null;
     video.srcObject = stream;
     void video.play().catch(() => undefined);
-    onVideoRef?.(video);
+    bindVideoOutRef(video);
 
     return () => {
-      onVideoRef?.(null);
+      bindVideoOutRef(null);
       video.srcObject = null;
+      captureTrackRef.current = null;
+      if (canvas.parentElement) {
+        canvas.parentElement.removeChild(canvas);
+      }
+      for (const track of stream.getTracks()) track.stop();
     };
-  }, [onVideoRef]);
+  }, [bindVideoOutRef]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -65,6 +95,8 @@ export function DisplayFeedVideoCapture({
     let raf = 0;
     const draw = () => {
       paintDisplaySlideToCanvas(ctx, slide ?? null, holdBg, keyMode, imageCacheRef.current);
+      const track = captureTrackRef.current as (MediaStreamTrack & { requestFrame?: () => void }) | null;
+      track?.requestFrame?.();
       raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
@@ -73,13 +105,14 @@ export function DisplayFeedVideoCapture({
 
   return (
     <div className={cn('relative h-full w-full overflow-hidden bg-black', className)}>
-      <canvas ref={canvasRef} className="pointer-events-none absolute h-0 w-0 opacity-0" aria-hidden />
+      <canvas ref={canvasRef} className="pointer-events-none absolute h-0 w-0 opacity-0" aria-hidden data-pgm-capture="1" />
       <video
-        ref={videoRef}
+        ref={bindCaptureVideoRef}
         className="h-full w-full object-cover"
         playsInline
         muted
         autoPlay
+        data-pgm-capture="1"
       />
       {showLabel && !compact && (
         <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/80 to-transparent px-2 py-1">

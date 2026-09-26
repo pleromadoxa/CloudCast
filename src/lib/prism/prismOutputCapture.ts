@@ -7,10 +7,36 @@ export interface PrismPipOverlay {
   label?: string;
 }
 
+/** A rendered 3D motion graphics canvas composited over the program frame. */
+export interface PrismMotionOverlay {
+  canvas: HTMLCanvasElement;
+  /** 0–1 — used for fade-outs while the timeline winds down. */
+  opacity?: number;
+  /** Cinematic 2.39:1 bars drawn over the composited frame. */
+  letterbox?: boolean;
+}
+
 export interface PrismCaptureOverlay {
   watermark?: boolean;
   lowerThird?: PrismLowerThird | null;
   pipOverlays?: PrismPipOverlay[];
+  /** WebGPU backdrop plate — composited first, under the 3D scene. */
+  motionBackdrop?: PrismMotionOverlay | null;
+  motion?: PrismMotionOverlay | null;
+}
+
+/**
+ * A drawable program source — either the WebGL/canvas stage produced by the
+ * local engines, or the `<video>` carrying a remote Unreal Pixel Streaming
+ * render. Both are cover-fitted identically so overlays stay aligned.
+ */
+export type PrismCaptureSource = HTMLCanvasElement | HTMLVideoElement;
+
+function sourceSize(source: PrismCaptureSource): { sw: number; sh: number } {
+  if (source instanceof HTMLVideoElement) {
+    return { sw: source.videoWidth, sh: source.videoHeight };
+  }
+  return { sw: source.width, sh: source.height };
 }
 
 /** Captures a WebGL/Canvas element into a broadcast MediaStream. */
@@ -19,7 +45,7 @@ export class PrismOutputCapture {
   private ctx: CanvasRenderingContext2D;
   private raf = 0;
   private stopping = false;
-  private source: HTMLCanvasElement | null = null;
+  private source: PrismCaptureSource | null = null;
   private getOverlay: () => PrismCaptureOverlay = () => ({});
 
   constructor(width = 1280, height = 720) {
@@ -30,7 +56,7 @@ export class PrismOutputCapture {
   }
 
   start(
-    source: HTMLCanvasElement,
+    source: PrismCaptureSource,
     options?: {
       watermark?: boolean;
       width?: number;
@@ -48,8 +74,7 @@ export class PrismOutputCapture {
 
     const paint = () => {
       if (this.stopping || !this.source) return;
-      const sw = this.source.width;
-      const sh = this.source.height;
+      const { sw, sh } = sourceSize(this.source);
       if (sw < 2 || sh < 2) {
         this.raf = requestAnimationFrame(paint);
         return;
@@ -84,6 +109,37 @@ export class PrismOutputCapture {
           this.ctx.fillStyle = 'rgba(255,255,255,0.85)';
           this.ctx.font = '14px system-ui, sans-serif';
           this.ctx.fillText(lt.subtitle, 64, barY + 50);
+        }
+      }
+
+      // 3D motion graphics (outros, stings, 3D lower thirds) sit above the
+      // set and PiP layers but below the free-tier watermark. The WebGPU
+      // backdrop plate is drawn first so the scene composites over it with
+      // its own alpha — both layers are cover-fitted identically, so they
+      // stay pixel-aligned.
+      const drawLayer = (layer: PrismMotionOverlay | null | undefined) => {
+        const layerCanvas = layer?.canvas;
+        const alpha = Math.max(0, Math.min(1, layer?.opacity ?? 1));
+        if (!layerCanvas || layerCanvas.width <= 8 || layerCanvas.height <= 8 || alpha <= 0.004) return;
+        const lScale = Math.min(dw / layerCanvas.width, dh / layerCanvas.height);
+        const lw = layerCanvas.width * lScale;
+        const lh = layerCanvas.height * lScale;
+        this.ctx.save();
+        this.ctx.globalAlpha = alpha;
+        this.ctx.drawImage(layerCanvas, (dw - lw) / 2, (dh - lh) / 2, lw, lh);
+        this.ctx.restore();
+      };
+
+      const motionOverlay = overlay.motion;
+      drawLayer(overlay.motionBackdrop);
+      drawLayer(motionOverlay);
+
+      if (motionOverlay?.letterbox) {
+        const bar = Math.max(0, (1 - dw / dh / 2.39) / 2) * dh;
+        if (bar > 0.5) {
+          this.ctx.fillStyle = '#000000';
+          this.ctx.fillRect(0, 0, dw, bar);
+          this.ctx.fillRect(0, dh - bar, dw, bar);
         }
       }
 

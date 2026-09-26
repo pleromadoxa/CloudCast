@@ -1,6 +1,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Device, DeviceStatus } from '../types/device';
-import { isRealDevice } from '../types/device';
+import { isAudioOnlyDevice, isRealDevice } from '../types/device';
+import { hasUsableAudio, hasUsableVideo } from './streamAudioHub';
 
 /** Mobile heartbeats every 15s — treat active slots as stale shortly after. */
 export const DEVICE_HEARTBEAT_STALE_MS = 22_000;
@@ -15,6 +16,12 @@ export interface DeviceReconcileContext {
   hasMeshStream: boolean;
   /** Mesh carries video (not audio-only bridge on Regal Cloud). */
   hasMeshVideo?: boolean;
+  /** Regal Cloud WHEP playback carries video. */
+  hasWhepVideo?: boolean;
+  /** Regal Cloud WHEP playback carries audio. */
+  hasWhepAudio?: boolean;
+  /** WHEP session negotiated (may still await WHIP encoder). */
+  whepConnected?: boolean;
   peerState?: RTCPeerConnectionState;
   connectingSinceMs?: number | null;
   nowMs?: number;
@@ -91,6 +98,16 @@ export function isMeshStreamPresent(stream: MediaStream | null | undefined): boo
   return tracks.length > 0 && tracks.some((track) => track.readyState !== 'ended');
 }
 
+/** Mesh stream meets what this device slot expects (video for cameras, audio for audio-only). */
+export function meshDeviceMediaReady(
+  device: Device | null | undefined,
+  stream: MediaStream | null | undefined,
+): boolean {
+  if (!isMeshStreamPresent(stream)) return false;
+  if (device && isAudioOnlyDevice(device)) return hasUsableAudio(stream);
+  return hasUsableVideo(stream);
+}
+
 export function isActiveDeviceStatus(status: DeviceStatus): boolean {
   return status === 'live' || status === 'connecting';
 }
@@ -100,6 +117,13 @@ export function isDeviceLinkedOnSession(device: Device): boolean {
   if (device.status === 'live') return true;
   if (device.status !== 'connecting') return false;
   return Boolean(device.isOnline || device.connectionState === 'connected');
+}
+
+/** Put this camera on PST/PGM even before the first decoded frame. */
+export function isRoutableMixerSource(device: Device): boolean {
+  if (!isRealDevice(device)) return false;
+  if (device.status === 'live') return true;
+  return isDeviceLinkedOnSession(device);
 }
 
 /** UI-facing connection phase (distinct from DB `DeviceStatus`). */
@@ -188,10 +212,12 @@ export function reconcileDeviceConnectivity(
   const now = new Date(nowMs).toISOString();
   const meshActive = context.hasMeshStream;
   const meshVideo = context.hasMeshVideo ?? false;
+  const whepVideo = context.hasWhepVideo ?? false;
+  const whepAudio = context.hasWhepAudio ?? false;
   const { presenceOnline, peerState, connectingSinceMs, videoTransport } = context;
   const cloudPlayback = deviceHasCloudPlayback(device, videoTransport);
 
-  if (meshActive && (videoTransport === 'mesh' || meshVideo)) {
+  if (whepVideo || meshVideo) {
     return {
       ...device,
       status: 'live',
@@ -201,8 +227,20 @@ export function reconcileDeviceConnectivity(
     };
   }
 
-  /** Regal Cloud: mesh audio bridge is linked — not live picture until WHEP or mesh video. */
-  if (meshActive && cloudPlayback && !meshVideo) {
+  if (meshActive && (videoTransport === 'mesh' || !cloudPlayback)) {
+    if (meshVideo || isAudioOnlyDevice(device)) {
+      return {
+        ...device,
+        status: 'live',
+        isOnline: true,
+        connectionState: 'connected',
+        lastSeenAt: now,
+      };
+    }
+  }
+
+  /** Regal Cloud: mesh/WHEP audio linked — awaiting WHIP video or mesh fallback picture. */
+  if (cloudPlayback && (meshActive || whepAudio || context.whepConnected)) {
     return {
       ...device,
       status: 'connecting',
@@ -266,8 +304,9 @@ export function reconcileDeviceConnectivity(
 
   const staleLiveWithoutFeed =
     device.status === 'live' &&
-    !meshActive &&
-    !cloudPlayback &&
+    !meshVideo &&
+    !whepVideo &&
+    !isAudioOnlyDevice(device) &&
     !presenceOnline;
 
   if (heartbeatStale || connectingTimedOut || staleLiveWithoutFeed) {

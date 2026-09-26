@@ -1,8 +1,8 @@
-# CloudCast by Quantum Regal
+# CloudCast by Spatial Regal
 
 > Professional browser-based broadcast tools — video mixer, audio console, virtual production, instant replay, worship display, and online DAW.
 
-CloudCast is a cloud broadcast production platform by Quantum Regal Digital Labs. Six products sold individually or as CloudCast Universal bundle.
+CloudCast is a cloud broadcast production platform by Spatial Regal Digital Labs. Six products sold individually or as CloudCast Universal bundle.
 
 ## Products
 

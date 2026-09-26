@@ -28,11 +28,16 @@ export interface FatChannelParams {
 
 export type ConsoleBank = 'inputs' | 'mix' | 'fx' | 'routing';
 
+/** Console density — compact hides Fat Channel, FX, routing, and USB panels. */
+export type ConsoleViewMode = 'compact' | 'advanced';
+
 export interface AudioConsoleState {
   /** Console power — when false, all buses are silent. */
   consoleEnabled: boolean;
   /** Peak-hold mode for master meters (latching peak LEDs). */
   peakHoldEnabled: boolean;
+  /** Compact vs full StudioLive surface. */
+  consoleViewMode: ConsoleViewMode;
   masterVolume: number;
   masterMuted: boolean;
   monitorMuted: boolean;
@@ -74,6 +79,7 @@ function defaultConsoleState(): AudioConsoleState {
   return {
     consoleEnabled: true,
     peakHoldEnabled: false,
+    consoleViewMode: 'advanced',
     masterVolume: 80,
     masterMuted: false,
     monitorMuted: false,
@@ -281,6 +287,14 @@ export function useAudioConsoleState(devices: Device[]) {
     setState((prev) => ({ ...prev, peakHoldEnabled: !prev.peakHoldEnabled }));
   }, []);
 
+  const onSetConsoleViewMode = useCallback((consoleViewMode: ConsoleViewMode) => {
+    setState((prev) => ({
+      ...prev,
+      consoleViewMode,
+      activeBank: consoleViewMode === 'compact' ? 'inputs' : prev.activeBank,
+    }));
+  }, []);
+
   const onSetFatParam = useCallback(
     (deviceId: string, key: keyof FatChannelParams, value: number | boolean) => {
       setState((prev) => ({
@@ -461,6 +475,7 @@ export function useAudioConsoleState(devices: Device[]) {
     onToggleMonitorMute,
     onToggleConsoleEnabled,
     onTogglePeakHold,
+    onSetConsoleViewMode,
     onSetFatParam,
     onToggleHpfBypass,
     onPatchNoiseCancel,

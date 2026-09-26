@@ -73,7 +73,7 @@ export function getLowerThirdSampleText(id: LowerThirdTemplateId): { title: stri
   const samples: Record<LowerThirdCategory, { title: string; sub: string }> = {
     news: { title: 'BREAKING NEWS', sub: 'CloudCast Live · New York' },
     sports: { title: 'FINAL SCORE', sub: 'Week 12 · Championship' },
-    corporate: { title: 'Quarterly Briefing', sub: 'Quantum Regal Digital Labs' },
+    corporate: { title: 'Quarterly Briefing', sub: 'Spatial Regal Digital Labs' },
     live: { title: 'CloudCast Live', sub: 'streaming now' },
     creative: { title: 'Sarah Chen', sub: 'Chief Correspondent' },
   };

@@ -15,6 +15,9 @@ import type {
 
 export type ViewMode = 'grid' | 'focus' | 'single';
 
+/** Control-deck density for the Video Mixer. */
+export type MixerViewMode = 'compact' | 'advanced';
+
 export interface DashboardControls {
   selectedStreamIds: string[];
   streamQuality: Record<string, StreamQuality>;
@@ -23,6 +26,8 @@ export interface DashboardControls {
   globalOverlay: OverlayType;
   statusFilter: import('./device').DeviceStatus | 'all';
   viewMode: ViewMode;
+  /** Compact = core panels; Advanced = full multi-panel deck. */
+  mixerViewMode: MixerViewMode;
   focusedDeviceId: string | null;
   showOfflineTiles: boolean;
 
@@ -38,6 +43,8 @@ export interface DashboardControls {
   isRecording: boolean;
   showMultiview: boolean;
   fullscreenPgm: boolean;
+  /** Simple production layout — hides chrome, source strip, and non-essential panels. */
+  simpleProductionView: boolean;
 
   transition: TransitionSettings;
   pip: PipSettings;

@@ -2,6 +2,8 @@ import type { CloudCastProductId, ProductEntitlements, ProductSubscriptionSummar
 import { CLOUDCAST_PRODUCTS, UNIVERSAL_TIER_BY_ID } from '../config/products';
 import type { PlanTier, ProductPlanTier, UniversalPlanTier, UserProfile } from '../types/plans';
 import { isUniversalPlanTier, PLAN_LABELS } from '../types/plans';
+import { isDashboardPreferenceEnabled } from './dashboardPreferences';
+import { isPlatformProductEnabled } from './platformProductServices';
 
 export function isUniversalPlan(planId: PlanTier | null | undefined): boolean {
   return isUniversalPlanTier(planId);
@@ -70,7 +72,8 @@ function isProductPlanTier(value: PlanTier): value is ProductPlanTier {
   return value === 'free' || value === 'pro' || value === 'pro_master';
 }
 
-export function canAccessProduct(
+/** Plan entitlement only — ignores user dashboard visibility preferences. */
+export function hasProductEntitlement(
   profile: UserProfile | null | undefined,
   product: CloudCastProductId,
 ): boolean {
@@ -78,6 +81,28 @@ export function canAccessProduct(
   if (isUniversalPlan(profile.plan_id) || profile.entitlements?.universal) return true;
   const tier = resolveProductPlan(profile, product);
   return tier === 'free' || tier === 'pro' || tier === 'pro_master';
+}
+
+/**
+ * Whether the user may open a product dashboard.
+ * Requires platform service enabled, Free-or-higher plan entitlement,
+ * AND (for toggleable products) an enabled preference.
+ */
+export function canAccessProduct(
+  profile: UserProfile | null | undefined,
+  product: CloudCastProductId,
+): boolean {
+  if (!isPlatformProductEnabled(product)) return false;
+  if (!hasProductEntitlement(profile, product)) return false;
+  return isDashboardPreferenceEnabled(profile, product);
+}
+
+/** Alias for route/nav gating that combines plan + preference. */
+export function canOpenDashboard(
+  profile: UserProfile | null | undefined,
+  product: CloudCastProductId,
+): boolean {
+  return canAccessProduct(profile, product);
 }
 
 /** Link audio PGM into the video mixer — included on all Universal bundles. */

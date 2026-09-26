@@ -3,7 +3,13 @@ export type LayerStackId =
   | 'breaking'
   | 'live-button'
   | 'lower-third'
+  | 'weather'
+  | 'scoreboard'
+  | 'ad-zone'
+  | 'sponsor-bug'
+  | 'countdown'
   | 'logo'
   | 'crawler'
   | 'chroma'
-  | `image:${string}`;
+  | `image:${string}`
+  | `video:${string}`;

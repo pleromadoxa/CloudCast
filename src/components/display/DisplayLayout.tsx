@@ -28,6 +28,7 @@ import { useProduction } from '../../context/ProductionContext';
 import { useDisplayKeyboardShortcuts } from '../../hooks/useDisplayKeyboardShortcuts';
 import { REGAL_DISPLAY_DEVICE_ID } from '../../types/displayFeed';
 import { buildCongregationViewUrl } from '../../lib/displayFeedSync';
+import { canAccessProduct } from '../../lib/productEntitlements';
 import { DisplaySlideRenderer } from './DisplaySlideRenderer';
 import { DisplayControlDeck } from './DisplayControlDeck';
 import { AccessCodePanel } from '../session/AccessCodePanel';
@@ -125,6 +126,10 @@ export function DisplayLayout({ hidden = false }: DisplayLayoutProps) {
     ? feed.state.slides.find((s) => s.id === feed.state.playlist[feed.state.playlistIndex])
     : null;
 
+  if (hidden && !feed.isLive) {
+    return null;
+  }
+
   return (
     <div
       className={cn(
@@ -133,47 +138,55 @@ export function DisplayLayout({ hidden = false }: DisplayLayoutProps) {
       aria-hidden={hidden}
     >
       {!hidden && (
-      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-mixer-border bg-mixer-panel px-3 py-2 sm:px-4">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <MonitorPlay className="h-7 w-7 shrink-0 text-violet-400 sm:h-8 sm:w-8" />
-          <span className="text-xs font-bold tracking-[0.18em] text-violet-300 sm:text-sm">REGAL DISPLAY</span>
-          {profile && (
-            <span className="rounded bg-white/5 px-2 py-0.5 text-[9px] font-bold tracking-wider text-mixer-muted">
-              {profile.plan.name.toUpperCase()}
-            </span>
-          )}
-          {feed.isLive && (
-            <span className="animate-pulse text-[10px] font-bold text-emerald-400">● DISPLAY LIVE</span>
+      <header className="dashboard-header flex shrink-0 flex-col gap-1 border-b border-mixer-border bg-mixer-panel px-3 py-2 sm:px-4">
+        <div className="dashboard-header-top flex min-w-0 items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <MonitorPlay className="h-7 w-7 shrink-0 text-violet-400 sm:h-8 sm:w-8" />
+            <span className="text-xs font-bold tracking-[0.18em] text-violet-300 sm:text-sm">REGAL DISPLAY</span>
+            {profile && (
+              <span className="rounded bg-white/5 px-2 py-0.5 text-[9px] font-bold tracking-wider text-mixer-muted">
+                {profile.plan.name.toUpperCase()}
+              </span>
+            )}
+            {feed.isLive && (
+              <span className="animate-pulse text-[10px] font-bold text-emerald-400">● DISPLAY LIVE</span>
+            )}
+          </div>
+
+          {cloudcast && (
+            <AccessCodePanel
+              session={cloudcast.session}
+              isLoading={cloudcast.sessionLoading}
+              onRegenerate={cloudcast.regenerateCode}
+              isRegenerating={cloudcast.isRegenerating}
+              product="video"
+              error={cloudcast.error}
+              onRetry={cloudcast.reconnect}
+              className="dashboard-header-access shrink-0"
+            />
           )}
         </div>
 
-        {cloudcast && (
-          <AccessCodePanel
-            session={cloudcast.session}
-            isLoading={cloudcast.sessionLoading}
-            onRegenerate={cloudcast.regenerateCode}
-            isRegenerating={cloudcast.isRegenerating}
-            product="video"
-            error={cloudcast.error}
-            onRetry={cloudcast.reconnect}
-            className="min-w-0 flex"
-          />
-        )}
-
-        <div className="flex shrink-0 items-center gap-2 text-[10px] sm:gap-3">
-          <ProgramPresetToolbar />
-          <Link to="/hub" className="hidden items-center gap-1 text-mixer-muted hover:text-white lg:inline-flex">
-            <LayoutGrid className="h-3.5 w-3.5" /> HUB
-          </Link>
-          <Link to="/replay" className="hidden items-center gap-1 text-mixer-muted hover:text-white xl:inline-flex">
-            <Clapperboard className="h-3.5 w-3.5" /> REPLAY
-          </Link>
-          <Link to="/audio" className="hidden items-center gap-1 text-mixer-muted hover:text-white xl:inline-flex">
-            <SlidersHorizontal className="h-3.5 w-3.5" /> AUDIO
-          </Link>
-          <button type="button" onClick={() => signOut()} className="mixer-btn p-1" title="Sign out">
-            <LogOut className="h-3 w-3" />
-          </button>
+        <div className="dashboard-header-bottom flex min-w-0 items-center justify-end gap-2">
+          <div className="flex shrink-0 items-center gap-2 text-[10px] sm:gap-3">
+            <ProgramPresetToolbar />
+            <Link to="/hub" className="hidden items-center gap-1 text-mixer-muted hover:text-white lg:inline-flex">
+              <LayoutGrid className="h-3.5 w-3.5" /> HUB
+            </Link>
+            {canAccessProduct(profile, 'instant_replay') && (
+              <Link to="/replay" className="hidden items-center gap-1 text-mixer-muted hover:text-white xl:inline-flex">
+                <Clapperboard className="h-3.5 w-3.5" /> REPLAY
+              </Link>
+            )}
+            {canAccessProduct(profile, 'audio_mixer') && (
+              <Link to="/audio" className="hidden items-center gap-1 text-mixer-muted hover:text-white xl:inline-flex">
+                <SlidersHorizontal className="h-3.5 w-3.5" /> AUDIO
+              </Link>
+            )}
+            <button type="button" onClick={() => signOut()} className="mixer-btn p-1" title="Sign out">
+              <LogOut className="h-3 w-3" />
+            </button>
+          </div>
         </div>
       </header>
       )}
@@ -183,19 +196,20 @@ export function DisplayLayout({ hidden = false }: DisplayLayoutProps) {
         <div className="flex min-h-0 flex-1 flex-col border-b border-mixer-border lg:border-b-0 lg:border-r">
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-px bg-mixer-border md:grid-cols-2">
             {/* Preview */}
-            <div className="flex min-h-0 flex-col bg-mixer-bg">
-              <div className="flex shrink-0 items-center justify-between border-b border-mixer-border/60 px-3 py-1.5">
+            <div className="flex min-h-0 flex-col bg-[#0a0a0a]">
+              <div className="flex shrink-0 items-center justify-between border-b border-mixer-border/60 bg-mixer-panel px-3 py-1.5">
                 <div className="flex items-center gap-2">
                   <Monitor className="h-3.5 w-3.5 text-violet-400" />
                   <span className="text-[10px] font-bold tracking-wider text-violet-300">PREVIEW</span>
                 </div>
                 <span className="truncate text-[10px] text-mixer-muted">
-                  {feed.previewSlide?.title ?? 'No slide'}
+                  {feed.previewSlide?.title ?? 'Hold screen'}
                 </span>
               </div>
-              <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
+              <div className="relative min-h-0 flex-1 overflow-hidden bg-[#0a0a0a]">
                 <DisplaySlideRenderer
                   slide={feed.previewSlide}
+                  holdBackground={feed.state.holdBackground}
                   keyMode={feed.state.keyMode}
                   transition={feed.state.transition}
                   className="h-full w-full"
@@ -209,8 +223,8 @@ export function DisplayLayout({ hidden = false }: DisplayLayoutProps) {
             </div>
 
             {/* Live Display Feed output */}
-            <div className="flex min-h-0 flex-col bg-mixer-bg">
-              <div className="flex shrink-0 items-center justify-between border-b border-mixer-border/60 px-3 py-1.5">
+            <div className="flex min-h-0 flex-col bg-[#0a0a0a]">
+              <div className="flex shrink-0 items-center justify-between border-b border-mixer-border/60 bg-mixer-panel px-3 py-1.5">
                 <div className="flex items-center gap-2">
                   <MonitorPlay className="h-3.5 w-3.5 text-emerald-400" />
                   <span className="text-[10px] font-bold tracking-wider text-emerald-300">LIVE OUTPUT</span>
@@ -226,13 +240,12 @@ export function DisplayLayout({ hidden = false }: DisplayLayoutProps) {
               </div>
               <div
                 ref={liveOutputRef}
-                className="relative min-h-0 flex-1 overflow-hidden bg-black"
+                className="relative min-h-0 flex-1 overflow-hidden bg-[#0a0a0a]"
               >
                 <DisplaySlideRenderer
                   slide={feed.liveSlide}
                   holdBackground={feed.state.holdBackground}
                   animate={feed.isLive}
-                  keyMode={feed.state.keyMode}
                   transition={feed.state.transition}
                   className="h-full w-full"
                 />

@@ -3,6 +3,7 @@ import type { DashboardControls } from '../types/controls';
 import type { AudioInputSource } from '../types/audio';
 import type { Device, OverlayType, StreamQuality } from '../types/device';
 import { isRealDevice } from '../types/device';
+import { isRoutableMixerSource } from '../lib/deviceConnection';
 import { resolvePipSubDeviceId } from '../lib/pipRouting';
 import type { MixerPanel, OutputMode, PipPosition, PipSize, TransitionType, VideoAspectRatio } from '../types/mixer';
 import { createEmptyLayerSettings } from '../lib/layerSettings';
@@ -19,6 +20,7 @@ import {
 } from '../lib/productionPersistence';
 import type { KeyboardShortcutBindings } from '../types/keyboardShortcuts';
 import { normalizeOpenPanels } from '../lib/mixerPanelLayout';
+import { SIMPLE_PRODUCTION_PANELS } from '../config/mixerPanels';
 import { useGraphicsLive } from './useGraphicsLive';
 
 const storedOverlays = typeof localStorage !== 'undefined' ? loadStoredOverlayLayers() : null;
@@ -36,6 +38,9 @@ const resolvedOpenPanels = normalizeOpenPanels(
   storedOpenPanels as MixerPanel[] | undefined,
   (storedProduction?.activePanel as MixerPanel | undefined) ?? 'sources',
 );
+
+const initialSimpleProduction =
+  (storedProduction?.simpleProductionView as boolean | undefined) ?? false;
 
 const DEFAULT_CONTROLS: DashboardControls = {
   selectedStreamIds: [],
@@ -57,6 +62,7 @@ const DEFAULT_CONTROLS: DashboardControls = {
   isRecording: false,
   showMultiview: false,
   fullscreenPgm: false,
+  simpleProductionView: initialSimpleProduction,
   transition: {
     type: 'mix',
     durationMs: 800,
@@ -89,7 +95,10 @@ const DEFAULT_CONTROLS: DashboardControls = {
   selectedGraphicsLayerId: 'lower-third',
   keyboardShortcuts: storedShortcuts,
   ...storedProductionRest,
-  openPanels: resolvedOpenPanels,
+  openPanels: initialSimpleProduction ? [...SIMPLE_PRODUCTION_PANELS] : resolvedOpenPanels,
+  mixerViewMode: initialSimpleProduction
+    ? 'compact'
+    : ((storedProduction?.mixerViewMode as DashboardControls['mixerViewMode'] | undefined) ?? 'advanced'),
   audio: normalizeAudioSettings(storedAudio),
 };
 
@@ -104,6 +113,10 @@ export function useDashboardState(devices: Device[]) {
   const onAirStartedAtRef = useRef<number | null>(
     broadcastResumeAllowed ? (storedOnAirStartedAt ?? null) : null,
   );
+  const layoutSnapshotRef = useRef<{
+    openPanels: MixerPanel[];
+    mixerViewMode: DashboardControls['mixerViewMode'];
+  } | null>(null);
   const graphics = useGraphicsLive(setControls);
 
   const liveDevices = useMemo(
@@ -149,6 +162,8 @@ export function useDashboardState(devices: Device[]) {
     controls.openPanels,
     controls.defaultQuality,
     controls.viewMode,
+    controls.mixerViewMode,
+    controls.simpleProductionView,
     controls.globalOverlay,
     controls.display,
     controls.pip,
@@ -161,7 +176,7 @@ export function useDashboardState(devices: Device[]) {
   ]);
 
   useEffect(() => {
-    const live = devices.filter((d) => isRealDevice(d) && d.status === 'live');
+    const live = devices.filter(isRoutableMixerSource);
     if (live.length === 0) return;
     setControls((prev) => {
       const next = { ...prev };
@@ -372,6 +387,36 @@ export function useDashboardState(devices: Device[]) {
     setControls((prev) => ({ ...prev, fullscreenPgm: !prev.fullscreenPgm }));
   }, []);
 
+  const toggleSimpleProductionView = useCallback(() => {
+    setControls((prev) => {
+      if (!prev.simpleProductionView) {
+        layoutSnapshotRef.current = {
+          openPanels: prev.openPanels,
+          mixerViewMode: prev.mixerViewMode,
+        };
+        return {
+          ...prev,
+          simpleProductionView: true,
+          mixerViewMode: 'compact',
+          openPanels: [...SIMPLE_PRODUCTION_PANELS],
+          activePanel: SIMPLE_PRODUCTION_PANELS.includes(prev.activePanel)
+            ? prev.activePanel
+            : 'sources',
+          viewMode: 'focus',
+        };
+      }
+      const snap = layoutSnapshotRef.current;
+      layoutSnapshotRef.current = null;
+      return {
+        ...prev,
+        simpleProductionView: false,
+        ...(snap
+          ? { openPanels: snap.openPanels, mixerViewMode: snap.mixerViewMode }
+          : {}),
+      };
+    });
+  }, []);
+
   const setTransitionType = useCallback((type: TransitionType) => patchTransition({ type }), [patchTransition]);
   const setTransitionDuration = useCallback((durationMs: number) => patchTransition({ durationMs }), [patchTransition]);
   const setTransitionProgress = useCallback((progress: number) => patchTransition({ progress }), [patchTransition]);
@@ -418,18 +463,35 @@ export function useDashboardState(devices: Device[]) {
     [controls.overlays, controls.layers.globalOverlay, controls.globalOverlay],
   );
 
+  const getInputBusGain = useCallback(
+    (deviceId: string): number => {
+      const { audio } = controls;
+      if (audio.inputMuted[deviceId]) return 0;
+      if (audio.soloInputId && audio.soloInputId !== deviceId) return 0;
+      return (audio.inputVolumes[deviceId] ?? 100) / 100;
+    },
+    [controls],
+  );
+
+  const getMasterBusGain = useCallback((): number => {
+    const { audio } = controls;
+    if (audio.masterMuted) return 0;
+    return audio.masterVolume / 100;
+  }, [controls]);
+
   const getVolumeForDevice = useCallback(
     (deviceId: string): number => {
       const { audio, pgmDeviceId } = controls;
-      if (audio.masterMuted) return 0;
-      if (audio.inputMuted[deviceId]) return 0;
-      if (audio.soloInputId && audio.soloInputId !== deviceId) return 0;
-      const inputVol = (audio.inputVolumes[deviceId] ?? 100) / 100;
-      const master = audio.masterVolume / 100;
       if (audio.audioFollowVideo && deviceId !== pgmDeviceId) return 0;
-      return inputVol * master;
+      return getInputBusGain(deviceId) * getMasterBusGain();
     },
-    [controls],
+    [controls, getInputBusGain, getMasterBusGain],
+  );
+
+  /** Media overlay / supplement bus — ignores AFV but respects PGM fader and master. */
+  const getMediaBusVolume = useCallback(
+    (deviceId: string): number => getInputBusGain(deviceId) * getMasterBusGain(),
+    [getInputBusGain, getMasterBusGain],
   );
 
   const setInputVolume = useCallback((deviceId: string, volume: number) => {
@@ -630,6 +692,21 @@ export function useDashboardState(devices: Device[]) {
     }));
   }, []);
 
+  const setMixerViewMode = useCallback((mixerViewMode: DashboardControls['mixerViewMode']) => {
+    setControls((prev) => {
+      if (mixerViewMode === 'compact') {
+        const compactPanels: MixerPanel[] = ['sources', 'audio', 'transitions'];
+        return {
+          ...prev,
+          mixerViewMode,
+          openPanels: compactPanels,
+          activePanel: compactPanels.includes(prev.activePanel) ? prev.activePanel : 'sources',
+        };
+      }
+      return { ...prev, mixerViewMode };
+    });
+  }, []);
+
   const toggleOfflineTiles = useCallback((show?: boolean) => {
     setControls((prev) => ({
       ...prev,
@@ -679,6 +756,7 @@ export function useDashboardState(devices: Device[]) {
     setRecording,
     toggleMultiview,
     toggleFullscreen,
+    toggleSimpleProductionView,
     setTransitionType,
     setTransitionDuration,
     setTransitionProgress,
@@ -700,10 +778,14 @@ export function useDashboardState(devices: Device[]) {
     clearStreamSelection,
     setStatusFilter,
     setViewMode,
+    setMixerViewMode,
     toggleOfflineTiles,
     getQualityForDevice,
     getOverlayForDevice,
+    getInputBusGain,
+    getMasterBusGain,
     getVolumeForDevice,
+    getMediaBusVolume,
     setInputVolume,
     toggleInputMute,
     toggleInputSolo,

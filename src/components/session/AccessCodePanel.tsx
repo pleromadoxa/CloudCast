@@ -69,8 +69,8 @@ export function AccessCodePanel({
   }
 
   return (
-    <div className={cn('flex items-center gap-2 lg:gap-3', className)}>
-      <div className="flex items-center gap-2">
+    <div className={cn('flex shrink-0 items-center gap-2 lg:gap-3', className)}>
+      <div className="access-code-label hidden items-center gap-2 sm:flex">
         <Smartphone className="h-3.5 w-3.5 text-mixer-muted" />
         <span className="text-[10px] font-medium uppercase tracking-wider text-mixer-muted">
           Access Code
@@ -81,8 +81,8 @@ export function AccessCodePanel({
         type="button"
         onClick={handleCopy}
         className={cn(
-          'group flex items-center gap-2 border px-3 py-1 transition-all',
-          'border-mixer-red/50 bg-mixer-red/10 hover:bg-mixer-red/20',
+          'group flex min-h-[40px] shrink-0 items-center gap-2 border px-3 py-1.5 transition-all touch-manipulation',
+          'border-mixer-red/50 bg-mixer-red/10 hover:bg-mixer-red/20 active:bg-mixer-red/30',
         )}
         title="Copy access code for mobile app"
       >

@@ -1,5 +1,7 @@
 /** Minimum time the boot screen stays visible once shown. */
 export const REGAL_CLOUD_BOOT_MIN_MS = 2000;
+/** Never block the console longer than this — auth should finish or degrade before then. */
+export const REGAL_CLOUD_BOOT_MAX_MS = 12_000;
 
 const BOOT_DONE_KEY = 'cloudcast-boot-done';
 

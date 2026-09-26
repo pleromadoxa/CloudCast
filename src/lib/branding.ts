@@ -92,8 +92,12 @@ export const PLAN_FEATURE_OVERRIDES: Partial<Record<PlanTier, string[]>> = {
   ],
 };
 
+/** Regal Cloud ingest is paused — all plans use Regal Mesh until cloud handshake is ready. */
+export const FORCE_MESH_CONNECTION_MODE = true;
+
 /** Normalize legacy API values without leaking vendor names. */
 export function normalizeConnectionMode(value: string | null | undefined): ConnectionMode {
+  if (FORCE_MESH_CONNECTION_MODE) return 'mesh';
   if (value === 'regal' || value === 'cloudflare') return 'regal';
   return 'mesh';
 }

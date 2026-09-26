@@ -9,6 +9,7 @@ import {
   resolveDisplayFeedChannelName,
   type DisplayFeedSyncPayload,
 } from '../lib/displayFeedSync';
+import { resolveCongregationSlide } from '../lib/displayOverlaySlide';
 
 /** Publish live Display Feed state to congregation viewers (BroadcastChannel + Realtime). */
 export function useDisplayFeedSyncPublisher(
@@ -28,7 +29,7 @@ export function useDisplayFeedSyncPublisher(
     const payload = buildDisplayFeedSyncPayload({
       version: ++versionRef.current,
       isLive: Boolean(s.liveSlideId),
-      liveSlide: slide,
+      liveSlide: resolveCongregationSlide(slide),
       holdBackground: s.holdBackground,
       transition: s.transition,
       showCongregationClock: s.showCongregationClock ?? false,
@@ -47,7 +48,7 @@ export function useDisplayFeedSyncPublisher(
       const payload = buildDisplayFeedSyncPayload({
         version: ++versionRef.current,
         isLive: Boolean(s.liveSlideId),
-        liveSlide: slide,
+        liveSlide: resolveCongregationSlide(slide),
         holdBackground: s.holdBackground,
         transition: s.transition,
         showCongregationClock: s.showCongregationClock ?? false,

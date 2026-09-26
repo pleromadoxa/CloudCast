@@ -1,26 +1,33 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Check, Copy, ExternalLink, Maximize2, MonitorUp } from 'lucide-react';
+import { Check, Copy, ExternalLink, Maximize2, Minimize2, MonitorUp } from 'lucide-react';
 import { buildMixerOutputUrl } from '../../../lib/pgmOutputSync';
 import type { VideoAspectRatio } from '../../../types/mixer';
 import type { OverlayType, StreamQuality } from '../../../types/device';
 import type { LayerSettings } from '../../../types/mixer';
-import type { ViewMode } from '../../../types/controls';
+import type { MixerViewMode, ViewMode } from '../../../types/controls';
 import type { KeyboardShortcutBindings } from '../../../types/keyboardShortcuts';
+import type { DashboardPreferences } from '../../../types/plans';
 import { ASPECT_RATIO_LABELS } from '../../../lib/aspectRatio';
+import { normalizeDashboardPreferences } from '../../../lib/dashboardPreferences';
 import { cn } from '../../../lib/utils';
 import { PlatformGuide } from '../PlatformGuide';
 import { FeatureHint } from '../FeatureHint';
 import { KeyboardShortcutsEditor } from './KeyboardShortcutsEditor';
+import { RenderEngineSection } from './RenderEngineSection';
 
 interface SettingsPanelProps {
   aspectRatio: VideoAspectRatio;
   viewMode: ViewMode;
+  mixerViewMode: MixerViewMode;
   showMultiview: boolean;
   fullscreenPgm: boolean;
   externalDisplayOpen: boolean;
   keyboardShortcuts: KeyboardShortcutBindings;
   onSetAspectRatio: (ratio: VideoAspectRatio) => void;
   onSetViewMode: (mode: ViewMode) => void;
+  onSetMixerViewMode: (mode: MixerViewMode) => void;
+  simpleProductionView?: boolean;
+  onToggleSimpleProductionView?: () => void;
   onToggleMultiview: () => void;
   onToggleFullscreen: () => void;
   onToggleExternalDisplay: () => void;
@@ -33,6 +40,9 @@ interface SettingsPanelProps {
   onSetGlobalOverlay: (overlay: OverlayType) => void;
   onPatchLayers: (partial: Partial<LayerSettings>) => void;
   accessCode?: string;
+  dashboardPreferences?: DashboardPreferences | null;
+  onUpdateDashboardPreferences?: (prefs: Partial<DashboardPreferences>) => Promise<void>;
+  dashboardPrefsSaving?: boolean;
 }
 
 const ratios: VideoAspectRatio[] = ['16:9', '9:16', '4:3', '1:1'];
@@ -53,12 +63,16 @@ const monitorTools: { id: OverlayType; label: string }[] = [
 export function SettingsPanel({
   aspectRatio,
   viewMode,
+  mixerViewMode,
   showMultiview,
   fullscreenPgm,
   externalDisplayOpen,
   keyboardShortcuts,
   onSetAspectRatio,
   onSetViewMode,
+  onSetMixerViewMode,
+  simpleProductionView = false,
+  onToggleSimpleProductionView,
   onToggleMultiview,
   onToggleFullscreen,
   onToggleExternalDisplay,
@@ -71,9 +85,14 @@ export function SettingsPanel({
   onSetGlobalOverlay,
   onPatchLayers,
   accessCode,
+  dashboardPreferences,
+  onUpdateDashboardPreferences,
+  dashboardPrefsSaving = false,
   compact = false,
 }: SettingsPanelProps & { compact?: boolean }) {
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const prefs = normalizeDashboardPreferences(dashboardPreferences);
+  const [prefsError, setPrefsError] = useState<string | null>(null);
 
   const programOutputUrl = useMemo(
     () => (accessCode ? buildMixerOutputUrl(accessCode) : ''),
@@ -157,6 +176,53 @@ export function SettingsPanel({
             </div>
           </div>
           <div>
+            <p className="atem-group-label mb-1.5">Mixer view</p>
+            <div className="deck-duration-row">
+              {([
+                { id: 'compact' as const, label: 'COMPACT' },
+                { id: 'advanced' as const, label: 'ADVANCED' },
+              ]).map((mode) => (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => onSetMixerViewMode(mode.id)}
+                  className={cn('deck-pad-btn flex-1', mixerViewMode === mode.id && 'atem-toggle-on')}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[8px] leading-snug text-mixer-muted">
+              Compact keeps Sources, Audio, and Transitions. Advanced unlocks the full control deck.
+            </p>
+          </div>
+          {onToggleSimpleProductionView && (
+            <div>
+              <p className="atem-group-label mb-1.5">Production layout</p>
+              <button
+                type="button"
+                onClick={onToggleSimpleProductionView}
+                className={cn(
+                  'deck-pad-btn deck-pad-btn-lg flex w-full items-center justify-center gap-2',
+                  simpleProductionView && 'atem-toggle-on',
+                )}
+              >
+                {simpleProductionView ? (
+                  <>
+                    <Maximize2 className="h-4 w-4" /> FULL DASHBOARD
+                  </>
+                ) : (
+                  <>
+                    <Minimize2 className="h-4 w-4" /> SIMPLE PRODUCTION
+                  </>
+                )}
+              </button>
+              <p className="mt-1 text-[8px] leading-snug text-mixer-muted">
+                Simple view hides the source strip, navigation, and advanced panels — ideal for small live events.
+              </p>
+            </div>
+          )}
+          <div>
             <p className="atem-group-label mb-1.5">Preview layout</p>
             <div className="deck-duration-row">
               {previewModes.map((mode) => (
@@ -208,6 +274,73 @@ export function SettingsPanel({
             </div>
           </div>
         </section>
+
+        {onUpdateDashboardPreferences && (
+          <section className="setup-section setup-dashboards">
+            <p className="setup-section-title">Dashboards</p>
+            <p className="mb-2 text-[9px] leading-snug text-mixer-muted">
+              Show only the consoles you need. Video Mixer stays on. Changes sync to your account.
+              Paid feature limits still follow your Free / Pro plan. Dashboards are on by default —
+              turn one off to hide it (admin service switches can still disable a dashboard platform-wide).
+            </p>
+            <div className="space-y-2">
+              {(
+                [
+                  {
+                    key: 'audio_dashboard_enabled' as const,
+                    label: 'Audio Mixer',
+                    hint: 'On by default',
+                  },
+                  {
+                    key: 'prism_dashboard_enabled' as const,
+                    label: 'Regal Prism',
+                    hint: 'On by default',
+                  },
+                  {
+                    key: 'replay_dashboard_enabled' as const,
+                    label: 'CloudCast Replay',
+                    hint: 'On by default',
+                  },
+                ] as const
+              ).map((row) => (
+                <label
+                  key={row.key}
+                  className="flex cursor-pointer items-center justify-between gap-2 rounded border border-white/10 bg-black/30 px-2 py-1.5"
+                >
+                  <span>
+                    <span className="block text-[10px] font-bold tracking-wider text-white">{row.label}</span>
+                    <span className="text-[8px] text-mixer-muted">{row.hint}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-mixer-red"
+                    checked={prefs[row.key]}
+                    disabled={dashboardPrefsSaving}
+                    onChange={(e) => {
+                      const value = e.target.checked;
+                      setPrefsError(null);
+                      void onUpdateDashboardPreferences({ [row.key]: value }).catch((err: unknown) => {
+                        setPrefsError(
+                          err instanceof Error && err.message
+                            ? err.message
+                            : 'Could not save the dashboard preference.',
+                        );
+                      });
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+            {prefsError && (
+              <p className="mt-2 rounded border border-mixer-red/30 bg-mixer-red/10 px-2 py-1.5 text-[9px] leading-snug text-mixer-red">
+                {prefsError}
+              </p>
+            )}
+            {dashboardPrefsSaving && (
+              <p className="mt-2 text-[8px] tracking-wider text-mixer-muted">SAVING…</p>
+            )}
+          </section>
+        )}
 
         <section className="setup-section setup-output">
           <p className="setup-section-title">Output</p>
@@ -275,6 +408,11 @@ export function SettingsPanel({
           )}
         </section>
       </div>
+
+      <section className="setup-section setup-render-engine">
+        <p className="setup-section-title">Render engine</p>
+        <RenderEngineSection />
+      </section>
 
       <div className={cn('setup-panel-lower grid min-h-0 flex-1 gap-2.5', !compact && 'lg:grid-cols-2')}>
         <section className="setup-section setup-shortcuts min-h-0">

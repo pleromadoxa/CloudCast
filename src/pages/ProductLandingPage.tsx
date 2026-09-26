@@ -3,6 +3,8 @@ import { ArrowRight, Check } from 'lucide-react';
 import { CLOUDCAST_PRODUCTS } from '../config/products';
 import { getProductGuideSection, parseProductSlug, productLandingPath, productPricingPath, PRODUCT_SEO_KEYWORDS } from '../config/productLanding';
 import { RouteSEO } from '../components/seo/RouteSEO';
+import { ProductHeroBackground } from '../components/products/ProductHeroBackground';
+import { productHeroMedia } from '../config/productHeroMedia';
 import { mergeSEO } from '../config/seo';
 
 export function ProductLandingPage() {
@@ -13,6 +15,7 @@ export function ProductLandingPage() {
   const product = CLOUDCAST_PRODUCTS.find((p) => p.id === productId)!;
   const guide = getProductGuideSection(productId);
   const pricingPath = productPricingPath(productId);
+  const heroMedia = productHeroMedia(productId);
 
   const seo = mergeSEO(
     {
@@ -52,8 +55,20 @@ export function ProductLandingPage() {
       <main className="relative overflow-hidden">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_#e11d4812_0%,_transparent_55%)]" />
 
-        <section className="relative px-6 pb-16 pt-16">
-          <div className="mx-auto max-w-4xl">
+        <section className="relative isolate overflow-hidden px-6 pb-20 pt-20 sm:min-h-[640px] sm:pt-28">
+          {/* Blended virtual-studio video ambience (Regal Prism). */}
+          {heroMedia && <ProductHeroBackground media={heroMedia} />}
+
+          {/* Product-tinted glow sits above the video so copy stays readable. */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                'radial-gradient(ellipse 70% 60% at 50% 0%, rgba(225,29,72,0.10) 0%, rgba(6,6,6,0) 60%)',
+            }}
+          />
+
+          <div className="relative mx-auto max-w-4xl">
             <nav className="text-xs text-mixer-muted">
               <Link to="/" className="hover:text-white">Home</Link>
               <span className="mx-2">/</span>

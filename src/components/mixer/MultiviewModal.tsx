@@ -5,6 +5,7 @@ import { isRealDevice, isVideoDevice } from '../../types/device';
 import { ASPECT_RATIO_CSS } from '../../lib/aspectRatio';
 import { cn } from '../../lib/utils';
 import { StreamPlayer } from '../stream/StreamPlayer';
+import { shotFeedRolesForTile } from '../../lib/shotFeedRoles';
 
 interface MultiviewModalProps {
   devices: Device[];
@@ -48,6 +49,9 @@ export function MultiviewModal({
             const viewMuted = isRealDevice(d) ? isViewAudioMuted(d.deviceId) : true;
             const monitorVol = isRealDevice(d) ? getMonitorVolume(d.deviceId) : 0;
             const monitorAudioId = isRealDevice(d) ? getMonitorAudioDeviceId(d.deviceId) : null;
+            const isPst = d.deviceId === pstDeviceId;
+            const isPgm = d.deviceId === pgmDeviceId;
+            const roles = shotFeedRolesForTile(d.deviceId, pstDeviceId, pgmDeviceId);
             return (
               <div
                 key={d.deviceId}
@@ -66,9 +70,10 @@ export function MultiviewModal({
                     audioMuted={monitorVol === 0}
                     volume={monitorVol}
                     audioDeviceId={monitorAudioId}
-                    enableSpeakerPlayback
+                    enableSpeakerPlayback={isPst && !isPgm}
                     compact
                     showLabel={false}
+                    {...roles}
                   />
                 </button>
                 {isVideoDevice(d) && (

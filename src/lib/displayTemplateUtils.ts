@@ -39,6 +39,13 @@ export function buildSlideFromCustomTemplate(custom: DisplayCustomTemplate): Dis
     foregroundImageUrl: custom.foregroundImageUrl,
     foregroundPosition: custom.foregroundPosition,
     foregroundSize: custom.foregroundSize,
+    foregroundX: custom.foregroundX,
+    foregroundY: custom.foregroundY,
+    foregroundWidthPct: custom.foregroundWidthPct,
+    foregroundHeightPct: custom.foregroundHeightPct,
+    videoUrl: custom.videoUrl,
+    videoLoop: custom.videoLoop,
+    videoMuted: custom.videoMuted,
     fields: custom.fields.map((f) => ({ ...f, id: crypto.randomUUID() })),
   });
 }
@@ -60,6 +67,13 @@ export function customTemplateFromPreviewSlide(
     foregroundImageUrl: slide.foregroundImageUrl,
     foregroundPosition: slide.foregroundPosition,
     foregroundSize: slide.foregroundSize,
+    foregroundX: slide.foregroundX,
+    foregroundY: slide.foregroundY,
+    foregroundWidthPct: slide.foregroundWidthPct,
+    foregroundHeightPct: slide.foregroundHeightPct,
+    videoUrl: slide.videoUrl,
+    videoLoop: slide.videoLoop,
+    videoMuted: slide.videoMuted,
     fields: slide.fields.map(({ id: _id, ...rest }) => rest),
     createdAt: new Date().toISOString(),
   };

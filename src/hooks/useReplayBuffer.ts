@@ -29,9 +29,10 @@ export interface ReplayBufferState {
 export function useReplayBuffer(
   maxSeconds: number,
   sourceStream: MediaStream | null,
-  options?: { fps?: number; houseAnchorMs?: number },
+  options?: { fps?: number; houseAnchorMs?: number; enabled?: boolean },
 ) {
   const fps = options?.fps ?? DEFAULT_REPLAY_FPS;
+  const enabled = options?.enabled !== false;
   const houseAnchorRef = useRef(options?.houseAnchorMs ?? Date.now());
 
   const chunksRef = useRef<TimestampedChunk[]>([]);
@@ -58,12 +59,12 @@ export function useReplayBuffer(
   }, [options?.houseAnchorMs]);
 
   useEffect(() => {
-    if (!isRecording) return;
+    if (!enabled || !isRecording) return;
     const timer = window.setInterval(() => {
       setHouseClockSmpte(formatSmpteFromSeconds(houseClockSeconds(houseAnchorRef.current), fps));
     }, 100);
     return () => window.clearInterval(timer);
-  }, [isRecording, fps]);
+  }, [enabled, isRecording, fps]);
 
   const pruneOldChunks = useCallback(() => {
     const nowMs = performance.now();
@@ -157,11 +158,15 @@ export function useReplayBuffer(
   }, [isRecording, pruneOldChunks]);
 
   useEffect(() => {
+    if (!enabled) {
+      stopRecorder();
+      return;
+    }
     if (sourceStream && !isRecording) {
       startRecorder();
     }
     return () => stopRecorder();
-  }, [sourceStream]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sourceStream, enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getBufferStartMs = useCallback(() => {
     return bufferStartMs(chunksRef.current, performance.now());

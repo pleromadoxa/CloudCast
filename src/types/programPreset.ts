@@ -10,6 +10,8 @@ export const ACTIVE_PROGRAM_PRESET_KEY = 'cloudcast-active-program-preset-id';
 /** Overlay layers subset persisted with video mixer. */
 export type ProgramPresetOverlayLayers = {
   imageOverlays?: unknown[];
+  videoOverlays?: unknown[];
+  mediaLibrary?: unknown[];
   lowerThirdTemplate?: string;
   lowerThirdCustomization?: unknown;
   lowerThirdPresetId?: string | null;

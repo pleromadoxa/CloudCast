@@ -1,7 +1,11 @@
 import type { ChromaKeySettings } from '../lib/prism/chromaKey';
 import type { PrismNodeGraph } from '../lib/prism/nodeGraph';
+import type { MotionTemplateOverrides, PrismMotionState } from '../lib/prism/motionGraphics';
+import { DEFAULT_MOTION_STATE } from '../lib/prism/motionGraphics';
+import type { PrismBrandKit } from '../lib/prism/brandKit';
 import type { PrismProductionMode } from '../lib/prism/virtualSets';
 import type { PrismSecondarySlot } from './prismCameras';
+import type { StudioScreenSource } from '../lib/virtualStudio/types';
 
 export const REGAL_PRISM_DEVICE_ID = 'regal-prism-feed';
 
@@ -18,6 +22,11 @@ export interface PrismFeedState {
   cameraYaw: number;
   cameraPitch: number;
   cameraZoom: number;
+  /**
+   * Free-camera look-at point in world space — drag/WASD panning flies the
+   * camera anywhere in the set (Aximetry-style). Unset = scene default anchor.
+   */
+  cameraTarget?: [number, number, number];
   showShadows: boolean;
   showReflections: boolean;
   showWatermark: boolean;
@@ -34,6 +43,8 @@ export interface PrismFeedState {
   webxrMode: 'inline' | 'immersive-ar';
   programAudioMic: boolean;
   programAudioMixer: boolean;
+  /** 3D motion graphics template playback (outros, openers, stings). */
+  motion: PrismMotionState;
 }
 
 /** Instance of a catalog 3D object placed in the virtual set */
@@ -51,6 +62,69 @@ export interface PrismSceneExtendedState {
   lowerThird?: PrismLowerThird;
   /** Placed 3D props from the model library */
   sceneObjects?: PrismSceneObject[];
+  /**
+   * 3D motion graphics state — brand kit + template overrides round-trip with
+   * the scene (optional so previously saved scenes stay valid).
+   */
+  motion?: {
+    brand?: PrismBrandKit;
+    overrides?: MotionTemplateOverrides;
+  };
+  /** Photoreal render engine state (screen bindings, backdrop, look). */
+  photoreal?: {
+    renderEngine?: 'classic' | 'photoreal';
+    sceneId?: string;
+    bindings?: Record<string, StudioScreenSource>;
+    backdrop?: StudioScreenSource;
+    lighting?: number;
+    tickerSpeed?: number;
+    shots?: ({
+      yaw: number;
+      pitch: number;
+      zoom: number;
+      fov?: number;
+      target?: [number, number, number];
+    } | null)[];
+    temperature?: number;
+    exposure?: number;
+    accent?: string;
+    effects?: {
+      bloom?: boolean;
+      bloomIntensity?: number;
+      depthOfField?: boolean;
+      vignette?: boolean;
+      ao?: boolean;
+      smaa?: boolean;
+    };
+    elements?: {
+      id: string;
+      elementId: string;
+      position: [number, number];
+      rotation: number;
+      scale: number | [number, number, number];
+      elevation?: number;
+      source?: StudioScreenSource;
+    }[];
+    rundown?: {
+      label: string;
+      pose: { yaw: number; pitch: number; zoom: number; fov?: number; target?: [number, number, number] };
+      duration: number;
+    }[];
+    snapToGrid?: boolean;
+    /** Keyed talent plate placement (position/angle/size anywhere on stage). */
+    talentPlacement?: {
+      position: [number, number, number];
+      width?: number;
+      yaw?: number;
+      pitch?: number;
+      roll?: number;
+    };
+    /** Camera/production transition style & travel time. */
+    transition?: {
+      style: 'cut' | 'dissolve' | 'jib' | 'whip' | 'crane' | 'zoom';
+      duration: number;
+    };
+  };
 }
 
 export interface PrismSceneRecord {
@@ -59,7 +133,13 @@ export interface PrismSceneRecord {
   virtual_set_id: string;
   key_color: { r: number; g: number; b: number };
   key_settings: Record<string, number>;
-  camera_settings: { yaw: number; pitch: number; zoom: number };
+  camera_settings: {
+    yaw: number;
+    pitch: number;
+    zoom: number;
+    fov?: number;
+    target?: [number, number, number];
+  };
   lighting: { shadows: boolean; reflections: boolean };
   mode: PrismProductionMode;
   extended_state: PrismSceneExtendedState;
@@ -94,5 +174,6 @@ export function createDefaultPrismFeedState(): PrismFeedState {
     webxrMode: 'inline',
     programAudioMic: true,
     programAudioMixer: false,
+    motion: { ...DEFAULT_MOTION_STATE },
   };
 }

@@ -3,6 +3,17 @@
  * CloudCast broadcast relay — receives WebM chunks from the dashboard over WebSocket
  * and pushes transcoded FLV to RTMP destinations via FFmpeg.
  *
+ * Resilience model (smooth stream even on bad internet):
+ *  - The first WebM chunk from MediaRecorder is the init segment (EBML header + Tracks).
+ *    We cache it. When the encoder re-keys (adaptive bitrate restart) it sends a new init
+ *    segment which we detect and use to re-spawn the FFmpeg outputs cleanly.
+ *  - Each destination runs its own FFmpeg, isolated so one flaky platform can't drop the
+ *    others. If an FFmpeg exits unexpectedly while live, it is auto-restarted with backoff
+ *    and re-primed with the cached init segment so it can resume mid-stream.
+ *  - Per-process stdin backlog is capped so a slow RTMP endpoint can't grow memory without
+ *    bound; under sustained congestion the oldest data is dropped and FFmpeg recovers at
+ *    the next keyframe.
+ *
  * Usage: RELAY_PORT=8090 node tools/broadcast-relay/server.mjs
  */
 import { createServer } from 'node:http';
@@ -14,13 +25,28 @@ const PORT = Number(process.env.RELAY_PORT ?? 8090);
 const HOST = process.env.RELAY_HOST ?? '127.0.0.1';
 const RELAY_TOKEN = process.env.RELAY_TOKEN?.trim() || '';
 const MAX_DESTINATIONS = Number(process.env.RELAY_MAX_DESTINATIONS ?? 5);
-const MAX_CHUNK_BYTES = Number(process.env.RELAY_MAX_CHUNK_BYTES ?? 256 * 1024);
-const MAX_BYTES_PER_SEC = Number(process.env.RELAY_MAX_BYTES_PER_SEC ?? 4 * 1024 * 1024);
+const MAX_CHUNK_BYTES = Number(process.env.RELAY_MAX_CHUNK_BYTES ?? 1024 * 1024);
+const MAX_BYTES_PER_SEC = Number(process.env.RELAY_MAX_BYTES_PER_SEC ?? 6 * 1024 * 1024);
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+/** Cap of per-FFmpeg stdin backlog before we shed data to bound memory. */
+const STDIN_BACKLOG_CAP = Number(process.env.RELAY_STDIN_BACKLOG_CAP ?? 8 * 1024 * 1024);
+const FFMPEG_RESTART_BASE_MS = 500;
+const FFMPEG_RESTART_MAX_MS = 5_000;
 
 if (IS_PRODUCTION && !RELAY_TOKEN) {
   console.error('[relay] RELAY_TOKEN is required in production.');
   process.exit(1);
+}
+
+/** WebM/Matroska files start with the EBML magic. A chunk beginning with it is a fresh header. */
+function isInitSegment(buf) {
+  return (
+    buf.length >= 4 &&
+    buf[0] === 0x1a &&
+    buf[1] === 0x45 &&
+    buf[2] === 0xdf &&
+    buf[3] === 0xa3
+  );
 }
 
 function spawnFfmpeg(publishUrl, name) {
@@ -28,8 +54,13 @@ function spawnFfmpeg(publishUrl, name) {
     '-hide_banner',
     '-loglevel',
     'warning',
+    // Input resilience: tolerate timestamp gaps and partial data after a mid-stream join.
+    '-thread_queue_size',
+    '1024',
     '-fflags',
-    'nobuffer',
+    '+genpts+nobuffer+igndts',
+    '-err_detect',
+    'ignore_err',
     '-f',
     'webm',
     '-i',
@@ -40,6 +71,11 @@ function spawnFfmpeg(publishUrl, name) {
     'veryfast',
     '-tune',
     'zerolatency',
+    '-profile:v',
+    'main',
+    '-pix_fmt',
+    'yuv420p',
+    // Constant bitrate-ish output keeps RTMP pacing steady for the viewer.
     '-b:v',
     '2500k',
     '-maxrate',
@@ -50,46 +86,139 @@ function spawnFfmpeg(publishUrl, name) {
     '60',
     '-keyint_min',
     '60',
-    '-pix_fmt',
-    'yuv420p',
+    '-sc_threshold',
+    '0',
     '-c:a',
     'aac',
     '-b:a',
     '128k',
     '-ar',
     '48000',
+    '-max_muxing_queue_size',
+    '1024',
     '-f',
     'flv',
+    '-flvflags',
+    'no_duration_filesize',
     publishUrl,
   ];
 
   const proc = spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+  proc.stdin.on('error', () => {
+    /* EPIPE when FFmpeg exits — handled via the exit event */
+  });
   proc.stderr.on('data', (buf) => {
     const line = buf.toString().trim();
     if (line) console.error(`[ffmpeg:${name ?? publishUrl}]`, line);
   });
-  proc.on('exit', (code) => {
-    if (code && code !== 255) console.error(`[ffmpeg:${name ?? publishUrl}] exited ${code}`);
-  });
   return proc;
 }
 
-function stopSession(session) {
-  for (const proc of session.procs) {
+/** Spawn a supervised FFmpeg for one destination, with auto-restart + header re-priming. */
+function spawnDestination(session, dest) {
+  const proc = spawnFfmpeg(dest.publishUrl, dest.name);
+  const entry = { proc, dest, alive: true, intentionalStop: false, backoff: FFMPEG_RESTART_BASE_MS };
+
+  // Re-prime a (re)started FFmpeg with the cached init segment so it can parse the stream.
+  if (session.initSegment) {
     try {
-      proc.stdin.end();
+      proc.stdin.write(session.initSegment);
     } catch {
       /* ignore */
     }
-    proc.kill('SIGTERM');
   }
-  session.procs = [];
-  session.ready = false;
-  session.bytesThisSecond = 0;
+
+  proc.on('exit', (code) => {
+    entry.alive = false;
+    if (entry.intentionalStop || session.stopping || !session.ready) return;
+    if (code && code !== 255) {
+      console.error(`[relay] ffmpeg for "${dest.name ?? dest.publishUrl}" exited ${code} — restarting`);
+    }
+    const delay = Math.min(FFMPEG_RESTART_MAX_MS, entry.backoff);
+    setTimeout(() => {
+      if (entry.intentionalStop || session.stopping || !session.ready) return;
+      const idx = session.procs.indexOf(entry);
+      if (idx >= 0) session.procs.splice(idx, 1);
+      const next = spawnDestination(session, dest);
+      next.backoff = Math.min(FFMPEG_RESTART_MAX_MS, entry.backoff * 2);
+      session.procs.push(next);
+    }, delay);
+  });
+
+  return entry;
 }
 
-const server = createServer();
+function stopEntry(entry) {
+  entry.intentionalStop = true;
+  entry.alive = false;
+  try {
+    entry.proc.stdin.end();
+  } catch {
+    /* ignore */
+  }
+  try {
+    entry.proc.kill('SIGTERM');
+  } catch {
+    /* ignore */
+  }
+}
+
+/** (Re)start all destination FFmpegs — used on first header and on encoder re-key. */
+function restartDestinations(session) {
+  for (const entry of session.procs) stopEntry(entry);
+  session.procs = [];
+  if (!session.ready || session.stopping) return;
+  for (const dest of session.destinations) {
+    session.procs.push(spawnDestination(session, dest));
+  }
+}
+
+function writeToDestinations(session, data) {
+  for (const entry of session.procs) {
+    if (!entry.alive) continue;
+    const { stdin } = entry.proc;
+    if (!stdin.writable) continue;
+    // Shed data if this output's backlog is too deep (slow RTMP) to bound memory.
+    if (stdin.writableLength > STDIN_BACKLOG_CAP) continue;
+    try {
+      stdin.write(data);
+    } catch {
+      /* stdin closed mid-write — exit handler will restart */
+    }
+  }
+}
+
+function stopSession(session) {
+  session.stopping = true;
+  for (const entry of session.procs) stopEntry(entry);
+  session.procs = [];
+  session.ready = false;
+  session.initSegment = null;
+  session.bytesThisSecond = 0;
+  session.stopping = false;
+}
+
+const server = createServer((req, res) => {
+  if (req.url === '/health' || req.url === '/healthz') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('ok');
+    return;
+  }
+  res.writeHead(404, { 'Content-Type': 'text/plain' });
+  res.end('CloudCast broadcast relay');
+});
+
+server.on('error', (err) => {
+  console.error('[relay] listen error:', err?.message ?? err);
+  process.exit(1);
+});
 const wss = new WebSocketServer({ server, maxPayload: MAX_CHUNK_BYTES });
+
+// Never let a socket-level error (oversized frame, abrupt reset, protocol violation) crash
+// the relay process — log it and let the per-connection cleanup run.
+wss.on('error', (err) => {
+  console.error('[relay] server socket error:', err?.message ?? err);
+});
 
 let activeConnections = 0;
 const MAX_CONNECTIONS = Number(process.env.RELAY_MAX_CONNECTIONS ?? 20);
@@ -108,8 +237,20 @@ wss.on('connection', (ws) => {
   }
 
   activeConnections += 1;
-  const session = { procs: [], ready: false, bytesThisSecond: 0 };
+  const session = {
+    destinations: [],
+    procs: [],
+    ready: false,
+    stopping: false,
+    initSegment: null,
+    bytesThisSecond: 0,
+  };
   ws._relaySession = session;
+
+  ws.on('error', (err) => {
+    console.error('[relay] connection error:', err?.message ?? err);
+    stopSession(session);
+  });
 
   ws.on('message', (data, isBinary) => {
     if (!isBinary) {
@@ -141,13 +282,14 @@ wss.on('connection', (ws) => {
         }
 
         try {
-          for (const dest of destinations) {
-            const publishUrl = buildPublishUrl(dest.streamUrl, dest.streamKey);
-            session.procs.push(spawnFfmpeg(publishUrl, dest.name));
-          }
+          session.destinations = destinations.map((dest) => ({
+            publishUrl: buildPublishUrl(dest.streamUrl, dest.streamKey),
+            name: dest.name,
+          }));
           session.ready = true;
+          // FFmpeg starts when the first WebM header arrives (see binary handler).
           ws.send(JSON.stringify({ type: 'ready', destinations: destinations.length }));
-          console.log(`[relay] started ${destinations.length} RTMP output(s)`);
+          console.log(`[relay] armed ${destinations.length} RTMP output(s) — waiting for stream`);
         } catch (e) {
           stopSession(session);
           ws.send(
@@ -186,17 +328,17 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    for (const proc of session.procs) {
-      try {
-        if (!proc.stdin.writable) continue;
-        const ok = proc.stdin.write(data);
-        if (!ok) {
-          proc.stdin.once('drain', () => {});
-        }
-      } catch {
-        /* stdin closed */
-      }
+    // A WebM header chunk means the encoder (re)started — cache it and (re)key FFmpeg.
+    if (isInitSegment(data)) {
+      session.initSegment = Buffer.from(data);
+      restartDestinations(session);
+      return;
     }
+
+    // Media data only flows once we have a header and outputs are running.
+    if (!session.initSegment) return;
+    if (session.procs.length === 0) restartDestinations(session);
+    writeToDestinations(session, data);
   });
 
   ws.on('close', () => {

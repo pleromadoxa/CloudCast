@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import { LayoutGrid } from 'lucide-react';
 import type { MixerPanel } from '../../types/mixer';
-import { MIXER_PANELS } from '../../config/mixerPanels';
+import { MIXER_PANELS, SIMPLE_PRODUCTION_PANELS } from '../../config/mixerPanels';
 import { cn } from '../../lib/utils';
 
 interface MixerTabGuideProps {
@@ -9,6 +9,7 @@ interface MixerTabGuideProps {
   openPanels: MixerPanel[];
   onSelectPanel: (panel: MixerPanel) => void;
   onToggleOpenPanel: (panel: MixerPanel) => void;
+  simpleProductionView?: boolean;
   className?: string;
 }
 
@@ -17,6 +18,7 @@ export function MixerTabGuide({
   openPanels,
   onSelectPanel,
   onToggleOpenPanel,
+  simpleProductionView = false,
   className,
 }: MixerTabGuideProps) {
   const renderPanelButton = (
@@ -78,6 +80,10 @@ export function MixerTabGuide({
     );
   };
 
+  const panelList = simpleProductionView
+    ? MIXER_PANELS.filter((panel) => SIMPLE_PRODUCTION_PANELS.includes(panel.id))
+    : MIXER_PANELS;
+
   return (
     <nav className={cn('mixer-tab-guide shrink-0', className)} aria-label="Mixer panels">
       <div className="flex items-center gap-2">
@@ -91,7 +97,7 @@ export function MixerTabGuide({
           </span>
         </div>
         <div className="mixer-tab-guide-row flex min-w-0 flex-1 gap-1 overflow-x-auto">
-          {MIXER_PANELS.map((panel) =>
+          {panelList.map((panel) =>
             renderPanelButton(panel.id, panel.label, panel.description, panel.icon),
           )}
         </div>

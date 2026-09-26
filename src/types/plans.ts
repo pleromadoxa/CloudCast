@@ -19,6 +19,13 @@ export interface SubscriptionPlan {
   features: string[];
 }
 
+/** Which production dashboards the user wants visible (synced across devices). */
+export interface DashboardPreferences {
+  audio_dashboard_enabled: boolean;
+  prism_dashboard_enabled: boolean;
+  replay_dashboard_enabled: boolean;
+}
+
 export interface UserProfile {
   id: string;
   email: string | null;
@@ -28,6 +35,8 @@ export interface UserProfile {
   plan: SubscriptionPlan;
   /** Per-product plans when set by backend (optional). */
   entitlements?: import('./products').ProductEntitlements;
+  /** Account-level dashboard visibility preferences. */
+  dashboard_preferences?: DashboardPreferences;
 }
 
 export const PLAN_LABELS: Record<PlanTier, string> = {

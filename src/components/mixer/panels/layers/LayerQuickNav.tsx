@@ -7,6 +7,11 @@ const SHORTCUTS: { id: LayerStackId; label: string; tier?: 'advanced' | 'chroma'
   { id: 'lower-third', label: 'Lower 3rd' },
   { id: 'logo', label: 'Logo' },
   { id: 'crawler', label: 'Crawler', tier: 'advanced' },
+  { id: 'weather', label: 'Weather', tier: 'advanced' },
+  { id: 'scoreboard', label: 'Score', tier: 'advanced' },
+  { id: 'ad-zone', label: 'Ad Zone', tier: 'advanced' },
+  { id: 'sponsor-bug', label: 'Sponsor' },
+  { id: 'countdown', label: 'Countdown', tier: 'advanced' },
   { id: 'transition', label: 'Stinger', tier: 'advanced' },
   { id: 'chroma', label: 'KEY', tier: 'chroma' },
 ];

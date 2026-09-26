@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { Device } from '../types/device';
 import { isRealDevice } from '../types/device';
-import { hasPgmVideoSignal } from '../lib/broadcast/pgmProgramCapture';
+import { isPgmReadyForBroadcast } from '../lib/broadcast/pgmProgramCapture';
 import { reconnectWhepPoolDevice } from '../lib/whepStreamPool';
 import type { BroadcastStatus } from './usePgmBroadcast';
 import type { StreamNotice } from './useGoLive';
@@ -15,7 +15,6 @@ interface UseMixerConnectivityRecoveryOptions {
   devices: Device[];
   isOnAir: boolean;
   broadcastStatus: BroadcastStatus;
-  pgmDevice: Device | null;
   getPgmOutputContainer: () => HTMLElement | null;
   onReconnectSession: () => void;
   resumeBroadcast: () => Promise<{ ok: boolean; message: string; fatal?: boolean }>;
@@ -29,31 +28,44 @@ export function useMixerConnectivityRecovery({
   devices,
   isOnAir,
   broadcastStatus,
-  pgmDevice,
   getPgmOutputContainer,
   onReconnectSession,
   resumeBroadcast,
   setStreamNotice,
 }: UseMixerConnectivityRecoveryOptions) {
   const lastTokenRef = useRef(reconnectToken);
+  const devicesRef = useRef(devices);
+  const isOnAirRef = useRef(isOnAir);
+  const broadcastStatusRef = useRef(broadcastStatus);
+  const getPgmOutputContainerRef = useRef(getPgmOutputContainer);
+  const onReconnectSessionRef = useRef(onReconnectSession);
+  const resumeBroadcastRef = useRef(resumeBroadcast);
+  const setStreamNoticeRef = useRef(setStreamNotice);
+  devicesRef.current = devices;
+  isOnAirRef.current = isOnAir;
+  broadcastStatusRef.current = broadcastStatus;
+  getPgmOutputContainerRef.current = getPgmOutputContainer;
+  onReconnectSessionRef.current = onReconnectSession;
+  resumeBroadcastRef.current = resumeBroadcast;
+  setStreamNoticeRef.current = setStreamNotice;
 
   useEffect(() => {
     if (!isOnline || reconnectToken === 0 || reconnectToken === lastTokenRef.current) {
       return;
     }
-    lastTokenRef.current = reconnectToken;
 
     let cancelled = false;
 
-    setStreamNotice({
+    setStreamNoticeRef.current({
       type: 'info',
       message: 'Internet restored — reconnecting mixer and streams…',
     });
 
     const run = async () => {
-      onReconnectSession();
+      lastTokenRef.current = reconnectToken;
+      onReconnectSessionRef.current();
 
-      for (const device of devices) {
+      for (const device of devicesRef.current) {
         if (!isRealDevice(device)) continue;
         reconnectWhepPoolDevice(device.deviceId);
         window.dispatchEvent(
@@ -61,11 +73,11 @@ export function useMixerConnectivityRecovery({
         );
       }
 
-      const needsBroadcastResume = isOnAir && broadcastStatus !== 'live';
+      const needsBroadcastResume = isOnAirRef.current && broadcastStatusRef.current !== 'live';
 
       if (!needsBroadcastResume) {
         if (!cancelled) {
-          setStreamNotice({
+          setStreamNoticeRef.current({
             type: 'success',
             message: 'Connection restored. Live feeds are reconnecting.',
           });
@@ -75,36 +87,31 @@ export function useMixerConnectivityRecovery({
 
       const deadline = Date.now() + SIGNAL_WAIT_MS;
       while (!cancelled && Date.now() < deadline) {
-        const hasPgm =
-          Boolean(pgmDevice && isRealDevice(pgmDevice)) &&
-          (pgmDevice!.status === 'live' || pgmDevice!.status === 'connecting');
-        const hasVideo = hasPgmVideoSignal(getPgmOutputContainer());
-
-        if (hasPgm && hasVideo) {
-          const result = await resumeBroadcast();
+        if (isPgmReadyForBroadcast(getPgmOutputContainerRef.current())) {
+          const result = await resumeBroadcastRef.current();
           if (cancelled) return;
           if (result.ok) {
-            setStreamNotice({
+            setStreamNoticeRef.current({
               type: 'success',
               message: `Connection restored. ${result.message}`,
             });
             return;
           }
           if (result.fatal) {
-            setStreamNotice({ type: 'error', message: result.message });
+            setStreamNoticeRef.current({ type: 'error', message: result.message });
             return;
           }
         }
 
         await sleep(RETRY_MS);
-        onReconnectSession();
+        onReconnectSessionRef.current();
       }
 
       if (!cancelled) {
-        setStreamNotice({
+        setStreamNoticeRef.current({
           type: 'info',
           message:
-            'Connection restored. Preview is reconnecting — press STREAM if ON AIR does not resume.',
+            'Connection restored. Broadcast will resume automatically when program video returns.',
         });
       }
     };
@@ -114,18 +121,7 @@ export function useMixerConnectivityRecovery({
     return () => {
       cancelled = true;
     };
-  }, [
-    reconnectToken,
-    isOnline,
-    devices,
-    isOnAir,
-    broadcastStatus,
-    pgmDevice,
-    getPgmOutputContainer,
-    onReconnectSession,
-    resumeBroadcast,
-    setStreamNotice,
-  ]);
+  }, [reconnectToken, isOnline]);
 }
 
 function sleep(ms: number) {

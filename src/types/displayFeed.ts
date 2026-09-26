@@ -6,12 +6,13 @@ export type DisplaySlideType =
   | 'announcement'
   | 'lyrics'
   | 'media'
+  | 'overlay'
   | 'custom';
 
 /** Slide layout — banner-bottom keeps top clear for mixer key overlays. */
 export type DisplaySlideLayout = 'full' | 'banner-bottom' | 'banner-top' | 'lower-third';
 
-export type DisplayBackgroundKind = 'preset' | 'color' | 'image' | 'gradient';
+export type DisplayBackgroundKind = 'preset' | 'color' | 'image' | 'gradient' | 'chroma';
 
 export type DisplayTextSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 export type DisplayTextAlign = 'left' | 'center' | 'right';
@@ -36,12 +37,22 @@ export interface DisplayTextField {
   align: DisplayTextAlign;
   /** Optional accent color */
   color?: string;
+  /** Optional image shown above the text (PNG with transparency supported) */
+  imageUrl?: string;
 }
 
 export interface DisplayScripture {
   reference: string;
   text: string;
   translation?: string;
+}
+
+/** Saved song lyrics for quick re-use during service. */
+export interface LyricsPreset {
+  id: string;
+  title: string;
+  lyrics: string;
+  savedAt: string;
 }
 
 /** Saved scripture for quick re-use during service. */
@@ -67,6 +78,13 @@ export interface DisplayCustomTemplate {
   foregroundImageUrl?: string;
   foregroundPosition?: DisplaySlide['foregroundPosition'];
   foregroundSize?: DisplaySlide['foregroundSize'];
+  foregroundX?: number;
+  foregroundY?: number;
+  foregroundWidthPct?: number;
+  foregroundHeightPct?: number;
+  videoUrl?: string;
+  videoLoop?: boolean;
+  videoMuted?: boolean;
   fields: Omit<DisplayTextField, 'id'>[];
   createdAt: string;
 }
@@ -91,8 +109,18 @@ export interface DisplaySlide {
   scripture?: DisplayScripture;
   /** Foreground image (logo, photo, etc.) */
   foregroundImageUrl?: string;
-  foregroundPosition?: 'center' | 'top' | 'bottom' | 'left' | 'right';
+  foregroundPosition?: 'center' | 'top' | 'bottom' | 'left' | 'right' | 'lower-third';
   foregroundSize?: 'small' | 'medium' | 'large';
+  /** Custom foreground placement (% of canvas, 0–100) */
+  foregroundX?: number;
+  foregroundY?: number;
+  /** Foreground width as % of canvas (5–100). Height follows aspect unless foregroundHeightPct set. */
+  foregroundWidthPct?: number;
+  foregroundHeightPct?: number;
+  /** Full-screen or background video on media slides */
+  videoUrl?: string;
+  videoLoop?: boolean;
+  videoMuted?: boolean;
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -115,6 +143,8 @@ export interface DisplayFeedState {
   holdBackground: DisplayBackground;
   /** Saved scriptures for quick lookup */
   scripturePresets: ScripturePreset[];
+  /** Saved lyrics sets for quick lookup */
+  lyricsPresets: LyricsPreset[];
   /** User-created templates */
   customTemplates: DisplayCustomTemplate[];
   /** Key mode — top area green/transparent for mixer chroma overlay */
@@ -190,6 +220,7 @@ export function createDefaultDisplayFeedState(): DisplayFeedState {
     showNotes: false,
     holdBackground: createDefaultBackground(),
     scripturePresets: [],
+    lyricsPresets: [],
     customTemplates: [],
     keyMode: false,
     defaultBibleTranslation: 'web',

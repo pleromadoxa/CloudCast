@@ -4,11 +4,18 @@ import type {
   ImageOverlay,
   LowerThirdCustomization,
   LowerThirdTemplateId,
+  AdZoneSettings,
   BreakingNewsSettings,
+  CountdownSettings,
   CrawlerSettings,
   LiveButtonSettings,
+  MediaLibraryItem,
   ProgramLogoSettings,
+  ScoreboardSettings,
+  SponsorBugSettings,
   TransitionGraphicSettings,
+  VideoMediaOverlay,
+  WeatherSettings,
 } from './overlays';
 
 export type TransitionType = 'cut' | 'mix' | 'fade' | 'wipe' | 'dip';
@@ -19,7 +26,16 @@ export type OutputMode = 'main' | 'pip' | 'key';
 
 export type PipPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
 
-export type MixerPanel = 'sources' | 'layers' | 'audio' | 'transitions' | 'settings' | 'devices' | 'stream';
+export type MixerPanel =
+  | 'sources'
+  | 'layers'
+  | 'audio'
+  | 'transitions'
+  | 'settings'
+  | 'devices'
+  | 'stream'
+  | 'media'
+  | 'browser';
 
 export type VideoAspectRatio = '16:9' | '9:16' | '4:3' | '1:1';
 
@@ -27,7 +43,8 @@ export interface DisplaySettings {
   aspectRatio: VideoAspectRatio;
 }
 
-export type ChromaFillSource = 'preset' | 'camera';
+/** Preset canvas, aux camera inside keyer, or transparent (camera composited beneath in monitor). */
+export type ChromaFillSource = 'preset' | 'camera' | 'transparent';
 
 export type KeyType = 'chroma' | 'luma';
 
@@ -69,10 +86,22 @@ export interface LayerSettings {
   breakingNews: BreakingNewsSettings;
   showLiveButton: boolean;
   liveButton: LiveButtonSettings;
+  weather: WeatherSettings;
+  showWeather: boolean;
+  adZone: AdZoneSettings;
+  showAdZone: boolean;
+  scoreboard: ScoreboardSettings;
+  showScoreboard: boolean;
+  countdown: CountdownSettings;
+  showCountdown: boolean;
+  sponsorBug: SponsorBugSettings;
+  showSponsorBug: boolean;
   transitionGraphic: TransitionGraphicSettings;
   showSafeZone: boolean;
   showCrosshair: boolean;
   imageOverlays: ImageOverlay[];
+  videoOverlays: VideoMediaOverlay[];
+  mediaLibrary: MediaLibraryItem[];
   /** Front-to-back layer order (index 0 = top / highest z). */
   graphicsStackOrder: LayerStackId[];
 }

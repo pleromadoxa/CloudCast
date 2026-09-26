@@ -8,11 +8,17 @@ import { cn } from '../../lib/utils';
 import type { LayerStackId } from '../../types/graphicsStack';
 import { LowerThirdOverlay } from './LowerThirdOverlay';
 import { ImageOverlayLayer } from './ImageOverlayLayer';
+import { VideoMediaOverlayLayer } from './VideoMediaOverlayLayer';
 import { LogoOverlay } from './LogoOverlay';
 import { NewsCrawler } from './NewsCrawler';
 import { BreakingBanner } from './BreakingBanner';
 import { TransitionStinger } from './TransitionStinger';
 import { LiveButtonOverlay } from './LiveButtonOverlay';
+import { WeatherPanel } from './WeatherPanel';
+import { AdZoneOverlay } from './AdZoneOverlay';
+import { ScoreboardOverlay } from './ScoreboardOverlay';
+import { CountdownOverlay } from './CountdownOverlay';
+import { SponsorBugOverlay } from './SponsorBugOverlay';
 import { LayerHighlight } from './LayerHighlight';
 import { GraphicsDragLayer } from './GraphicsDragLayer';
 import { isDraggableLayer } from '../../lib/overlayPlacement';
@@ -56,6 +62,38 @@ function renderStackLayer(
     return <LiveButtonOverlay settings={gfx.liveButton} />;
   }
 
+  if (id === 'weather') {
+    if (!gfx.showWeather) return null;
+    return <WeatherPanel settings={gfx.weather} />;
+  }
+
+  if (id === 'ad-zone') {
+    if (!gfx.showAdZone) return null;
+    return (
+      <AdZoneOverlay
+        settings={gfx.adZone}
+        mediaLibrary={gfx.mediaLibrary}
+        liveOnPgm={!stagingPreview}
+      />
+    );
+  }
+
+  if (id === 'scoreboard') {
+    if (!gfx.showScoreboard) return null;
+    return <ScoreboardOverlay settings={gfx.scoreboard} />;
+  }
+
+  if (id === 'countdown') {
+    if (!gfx.showCountdown) return null;
+    return <CountdownOverlay settings={gfx.countdown} />;
+  }
+
+  if (id === 'sponsor-bug') {
+    const show = gfx.showSponsorBug && (stagingPreview || gfx.sponsorBug.entries.length > 0);
+    if (!show) return null;
+    return <SponsorBugOverlay settings={gfx.sponsorBug} />;
+  }
+
   if (id === 'lower-third') {
     if (!gfx.showLowerThird) return null;
     const hasHeadline = Boolean(gfx.lowerThirdText.trim());
@@ -77,6 +115,15 @@ function renderStackLayer(
     return <ImageOverlayLayer overlays={[overlay]} />;
   }
 
+  if (id.startsWith('video:')) {
+    const vidId = id.slice(6);
+    const overlay = gfx.videoOverlays.find((o) => o.id === vidId);
+    if (!overlay) return null;
+    const show = stagingPreview ? overlay.visible : overlay.visible || overlay.liveOnPgm;
+    if (!show) return null;
+    return <VideoMediaOverlayLayer overlays={[overlay]} />;
+  }
+
   if (id === 'logo') {
     const show =
       gfx.showLogo &&
@@ -88,7 +135,10 @@ function renderStackLayer(
   }
 
   if (id === 'crawler') {
-    const show = stagingPreview ? gfx.showCrawler : gfx.showCrawler && gfx.crawler.text.trim();
+    const hasTickerText =
+      Boolean(gfx.crawler.text.trim()) ||
+      gfx.crawler.lines.some((line) => line.enabled && line.text.trim());
+    const show = stagingPreview ? gfx.showCrawler : gfx.showCrawler && hasTickerText;
     if (!show) return null;
     return <NewsCrawler crawler={gfx.crawler} />;
   }
@@ -122,7 +172,7 @@ export function VideoOverlay({
 
   const imageOverlays = stagingPreview
     ? (gfx?.imageOverlays.filter((o) => o.visible) ?? [])
-    : (gfx?.imageOverlays ?? []);
+    : (gfx?.imageOverlays.filter((o) => o.visible || o.liveOnPgm) ?? []);
 
   const stackLayers: { id: LayerStackId; zIndex: number; content: ReactNode }[] = [];
   if (gfx) {

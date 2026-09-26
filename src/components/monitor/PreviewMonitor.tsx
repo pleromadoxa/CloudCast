@@ -34,6 +34,8 @@ interface PreviewMonitorProps {
   onSelectSource: (deviceId: string) => void;
   onCutToSource?: (deviceId: string) => void;
   aspectRatio: VideoAspectRatio;
+  pgmDevice?: Device | null;
+  displayAutoKey?: boolean;
 }
 
 const VIEW_MODE_OPTIONS: { id: ViewMode; label: string }[] = [
@@ -68,6 +70,8 @@ export function PreviewMonitor({
   onSelectSource,
   onCutToSource,
   aspectRatio,
+  pgmDevice = null,
+  displayAutoKey = false,
 }: PreviewMonitorProps) {
   const showGrid = viewMode === 'grid' || viewMode === 'focus';
   const pstOverlay = pstDevice ? getOverlay(pstDevice.deviceId) : 'none';
@@ -155,6 +159,9 @@ export function PreviewMonitor({
               volume={pstMonitorVolume}
               audioDeviceId={pstDevice ? getMonitorAudioDeviceId(pstDevice.deviceId) : null}
               pgmDeviceId={pgmDeviceId}
+              pgmDevice={pgmDevice}
+              pstDeviceId={pstDeviceId}
+              displayAutoKey={displayAutoKey}
               aspectRatio={aspectRatio}
               embedded
               showClock={false}

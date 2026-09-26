@@ -1,6 +1,8 @@
-# Mobile App Integration — CloudCast by Quantum Regal
+# Mobile App Integration — CloudCast by Spatial Regal
 
 Integration guide for iOS/Android (and USB capture) clients pairing to a CloudCast dashboard session.
+
+> **Current transport:** All plans use **Regal Mesh** P2P for video and audio. Regal Cloud WHIP/WHEP is temporarily disabled.
 
 **Dashboard users** sign in at `/login`. **Mobile devices** use a **6-character access code** only.
 
@@ -332,6 +334,7 @@ For **USB audio-only** devices, stream audio only (no video track required). The
 | `stream-ready` | Mobile → Dashboard | Regal Cloud: stream live |
 | `stream-stopped` | Mobile → Dashboard | Stream ended |
 | `request-reoffer` | Dashboard → Mobile | Dashboard reconnected — resend mesh `offer` |
+| `request-cloud-ingest` | Dashboard → Mobile | Regal Cloud endpoints ready — publish WHIP to `whip_url` |
 
 ---
 

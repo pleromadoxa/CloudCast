@@ -82,8 +82,27 @@ export function isDraggableLayer(layerId: string): boolean {
     layerId === 'logo' ||
     layerId === 'lower-third' ||
     layerId === 'live-button' ||
-    layerId.startsWith('image:')
+    layerId === 'weather' ||
+    layerId === 'ad-zone' ||
+    layerId === 'scoreboard' ||
+    layerId === 'countdown' ||
+    layerId === 'sponsor-bug' ||
+    layerId.startsWith('image:') ||
+    layerId.startsWith('video:')
   );
+}
+
+/** Whether a media layer is on program and draggable from the PGM monitor. */
+export function isLayerVisibleOnProgram(layerId: LayerStackId, gfx: LayerSettings): boolean {
+  if (layerId.startsWith('image:')) {
+    const img = gfx.imageOverlays.find((o) => o.id === layerId.slice(6));
+    return Boolean(img?.liveOnPgm && !img.fillScreen);
+  }
+  if (layerId.startsWith('video:')) {
+    const vid = gfx.videoOverlays.find((o) => o.id === layerId.slice(6));
+    return Boolean(vid?.liveOnPgm && !vid.fillScreen);
+  }
+  return false;
 }
 
 /** Whether a layer is actually rendered on the PST staging preview (matches VideoOverlay). */
@@ -94,9 +113,18 @@ export function isLayerVisibleOnStagingPreview(layerId: LayerStackId, gfx: Layer
     return gfx.programLogo.mode === 'image' ? Boolean(gfx.programLogo.imageDataUrl) : true;
   }
   if (layerId === 'live-button') return gfx.showLiveButton;
+  if (layerId === 'weather') return gfx.showWeather;
+  if (layerId === 'ad-zone') return gfx.showAdZone;
+  if (layerId === 'scoreboard') return gfx.showScoreboard;
+  if (layerId === 'countdown') return gfx.showCountdown;
+  if (layerId === 'sponsor-bug') return gfx.showSponsorBug;
   if (layerId.startsWith('image:')) {
     const img = gfx.imageOverlays.find((o) => o.id === layerId.slice(6));
     return Boolean(img?.visible);
+  }
+  if (layerId.startsWith('video:')) {
+    const vid = gfx.videoOverlays.find((o) => o.id === layerId.slice(6));
+    return Boolean(vid?.visible);
   }
   return false;
 }

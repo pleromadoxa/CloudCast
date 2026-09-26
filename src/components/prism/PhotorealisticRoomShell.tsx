@@ -165,28 +165,60 @@ function RecessedLights({ count, width, depth, accent }: { count: number; width:
   );
 }
 
+/** Builds a wall/floor material whose maps tile at a believable physical scale. */
+function tiledPbrMaterial(
+  kind: Parameters<typeof pbrFromTexture>[0],
+  seed: number,
+  color: string,
+  size: [number, number],
+  tileMeters = 2.2,
+  opts: { roughness?: number; envMapIntensity?: number } = {},
+) {
+  const m = pbrFromTexture(kind, seed, {
+    roughness: opts.roughness ?? 0.72,
+    envMapIntensity: opts.envMapIntensity ?? 0.85,
+  });
+  m.color = new THREE.Color(color);
+  // Clone the shared procedural maps so each surface tiles at physical scale
+  // (~tileMeters per texture tile) instead of stretching one 256px canvas
+  // across a whole wall — which is what made walls read as flat noise.
+  for (const key of ['map', 'normalMap', 'roughnessMap'] as const) {
+    const t = m[key];
+    if (t) {
+      const clone = t.clone();
+      clone.wrapS = THREE.RepeatWrapping;
+      clone.wrapT = THREE.RepeatWrapping;
+      clone.repeat.set(Math.max(1, size[0] / tileMeters), Math.max(1, size[1] / tileMeters));
+      clone.needsUpdate = true;
+      m[key] = clone;
+    }
+  }
+  return m;
+}
+
 export function PhotorealisticRoomShell({ environment }: { environment: VirtualSetEnvironment }) {
   const style = roomStyleFor(environment);
   const { width, depth } = style;
   const trim = useMemo(() => pbrSolid('#44403c', { roughness: 0.45 }), []);
-  const wallMat1 = useMemo(() => {
-    const m = pbrFromTexture(style.wallTexture, 1, { roughness: 0.72, envMapIntensity: 0.5 });
-    m.color = new THREE.Color(style.wallColor);
-    return m;
-  }, [style.wallColor, style.wallTexture]);
-  const wallMat2 = useMemo(() => {
-    const m = pbrFromTexture(style.wallTexture, 2, { roughness: 0.72, envMapIntensity: 0.5 });
-    m.color = new THREE.Color(style.wallColor);
-    return m;
-  }, [style.wallColor, style.wallTexture]);
-  const wallMat3 = useMemo(() => {
-    const m = pbrFromTexture(style.wallTexture, 3, { roughness: 0.72, envMapIntensity: 0.5 });
-    m.color = new THREE.Color(style.wallColor);
-    return m;
-  }, [style.wallColor, style.wallTexture]);
+  const wallMat1 = useMemo(
+    () => tiledPbrMaterial(style.wallTexture, 1, style.wallColor, [width, 5]),
+    [style.wallColor, style.wallTexture, width],
+  );
+  const wallMat2 = useMemo(
+    () => tiledPbrMaterial(style.wallTexture, 2, style.wallColor, [depth, 5]),
+    [style.wallColor, style.wallTexture, depth],
+  );
+  const wallMat3 = useMemo(
+    () => tiledPbrMaterial(style.wallTexture, 3, style.wallColor, [depth, 5]),
+    [style.wallColor, style.wallTexture, depth],
+  );
   const floorMat = useMemo(
-    () => pbrFromTexture(style.floorTexture, 4, { roughness: style.floorTexture === 'carpet' ? 0.95 : 0.55 }),
-    [style.floorTexture],
+    () =>
+      tiledPbrMaterial(style.floorTexture, 4, style.floorColor, [width, depth], 1.6, {
+        roughness: style.floorTexture === 'carpet' ? 0.95 : 0.55,
+        envMapIntensity: 1,
+      }),
+    [style.floorTexture, style.floorColor, width, depth],
   );
 
   return (

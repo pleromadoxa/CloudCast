@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
-import { Power, Radio } from 'lucide-react';
+import { Radio } from 'lucide-react';
 import { unlockDashboardAudio } from '../../lib/audioOutput';
 import { useAudioMixerMeters } from '../../context/AudioMixerEngineContext';
 import { cn } from '../../lib/utils';
 import { MasterOutputMeters } from '../mixer/MasterOutputMeters';
+import { MixerRockerSwitch } from '../mixer/MixerRockerSwitch';
 import { InputAudioVisualizer } from '../mixer/InputAudioVisualizer';
 import { MixerPhysicalButton } from './MixerPhysicalButton';
 import { MixerVerticalFader, volumeToDb } from './MixerVerticalFader';
@@ -62,22 +63,17 @@ export function MasterOutputPanel({
             <p className="master-output-panel__subtitle">Main L/R Bus</p>
           </div>
         </div>
-        <button
-          type="button"
-          className={cn(
-            'master-output-panel__power',
-            consoleEnabled && 'master-output-panel__power--on',
-          )}
+        <MixerRockerSwitch
+          className="master-output-panel__rocker"
+          size="sm"
+          checked={consoleEnabled}
+          label="Console power"
           title={consoleEnabled ? 'Console on — click to power off' : 'Console off — click to power on'}
-          onClick={() => {
+          onCheckedChange={() => {
             void unlockDashboardAudio();
             onToggleConsoleEnabled();
           }}
-        >
-          <span className="master-output-panel__power-led" aria-hidden />
-          <Power className="h-3 w-3" aria-hidden />
-          <span>POW</span>
-        </button>
+        />
       </header>
 
       <div className="master-output-panel__body">

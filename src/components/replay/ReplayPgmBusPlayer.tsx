@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { ReplayPushRequest } from '../../types/replay';
+import { useOwnedVideoOutRef } from '../../lib/videoOutRef';
 import { cn } from '../../lib/utils';
 
 interface ReplayPgmBusPlayerProps {
@@ -19,6 +20,15 @@ export function ReplayPgmBusPlayer({
   onEnded,
 }: ReplayPgmBusPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const { bindVideoOutRef } = useOwnedVideoOutRef(onVideoRef);
+
+  const bindRef = useCallback(
+    (el: HTMLVideoElement | null) => {
+      videoRef.current = el;
+      bindVideoOutRef(el);
+    },
+    [bindVideoOutRef],
+  );
 
   useEffect(() => {
     const el = videoRef.current;
@@ -27,8 +37,6 @@ export function ReplayPgmBusPlayer({
     el.src = replay.url;
     el.playbackRate = replay.playbackRate ?? 1;
     void el.play().catch(() => undefined);
-
-    onVideoRef?.(el);
 
     if (onBusPlaybackStream) {
       const stream =
@@ -41,12 +49,7 @@ export function ReplayPgmBusPlayer({
     return () => {
       onBusPlaybackStream?.(null);
     };
-  }, [replay.url, replay.playbackRate, onVideoRef, onBusPlaybackStream]);
-
-  const bindRef = (el: HTMLVideoElement | null) => {
-    videoRef.current = el;
-    onVideoRef?.(el);
-  };
+  }, [replay.url, replay.playbackRate, onBusPlaybackStream]);
 
   return (
     <video
@@ -55,6 +58,7 @@ export function ReplayPgmBusPlayer({
       playsInline
       onEnded={onEnded}
       data-replay-pgm="true"
+      data-pgm-capture="1"
     />
   );
 }

@@ -4,11 +4,11 @@ import { useNetworkOptional } from '../../context/NetworkContext';
 import { RegalCloudBootScreen } from '../system/RegalCloudBootScreen';
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading } = useAuth();
+  const { user, loading } = useAuth();
   const { isOnline } = useNetworkOptional();
   const location = useLocation();
 
-  const waitingForAuth = Boolean((loading || (user && !profile && isOnline)) && isOnline);
+  const waitingForAuth = Boolean(loading && isOnline);
 
   if (waitingForAuth) {
     return <RegalCloudBootScreen />;

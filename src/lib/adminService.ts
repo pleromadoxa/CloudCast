@@ -21,6 +21,7 @@ import type {
   ErrorLogList,
   PlanGrantList,
   PlatformBroadcastRow,
+  PlatformProductServiceRow,
   SystemHealth,
 } from '../types/admin';
 import type { MobileAppReleaseRow } from '../types/mobileApps';
@@ -429,6 +430,37 @@ export async function fetchAdminBroadcasts(): Promise<PlatformBroadcastRow[]> {
 export async function adminDeactivateBroadcast(id: string): Promise<void> {
   const { error } = await getSupabase().rpc('admin_deactivate_broadcast', { p_id: id });
   if (error) throw new Error(error.message);
+}
+
+export async function fetchAdminPlatformProductServices(): Promise<PlatformProductServiceRow[]> {
+  const { data, error } = await getSupabase().rpc('admin_list_platform_product_services');
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    product_id: row.product_id as CloudCastProductId,
+    is_enabled: Boolean(row.is_enabled),
+    updated_at: String(row.updated_at),
+    updated_by: row.updated_by ? String(row.updated_by) : null,
+    updated_by_email: row.updated_by_email ? String(row.updated_by_email) : null,
+  }));
+}
+
+export async function adminSetPlatformProductService(
+  productId: CloudCastProductId,
+  enabled: boolean,
+): Promise<PlatformProductServiceRow> {
+  const { data, error } = await getSupabase().rpc('admin_set_platform_product_service', {
+    p_product_id: productId,
+    p_enabled: enabled,
+  });
+  if (error) throw new Error(error.message);
+  const row = (data ?? {}) as Record<string, unknown>;
+  return {
+    product_id: row.product_id as CloudCastProductId,
+    is_enabled: Boolean(row.is_enabled),
+    updated_at: String(row.updated_at),
+    updated_by: row.updated_by ? String(row.updated_by) : null,
+    updated_by_email: null,
+  };
 }
 
 export async function adminGrantRoleByEmail(

@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { usePrismFeedOptional } from '../../context/PrismFeedContext';
+import { useLiveVideoBinding } from '../../hooks/useLiveVideoBinding';
+import { useOwnedVideoOutRef } from '../../lib/videoOutRef';
 import { cn } from '../../lib/utils';
 
 interface PrismFeedPlayerProps {
@@ -18,29 +20,31 @@ export function PrismFeedPlayer({
 }: PrismFeedPlayerProps) {
   const prism = usePrismFeedOptional();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const { bindVideoOutRef } = useOwnedVideoOutRef(onVideoRef);
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (prism?.programStream) {
-      video.srcObject = prism.programStream;
-      void video.play().catch(() => {});
-    } else {
-      video.srcObject = null;
-    }
-  }, [prism?.programStream]);
+  const bindMainVideoRef = useCallback(
+    (el: HTMLVideoElement | null) => {
+      videoRef.current = el;
+      bindVideoOutRef(el);
+    },
+    [bindVideoOutRef],
+  );
 
-  useEffect(() => {
-    onVideoRef?.(videoRef.current);
-    return () => onVideoRef?.(null);
-  }, [onVideoRef, prism?.programStream]);
+  useLiveVideoBinding(videoRef, prism?.programStream);
 
   const active = Boolean(prism?.isLive && prism.programStream);
 
   return (
     <div className={cn('relative h-full w-full overflow-hidden bg-black', className)}>
       {active ? (
-        <video ref={videoRef} className="h-full w-full object-contain" playsInline muted />
+        <video
+          ref={bindMainVideoRef}
+          className="h-full w-full object-contain"
+          playsInline
+          muted
+          autoPlay
+          data-pgm-capture="1"
+        />
       ) : (
         <div className="flex h-full flex-col items-center justify-center gap-2 bg-gradient-to-b from-amber-950/40 to-black p-4 text-center">
           <p className="text-xs font-bold tracking-[0.2em] text-amber-400/80">REGAL PRISM</p>

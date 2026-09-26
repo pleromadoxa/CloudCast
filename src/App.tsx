@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { DisplayFeedProvider } from './context/DisplayFeedContext';
@@ -5,6 +6,7 @@ import { PrismFeedProvider } from './context/PrismFeedContext';
 import { ProgramPresetProvider } from './context/ProgramPresetContext';
 import { NetworkProvider } from './context/NetworkContext';
 import { ProductionProvider } from './context/ProductionContext';
+import { RenderEngineProvider } from './context/RenderEngineContext';
 import { MarketingLayout } from './components/marketing/MarketingLayout';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { ProductGate } from './components/auth/ProductGate';
@@ -42,6 +44,13 @@ import { SubprocessorsPage } from './pages/legal/SubprocessorsPage';
 import { TermsPage } from './pages/legal/TermsPage';
 import { RouteSEO } from './components/seo/RouteSEO';
 
+// The 3D motion preview pulls in the whole three.js scene kit — keep it out of
+// the first paint and load it only when the preview tab actually opens.
+const PrismMotionPreviewPage = lazy(() =>
+  import('./pages/PrismMotionPreviewPage').then((m) => ({ default: m.PrismMotionPreviewPage })),
+);
+const PrismScenePreviewPage = lazy(() => import('./pages/PrismScenePreviewPage'));
+
 export default function App() {
   return (
     <NetworkProvider>
@@ -50,6 +59,7 @@ export default function App() {
         <PrismFeedProvider>
         <ProgramPresetProvider>
         <ProductionProvider>
+          <RenderEngineProvider>
           <SupabaseHeartbeat />
           <BrowserRouter>
           <RouteSEO />
@@ -101,6 +111,23 @@ export default function App() {
             <Route path="display/view" element={<DisplayCongregationPage />} />
             <Route path="dashboard/output" element={<MixerOutputPage />} />
             <Route path="prism/eye" element={<PrismEyePage />} />
+            <Route
+              path="prism/motion-preview"
+              element={
+                <Suspense
+                  fallback={
+                    <div className="flex h-[100dvh] items-center justify-center bg-black text-[11px] tracking-[0.3em] text-white/50">
+                      LOADING 3D MOTION…
+                    </div>
+                  }
+                >
+                  <PrismMotionPreviewPage />
+                </Suspense>
+              }
+            />
+            {import.meta.env.DEV && (
+              <Route path="prism/scene-preview" element={<PrismScenePreviewPage />} />
+            )}
             <Route
               path="audio"
               element={
@@ -164,6 +191,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           </BrowserRouter>
+          </RenderEngineProvider>
         </ProductionProvider>
         </ProgramPresetProvider>
         </PrismFeedProvider>

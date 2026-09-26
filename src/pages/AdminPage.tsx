@@ -12,6 +12,7 @@ import {
   Loader2,
   Megaphone,
   MonitorSmartphone,
+  Power,
   Radio,
   RefreshCw,
   Shield,
@@ -32,6 +33,7 @@ import { AdminEmailQueuePanel } from '../components/admin/AdminEmailQueuePanel';
 import { AdminUserDetailCards } from '../components/admin/AdminUserDetailCards';
 import { AdminManualAdminPanel } from '../components/admin/AdminManualAdminPanel';
 import { AdminPlanIssuingPanel } from '../components/admin/AdminPlanIssuingPanel';
+import { AdminServicesPanel } from '../components/admin/AdminServicesPanel';
 import {
   AdminPagination,
   AdminSection,
@@ -58,6 +60,7 @@ import {
   fetchAdminMobileAppReleases,
   fetchAdminOverview,
   fetchAdminPlans,
+  fetchAdminPlatformProductServices,
   fetchAdminSessions,
   fetchAdminStreamDestinations,
   fetchAdminUserDetail,
@@ -89,6 +92,7 @@ import type {
   PlanGrantRow,
   EmailQueueRow,
   PlatformBroadcastRow,
+  PlatformProductServiceRow,
   SystemHealth,
 } from '../types/admin';
 import type { PlanTier } from '../types/plans';
@@ -104,6 +108,7 @@ const TABS: { id: AdminTab; label: string; icon: typeof Users }[] = [
   { id: 'plan_grants', label: 'Plan issuing', icon: Gift },
   { id: 'coupons', label: 'Coupons', icon: Ticket },
   { id: 'broadcasting', label: 'Broadcasting', icon: Megaphone },
+  { id: 'services', label: 'Services', icon: Power },
   { id: 'mobile_apps', label: 'Mobile apps', icon: MonitorSmartphone },
   { id: 'sessions', label: 'Mixer usage', icon: Radio },
   { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
@@ -159,6 +164,7 @@ export function AdminPage() {
   const [grantPage, setGrantPage] = useState(0);
   const [coupons, setCoupons] = useState<CouponRow[]>([]);
   const [broadcasts, setBroadcasts] = useState<PlatformBroadcastRow[]>([]);
+  const [platformServices, setPlatformServices] = useState<PlatformProductServiceRow[]>([]);
   const [mobileAppReleases, setMobileAppReleases] = useState<MobileAppReleaseRow[]>([]);
   const [streamDestinations, setStreamDestinations] = useState<AdminStreamDestinationRow[]>([]);
   const [streamDestinationsTotal, setStreamDestinationsTotal] = useState(0);
@@ -198,6 +204,8 @@ export function AdminPage() {
         setBroadcasts(broadcastRows);
         setStreamDestinations(destinationData.destinations);
         setStreamDestinationsTotal(destinationData.total);
+      } else if (tab === 'services') {
+        setPlatformServices(await fetchAdminPlatformProductServices());
       } else if (tab === 'mobile_apps') {
         setMobileAppReleases(await fetchAdminMobileAppReleases());
       } else if (tab === 'sessions') {
@@ -647,6 +655,8 @@ export function AdminPage() {
             onDestinationSearch={() => { void loadTab(); }}
             onRefresh={loadTab}
           />
+        ) : tab === 'services' ? (
+          <AdminServicesPanel services={platformServices} onRefresh={loadTab} />
         ) : tab === 'mobile_apps' ? (
           <AdminMobileAppsPanel releases={mobileAppReleases} onRefresh={loadTab} />
         ) : tab === 'sessions' ? (

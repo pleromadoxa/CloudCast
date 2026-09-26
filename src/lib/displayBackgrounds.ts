@@ -112,6 +112,9 @@ export const DISPLAY_BACKGROUND_PRESETS: DisplayBackgroundPreset[] = [
 ];
 
 export function resolveBackgroundStyle(bg: DisplayBackground): CSSProperties {
+  if (bg.kind === 'chroma') {
+    return { background: '#00ff00' };
+  }
   if (bg.kind === 'color' && bg.color) {
     return { background: bg.color };
   }

@@ -6,17 +6,13 @@ import {
   DISPLAY_TEXT_SIZE_PX,
 } from '../../lib/displayCanvas';
 import { resolveBackgroundStyle } from '../../lib/displayBackgrounds';
+import { resolveForegroundPlacement } from '../../lib/displayForegroundPosition';
+import { isOverlaySlide, overlaySlideStyle } from '../../lib/displayOverlaySlide';
 import { DISPLAY_KEY_COLOR } from '../../lib/displayTemplateUtils';
 import { CloudCastLogo } from '../brand/CloudCastLogo';
 import { DisplayCanvas } from './DisplayCanvas';
 import { DisplayFitContent } from './DisplayFitContent';
 import { cn } from '../../lib/utils';
-
-const FOREGROUND_SIZE: Record<NonNullable<DisplaySlide['foregroundSize']>, string> = {
-  small: 'max-h-[180px] max-w-[400px]',
-  medium: 'max-h-[320px] max-w-[720px]',
-  large: 'max-h-[480px] max-w-[960px]',
-};
 
 interface DisplaySlideRendererProps {
   slide: DisplaySlide | null;
@@ -46,6 +42,10 @@ function resolveSlideBackground(
   holdBackground: DisplayBackground | undefined,
   keyMode: boolean,
 ): DisplayBackground | undefined {
+  if (slide && isOverlaySlide(slide)) {
+    return keyMode ? { kind: 'chroma', overlayOpacity: 0 } : holdBackground;
+  }
+
   const bg = slide?.background ?? holdBackground;
   if (!bg || !keyMode) return bg;
 
@@ -87,77 +87,124 @@ export function DisplaySlideRenderer({
   keyMode = false,
   transition = 'cut',
 }: DisplaySlideRendererProps) {
-  const bg = resolveSlideBackground(slide, holdBackground, keyMode);
-  const bgStyle = bg ? resolveBackgroundStyle(bg) : { background: keyMode ? DISPLAY_KEY_COLOR : '#0a0a0a' };
-  const overlayOpacity = keyMode ? 0 : (bg?.overlayOpacity ?? 0);
-  const layout = slide?.layout ?? 'full';
-  const bannerHeight = getBannerHeight(slide);
+  const overlaySlide = Boolean(slide && isOverlaySlide(slide));
+  const renderSlide = overlaySlide && !keyMode ? null : slide;
+  const bg = resolveSlideBackground(renderSlide, holdBackground, keyMode);
+  const bgStyle = overlaySlide && keyMode
+    ? overlaySlideStyle()
+    : bg
+      ? resolveBackgroundStyle(bg)
+      : { background: keyMode ? DISPLAY_KEY_COLOR : '#0a0a0a' };
+  const overlayOpacity = (overlaySlide && keyMode) || keyMode ? 0 : (bg?.overlayOpacity ?? 0);
+  const layout = renderSlide?.layout ?? 'full';
+  const bannerHeight = getBannerHeight(renderSlide);
   const isBannerBottom = layout === 'banner-bottom' || layout === 'lower-third';
   const isBannerTop = layout === 'banner-top';
-  const measureKey = buildMeasureKey(slide);
-  const slideKey = slide?.id ?? 'hold';
+  const measureKey = buildMeasureKey(renderSlide);
+  const slideKey = renderSlide?.id ?? 'hold';
   const fadeClass = transition === 'fade' ? 'animate-display-fade-in' : undefined;
   const labelReserveClass = showLabel && label ? 'pb-[96px]' : undefined;
+  const foregroundPlacement = renderSlide ? resolveForegroundPlacement(renderSlide) : null;
 
-  const renderFields = () => (
+  const renderVideo = () => {
+    if (!renderSlide?.videoUrl) return null;
+    return (
+      <video
+        key={renderSlide.videoUrl}
+        src={renderSlide.videoUrl}
+        autoPlay
+        loop={renderSlide.videoLoop ?? true}
+        muted={renderSlide.videoMuted ?? true}
+        playsInline
+        className="absolute inset-0 z-[1] h-full w-full object-contain"
+      />
+    );
+  };
+
+  const renderForegroundImage = () => {
+    if (!renderSlide?.foregroundImageUrl || !foregroundPlacement) return null;
+    const widthPct = renderSlide.foregroundWidthPct ?? (isOverlaySlide(renderSlide) ? 100 : 35);
+    const heightPct = renderSlide.foregroundHeightPct;
+    return (
+      <img
+        src={renderSlide.foregroundImageUrl}
+        alt=""
+        className="pointer-events-none absolute z-[3] object-contain"
+        style={{
+          left: `${foregroundPlacement.x}%`,
+          top: `${foregroundPlacement.y}%`,
+          width: `${widthPct}%`,
+          ...(heightPct ? { height: `${heightPct}%` } : { height: 'auto', maxHeight: '90%' }),
+          transform: 'translate(-50%, -50%)',
+        }}
+      />
+    );
+  };
+
+  const renderFields = () => {
+    if (overlaySlide && keyMode) return null;
+    return (
     <>
-      {slide?.foregroundImageUrl && (
-        <img
-          src={slide.foregroundImageUrl}
-          alt=""
-          className={cn(
-            'shrink object-contain',
-            FOREGROUND_SIZE[slide.foregroundSize ?? 'medium'],
-            slide.foregroundPosition === 'top' && 'self-start',
-            slide.foregroundPosition === 'bottom' && 'self-end',
-          )}
-        />
-      )}
-
-      {slide?.fields
-        .filter((f) => f.visible && f.value.trim())
+      {renderSlide?.fields
+        .filter((f) => f.visible && (f.value.trim() || f.imageUrl))
         .map((field) => (
-          <p
+          <div
             key={field.id}
             className={cn(
-              'w-full break-words leading-snug font-semibold text-white drop-shadow-lg',
+              'w-full',
               field.align === 'left' && 'text-left',
               field.align === 'center' && 'text-center',
               field.align === 'right' && 'text-right',
-              slide?.type === 'scripture' && field.label === 'Scripture' && 'font-serif italic leading-relaxed',
             )}
-            style={{
-              fontSize: DISPLAY_TEXT_SIZE_PX[field.size],
-              ...(field.color ? { color: field.color } : null),
-            }}
           >
-            {field.value}
-          </p>
+            {field.imageUrl && (
+              <img
+                src={field.imageUrl}
+                alt=""
+                className="mx-auto mb-[12px] max-h-[280px] max-w-full object-contain"
+              />
+            )}
+            {field.value.trim() && (
+              <p
+                className={cn(
+                  'w-full break-words leading-snug font-semibold text-white drop-shadow-lg',
+                  renderSlide?.type === 'scripture' && field.label === 'Scripture' && 'font-serif italic leading-relaxed',
+                )}
+                style={{
+                  fontSize: DISPLAY_TEXT_SIZE_PX[field.size],
+                  ...(field.color ? { color: field.color } : null),
+                }}
+              >
+                {field.value}
+              </p>
+            )}
+          </div>
         ))}
 
-      {slide?.type === 'scripture' && slide.scripture && !slide.fields.some((f) => f.visible && f.value.trim()) && (
+      {renderSlide?.type === 'scripture' && renderSlide.scripture && !renderSlide.fields.some((f) => f.visible && f.value.trim()) && (
         <>
           <p
             className="font-bold tracking-wide text-white/80"
             style={{ fontSize: DISPLAY_SCRIPTURE_REFERENCE_PX }}
           >
-            {slide.scripture.reference}
+            {renderSlide.scripture.reference}
           </p>
           <p
             className="max-w-full break-words text-center font-serif italic leading-relaxed text-white"
             style={{ fontSize: DISPLAY_SCRIPTURE_TEXT_PX }}
           >
-            {slide.scripture.text}
+            {renderSlide.scripture.text}
           </p>
-          {slide.scripture.translation && (
+          {renderSlide.scripture.translation && (
             <p className="text-white/50" style={{ fontSize: DISPLAY_SCRIPTURE_TRANSLATION_PX }}>
-              {slide.scripture.translation}
+              {renderSlide.scripture.translation}
             </p>
           )}
         </>
       )}
     </>
-  );
+    );
+  };
 
   const renderLabel = showLabel && label ? (
     <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/80 to-transparent px-[48px] py-[24px]">
@@ -165,7 +212,7 @@ export function DisplaySlideRenderer({
     </div>
   ) : null;
 
-  if (!slide) {
+  if (!renderSlide) {
     const holdStyle = keyMode
       ? { background: DISPLAY_KEY_COLOR }
       : holdBackground
@@ -220,7 +267,7 @@ export function DisplaySlideRenderer({
   }
 
   if (isBannerBottom || isBannerTop) {
-    const bannerBg = slide.background;
+    const bannerBg = renderSlide.background;
     const bannerStyle =
       bannerBg.kind === 'image' && bannerBg.imageUrl
         ? resolveBackgroundStyle(bannerBg)
@@ -284,7 +331,8 @@ export function DisplaySlideRenderer({
               {bannerArea}
             </>
           )}
-
+          {renderVideo()}
+          {renderForegroundImage()}
           {renderLabel}
         </div>
       </DisplayCanvas>
@@ -306,12 +354,16 @@ export function DisplaySlideRenderer({
           <div className="pointer-events-none absolute inset-0 z-[1] bg-black" style={{ opacity: overlayOpacity / 100 }} />
         )}
 
+        {renderVideo()}
+
         <DisplayFitContent
           measureKey={measureKey}
           className={cn('relative z-[2] px-[120px] py-[48px]', labelReserveClass)}
         >
           {renderFields()}
         </DisplayFitContent>
+
+        {renderForegroundImage()}
 
         {renderLabel}
       </div>

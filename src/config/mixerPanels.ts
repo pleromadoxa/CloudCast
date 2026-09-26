@@ -1,5 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
+  Film,
+  Globe,
   HardDrive,
   Image,
   Layers,
@@ -17,8 +19,8 @@ export interface MixerPanelMeta {
   description: string;
 }
 
-/** Primary production panels shown in the 2×2 multi-panel grid under source inputs. */
-export const CORE_MIXER_PANELS: MixerPanel[] = ['sources', 'layers', 'audio', 'transitions'];
+/** Panels surfaced in simple production view (small live events). */
+export const SIMPLE_PRODUCTION_PANELS: MixerPanel[] = ['sources', 'transitions', 'stream', 'audio'];
 
 export const MIXER_PANELS: MixerPanelMeta[] = [
   {
@@ -62,5 +64,17 @@ export const MIXER_PANELS: MixerPanelMeta[] = [
     icon: Settings,
     label: 'Setup',
     description: 'Layout, shortcuts, recording, display options, and platform guide.',
+  },
+  {
+    id: 'media',
+    icon: Film,
+    label: 'Media',
+    description: 'Upload images and videos — overlay on preview or program, drag to position.',
+  },
+  {
+    id: 'browser',
+    icon: Globe,
+    label: 'Browser',
+    description: 'Open a webpage or YouTube shot, interact, mute, and take to PGM.',
   },
 ];

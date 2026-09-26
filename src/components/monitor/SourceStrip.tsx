@@ -80,6 +80,8 @@ export function SourceStrip({
                   volume={monitorVol}
                   audioDeviceId={monitorAudioId}
                   enableSpeakerPlayback={Boolean(isPst && device.deviceId !== pgmDeviceId)}
+                  mediaFeedRole={isPst ? 'pst' : isPgm ? 'pgm' : 'strip'}
+                  browserFeedRole={isPst ? 'pst' : isPgm ? 'pgm' : 'strip'}
                   compact
                   showLabel={false}
                   className="h-full"

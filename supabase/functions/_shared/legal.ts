@@ -15,8 +15,8 @@ export function logoUrl(): string {
 
 export const EMAIL_BRAND = {
   productName: "CloudCast",
-  byline: "by Quantum Regal",
-  companyName: "Quantum Regal Digital Labs",
+  byline: "by Spatial Regal",
+  companyName: "Spatial Regal Digital Labs",
   tagline: "Professional broadcast production platform",
   supportEmail: "support@cloudcast.regal",
   legalEmail: "legal@cloudcast.regal",

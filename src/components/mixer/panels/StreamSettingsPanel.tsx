@@ -182,7 +182,12 @@ export function StreamSettingsPanel({
         streamKey: form.streamKey.trim(),
         platform: form.platform,
       });
-      if (!testResult.ok) {
+      // Only block on a definitive rejection (bad format, or the server refusing the
+      // key on publish). Inconclusive connect/handshake probes shouldn't stop a valid
+      // key from being saved — some servers don't respond to our lightweight check.
+      const stage = (testResult as { stage?: string }).stage;
+      const definitiveReject = !testResult.ok && (stage === 'format' || stage === 'publish');
+      if (definitiveReject) {
         setError(`Cannot save — ${testResult.message}`);
         return;
       }
@@ -202,7 +207,11 @@ export function StreamSettingsPanel({
         }
         return [...prev, saved];
       });
-      setSuccess('Stream settings verified and saved to your account.');
+      setSuccess(
+        testResult.ok
+          ? 'Stream settings verified and saved to your account.'
+          : 'Stream settings saved. Connection could not be fully verified — TEST before going live.',
+      );
       setEditingId(saved.id);
       setForm({
         id: saved.id,

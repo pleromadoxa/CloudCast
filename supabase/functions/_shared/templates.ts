@@ -94,11 +94,11 @@ export function buildEmail(template: string, payload: TemplatePayload): { subjec
   switch (template) {
     case "signup_welcome":
       return {
-        subject: "Welcome to CloudCast by Quantum Regal",
+        subject: "Welcome to CloudCast by Spatial Regal",
         html: layout("Welcome aboard", `
           <p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#bbb;">Hi ${name},</p>
           <p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#bbb;">
-            Your CloudCast account is ready. You now have access to the full Quantum Regal broadcast suite — live video mixing,
+            Your CloudCast account is ready. You now have access to the full Spatial Regal broadcast suite — live video mixing,
             instant replay, audio console, and Symphony studio — from one dashboard.
           </p>
           <ul style="margin:0 0 16px;padding-left:18px;font-size:13px;line-height:1.7;color:#999;">
@@ -142,7 +142,7 @@ export function buildEmail(template: string, payload: TemplatePayload): { subjec
         html: layout("Payment receipt", `
           <p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#bbb;">Hi ${name},</p>
           <p style="margin:0 0 4px;font-size:14px;line-height:1.65;color:#bbb;">
-            Thank you for your CloudCast subscription. This email confirms your payment to Quantum Regal Digital Labs.
+            Thank you for your CloudCast subscription. This email confirms your payment to Spatial Regal Digital Labs.
           </p>
           ${receiptTable([
             ["Receipt", `<span style="font-family:monospace;">${receiptId}</span>`],
@@ -345,7 +345,7 @@ export function buildEmail(template: string, payload: TemplatePayload): { subjec
 
     default:
       return {
-        subject: "CloudCast by Quantum Regal",
+        subject: "CloudCast by Spatial Regal",
         html: layout("Notification", `<p style="color:#bbb;font-size:14px;line-height:1.65;">You have a new notification from CloudCast.</p>`),
       };
   }

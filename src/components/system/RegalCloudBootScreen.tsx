@@ -10,6 +10,7 @@ import {
   isRegalCloudBootDoneThisSession,
   markRegalCloudBootDoneThisSession,
   REGAL_CLOUD_BOOT_MIN_MS,
+  REGAL_CLOUD_BOOT_MAX_MS,
 } from '../../lib/regalCloudBoot';
 
 export { REGAL_CLOUD_BOOT_MIN_MS };
@@ -75,6 +76,15 @@ export function useRegalCloudBootVisible(
     const timer = window.setTimeout(finish, remaining);
     return () => window.clearTimeout(timer);
   }, [waiting, minMs, enforceMinOnReady]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const cap = window.setTimeout(() => {
+      markRegalCloudBootDoneThisSession();
+      setVisible(false);
+    }, REGAL_CLOUD_BOOT_MAX_MS);
+    return () => window.clearTimeout(cap);
+  }, [visible]);
 
   return visible;
 }

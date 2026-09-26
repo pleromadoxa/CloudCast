@@ -21,7 +21,7 @@ export const BRAND_LOGO_URL = `${SITE_URL}/email/cloudcast-logo.png`;
 /** Core keywords derived from product features and use cases. */
 export const SITE_KEYWORDS = [
   'CloudCast',
-  'Quantum Regal',
+  'Spatial Regal',
   'browser video mixer',
   'cloud broadcast switcher',
   'live streaming production',
@@ -410,7 +410,7 @@ function buildProductListSchema(): Record<string, unknown> {
     '@context': 'https://schema.org',
     '@type': 'ItemList',
     name: 'CloudCast Products',
-    description: 'Six browser-based broadcast production tools by Quantum Regal.',
+    description: 'Six browser-based broadcast production tools by Spatial Regal.',
     numberOfItems: CLOUDCAST_PRODUCTS.length,
     itemListElement: CLOUDCAST_PRODUCTS.map((product, index) => ({
       '@type': 'ListItem',

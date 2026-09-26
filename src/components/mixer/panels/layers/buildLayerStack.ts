@@ -4,7 +4,7 @@ import { zIndexForStackId } from '../../../../lib/graphicsStackOrder';
 import type { LayerStackItem } from './layerStackTypes';
 
 const ITEM_DEFS: Record<
-  Exclude<LayerStackId, `image:${string}`>,
+  Exclude<LayerStackId, `image:${string}` | `video:${string}`>,
   Omit<LayerStackItem, 'id' | 'zIndex' | 'isPreview' | 'isLive' | 'sublabel'> & {
     sublabel: (layers: LayerSettings) => string;
     isPreview: (layers: LayerSettings) => boolean;
@@ -46,6 +46,59 @@ const ITEM_DEFS: Record<
     sublabel: (l) => l.lowerThirdText || 'Title / subtitle',
     isPreview: (l) => l.showLowerThird,
     isLive: (_, p) => p.showLowerThird,
+    canPreview: true,
+    canGoLive: true,
+    canDelete: true,
+    canReorder: true,
+  },
+  weather: {
+    label: 'Weather Panel',
+    sublabel: (l) => `${l.weather.location || 'Weather'} · ${Math.round(l.weather.temperature)}°${l.weather.unit}`,
+    isPreview: (l) => l.showWeather,
+    isLive: (_, p) => p.showWeather,
+    canPreview: true,
+    canGoLive: true,
+    canDelete: true,
+    canReorder: true,
+  },
+  scoreboard: {
+    label: 'Scoreboard',
+    sublabel: (l) => `${l.scoreboard.home.name} ${l.scoreboard.home.score} – ${l.scoreboard.away.score} ${l.scoreboard.away.name}`,
+    isPreview: (l) => l.showScoreboard,
+    isLive: (_, p) => p.showScoreboard,
+    canPreview: true,
+    canGoLive: true,
+    canDelete: true,
+    canReorder: true,
+  },
+  'ad-zone': {
+    label: 'Ad Zone',
+    sublabel: (l) => `${l.adZone.adName} · ${l.adZone.sourceKind.replace('-', ' ')}`,
+    isPreview: (l) => l.showAdZone,
+    isLive: (_, p) => p.showAdZone,
+    canPreview: true,
+    canGoLive: true,
+    canDelete: true,
+    canReorder: true,
+  },
+  'sponsor-bug': {
+    label: 'Sponsor Bug',
+    sublabel: (l) =>
+      l.sponsorBug.entries.length
+        ? `${l.sponsorBug.entries.length} sponsor${l.sponsorBug.entries.length > 1 ? 's' : ''}`
+        : 'Rotating corner logo',
+    isPreview: (l) => l.showSponsorBug,
+    isLive: (_, p) => p.showSponsorBug,
+    canPreview: true,
+    canGoLive: true,
+    canDelete: true,
+    canReorder: true,
+  },
+  countdown: {
+    label: 'Countdown',
+    sublabel: (l) => `${l.countdown.title || 'Clock'} · ${l.countdown.mode.replace('-', ' ')}`,
+    isPreview: (l) => l.showCountdown,
+    isLive: (_, p) => p.showCountdown,
     canPreview: true,
     canGoLive: true,
     canDelete: true,
@@ -96,7 +149,7 @@ export function buildLayerStack(layers: LayerSettings, pgmLayers: LayerSettings)
         id,
         zIndex: zIndexForStackId(id, order),
         label: `Image · ${o.name}`,
-        sublabel: o.position.replace('-', ' '),
+        sublabel: o.fillScreen ? 'Full screen' : o.position.replace('-', ' '),
         isPreview: o.visible,
         isLive: o.liveOnPgm,
         canPreview: true,
@@ -107,7 +160,26 @@ export function buildLayerStack(layers: LayerSettings, pgmLayers: LayerSettings)
       continue;
     }
 
-    const def = ITEM_DEFS[id as Exclude<LayerStackId, `image:${string}`>];
+    if (id.startsWith('video:')) {
+      const vidId = id.slice(6);
+      const v = layers.videoOverlays.find((x) => x.id === vidId);
+      if (!v) continue;
+      items.push({
+        id,
+        zIndex: zIndexForStackId(id, order),
+        label: `Video · ${v.name}`,
+        sublabel: v.fillScreen ? 'Full screen' : v.position.replace('-', ' '),
+        isPreview: v.visible,
+        isLive: v.liveOnPgm,
+        canPreview: true,
+        canGoLive: true,
+        canDelete: true,
+        canReorder: true,
+      });
+      continue;
+    }
+
+    const def = ITEM_DEFS[id as Exclude<LayerStackId, `image:${string}` | `video:${string}`>];
     if (!def) continue;
 
     items.push({

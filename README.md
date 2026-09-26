@@ -1,4 +1,4 @@
-# CloudCast by Quantum Regal
+# CloudCast by Spatial Regal
 
 Multi-source video production platform — a browser-based broadcast mixer that pairs mobile cameras and USB capture devices via access code, with plan-aware streaming through **Regal Mesh** (direct connect) or **Regal Cloud** (HD / UHD).
 

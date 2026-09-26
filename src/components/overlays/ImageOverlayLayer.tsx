@@ -1,5 +1,5 @@
 import type { ImageOverlay } from '../../types/overlays';
-import { rescaleOverlayDimensions } from '../../lib/imageResize';
+import { overlayCanvasPercentSize } from '../../lib/mediaImagePlacement';
 import { placementStyle, resolveCornerPlacement } from '../../lib/overlayPlacement';
 
 interface ImageOverlayLayerProps {
@@ -14,7 +14,24 @@ export function ImageOverlayLayer({ overlays }: ImageOverlayLayerProps) {
   return (
     <>
       {visible.map((overlay) => {
-        const size = rescaleOverlayDimensions(overlay.naturalWidth, overlay.naturalHeight, overlay.scale);
+        if (overlay.fillScreen) {
+          return (
+            <img
+              key={overlay.id}
+              src={overlay.dataUrl}
+              alt={overlay.name}
+              draggable={false}
+              className="pointer-events-none absolute inset-0 z-[14] h-full w-full object-cover"
+              style={{ opacity: overlay.opacity / 100 }}
+            />
+          );
+        }
+
+        const size = overlayCanvasPercentSize(
+          overlay.naturalWidth,
+          overlay.naturalHeight,
+          overlay.scale,
+        );
         const posStyle = placementStyle(resolveCornerPlacement(overlay.position, overlay));
         return (
           <img
@@ -25,10 +42,8 @@ export function ImageOverlayLayer({ overlays }: ImageOverlayLayerProps) {
             className="pointer-events-none absolute z-[15] object-contain"
             style={{
               ...posStyle,
-              width: size.width,
-              height: size.height,
-              maxWidth: '45%',
-              maxHeight: '45%',
+              width: `${size.widthPct}%`,
+              height: `${size.heightPct}%`,
               opacity: overlay.opacity / 100,
             }}
           />

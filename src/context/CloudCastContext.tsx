@@ -11,9 +11,15 @@ import {
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { SIGNALING_EVENTS } from '../lib/constants';
 import { pcConfigForMode } from '../lib/meshConfig';
-import { releaseAllWhepPool } from '../lib/whepStreamPool';
-import { connectAudioIngressWhep, releaseAllAudioIngressWhep, useAudioIngressStreams } from '../lib/audioIngress';
-import { streamHasActiveMedia, hasUsableAudio, hasUsableVideo } from '../lib/streamAudioHub';
+import { releaseAllWhepPool, peekWhepPoolSnapshot } from '../lib/whepStreamPool';
+import { releaseAllAudioIngressWhep, useAudioIngressStreams } from '../lib/audioIngress';
+import {
+  hasUsableAudio,
+  hasUsableVideo,
+  mergeTrackIntoStream,
+  mergeTracksIntoStream,
+  streamWireKey,
+} from '../lib/streamAudioHub';
 import { releaseAllIpCameraPool } from '../lib/ipCameraStreamPool';
 import { holdSignalingLeader } from '../lib/tabLeader';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
@@ -26,12 +32,13 @@ import {
 } from '../lib/sessionStorage';
 import {
   DEVICE_STATUS_SWEEP_MS,
-  deviceHasCloudPlayback,
   isDashboardPresenceKey,
   isMeshStreamPresent,
+  meshDeviceMediaReady,
   presenceDeviceIds,
   reconcileDeviceConnectivity,
 } from '../lib/deviceConnection';
+import { devicesConnectivityEqual } from '../lib/deviceEquality';
 import {
   buildSessionChannelConfig,
   getDashboardPresenceKey,
@@ -47,6 +54,19 @@ import {
   realtimeRetryDelayMs,
 } from '../lib/realtimeConfig';
 import { waitForIceGathering } from '../lib/utils';
+import {
+  MESH_CONNECTED_NO_MEDIA_GRACE_MS,
+  MESH_HEALTH_SWEEP_MS,
+  MESH_ICE_GATHER_TIMEOUT_MS,
+  MESH_ICE_RESTART_DELAY_MS,
+  MESH_MAX_CONCURRENT_ANSWERS,
+  MESH_PEER_DISCONNECT_GRACE_MS,
+  MESH_PEER_FAILED_REOFFER_MS,
+  MESH_REJOIN_RETRY_MS,
+  MESH_REOFFER_GLOBAL_COOLDOWN_MS,
+  MESH_REOFFER_PER_DEVICE_COOLDOWN_MS,
+  meshReofferStaggerMs,
+} from '../lib/meshStability';
 import {
   createConcurrencyQueue,
   createKeyedChain,
@@ -66,7 +86,7 @@ import { resolveProductPlan } from '../lib/productEntitlements';
 import { normalizeConnectionMode } from '../lib/branding';
 import type { ConnectionMode } from '../types/plans';
 import type { Device } from '../types/device';
-import { createEmptyAudioSlot, createEmptySlot } from '../types/device';
+import { createEmptyAudioSlot, createEmptySlot, isRealDevice } from '../types/device';
 import { AUDIO_MIXER_MAX_CHANNELS } from '../config/products';
 import type { MixerSession, PairedDeviceRow } from '../types/session';
 import type {
@@ -78,14 +98,10 @@ import type {
   StreamStoppedPayload,
 } from '../types/signaling';
 
-const MAX_PENDING_ICE = 50;
-const MAX_CONCURRENT_ANSWERS = 4;
+const MAX_PENDING_ICE = 80;
 const DEVICE_ACK_RETRY_MS = [400, 1000, 2000, 4000];
-const PEER_DISCONNECT_GRACE_MS = 5000;
 const PRESENCE_LEAVE_GRACE_MS = 3000;
 const PRESENCE_LEAVE_FAST_MS = 1200;
-const ICE_RESTART_DELAY_MS = 600;
-const MESH_REOFFER_COOLDOWN_MS = 1200;
 const LOAD_DEVICES_DEBOUNCE_MS = 400;
 const PRESENCE_SNAPSHOT_DEBOUNCE_MS = 200;
 
@@ -94,7 +110,8 @@ interface CloudCastContextValue {
   sessionLoading: boolean;
   devices: Device[];
   connectionMode: ConnectionMode;
-  meshStreams: Map<string, MediaStream>;
+  /** Per-device revision — bumps when that device's mesh stream changes. */
+  meshStreamVersions: Map<string, number>;
   getMeshStream: (deviceId: string) => MediaStream | null;
   isPresenceConnected: boolean;
   isSignalingConnected: boolean;
@@ -145,7 +162,7 @@ export function CloudCastProvider({
   const [devices, setDevices] = useState<Device[]>(() =>
     Array.from({ length: initialSlotCount }, (_, i) => emptySlot(i + 1)),
   );
-  const [meshStreams, setMeshStreams] = useState<Map<string, MediaStream>>(new Map());
+  const [meshStreamVersions, setMeshStreamVersions] = useState<Map<string, number>>(new Map());
   const [isPresenceConnected, setIsPresenceConnected] = useState(false);
   const [isSignalingConnected, setIsSignalingConnected] = useState(false);
   const [isSignalingLeader, setIsSignalingLeader] = useState(true);
@@ -159,6 +176,9 @@ export function CloudCastProvider({
   const pendingIce = useRef(new Map<string, RTCIceCandidateInit[]>());
   const sessionRef = useRef<MixerSession | null>(null);
   const meshStreamsRef = useRef<Map<string, MediaStream>>(new Map());
+  const peerKeysRef = useRef(new Map<string, string>());
+  const devicesRef = useRef(devices);
+  devicesRef.current = devices;
   const isSignalingLeaderRef = useRef(true);
   const ackedPeersRef = useRef(new Set<string>());
   const ackRetryTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>[]>());
@@ -167,7 +187,7 @@ export function CloudCastProvider({
   const offerInflightRef = useRef(new Map<string, Promise<void>>());
   const wasSignalingLeaderRef = useRef(true);
   const presenceSnapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const answerQueueRef = useRef(createConcurrencyQueue(MAX_CONCURRENT_ANSWERS));
+  const answerQueueRef = useRef(createConcurrencyQueue(MESH_MAX_CONCURRENT_ANSWERS));
   const iceChainRef = useRef(createKeyedChain());
   const dbSessionIdRef = useRef<string | null>(null);
   const dashboardPresenceKeyRef = useRef('dashboard');
@@ -184,9 +204,15 @@ export function CloudCastProvider({
   const dbTeardownRef = useRef(Promise.resolve());
   const connectRealtimeChainRef = useRef(Promise.resolve());
   const subscribeDbChainRef = useRef(Promise.resolve());
-  const lastMeshReofferAtRef = useRef(0);
+  const lastGlobalMeshReofferAtRef = useRef(0);
+  const lastMeshReofferByDeviceRef = useRef(new Map<string, number>());
+  const meshRecoveryTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const meshRejoinTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const initSessionInflightRef = useRef<Promise<void> | null>(null);
   const connectingSinceRef = useRef(new Map<string, number>());
+  const sendDeviceAckRef = useRef<
+    (peerKey: string, deviceId: string, options?: { force?: boolean }) => void
+  >(() => {});
   sessionRef.current = session;
   isSignalingLeaderRef.current = isSignalingLeader;
 
@@ -195,25 +221,50 @@ export function CloudCastProvider({
       ? 'mesh'
       : normalizeConnectionMode(session?.connectionMode ?? 'mesh');
 
-  /** Session plan connection mode — used for Regal Cloud WHEP fallback on the audio dashboard. */
-  const sessionConnectionMode: ConnectionMode = normalizeConnectionMode(session?.connectionMode ?? 'mesh');
+  const getMeshStream = useCallback((deviceId: string) => {
+    const direct = meshStreamsRef.current.get(deviceId);
+    if (direct) return direct;
+    const peerKey = peerKeysRef.current.get(deviceId);
+    if (peerKey && peerKey !== deviceId) {
+      return meshStreamsRef.current.get(peerKey) ?? null;
+    }
+    return null;
+  }, []);
 
-  const getMeshStream = useCallback(
-    (deviceId: string) => meshStreams.get(deviceId) ?? null,
-    [meshStreams],
+  const bumpMeshStreamVersion = useCallback((deviceId: string) => {
+    setMeshStreamVersions((prev) => {
+      const next = new Map(prev);
+      next.set(deviceId, (next.get(deviceId) ?? 0) + 1);
+      return next;
+    });
+  }, []);
+
+  const meshStreamWireKeysRef = useRef(new Map<string, string>());
+
+  const setMeshStream = useCallback(
+    (deviceId: string, stream: MediaStream) => {
+      const wireKey = streamWireKey(stream);
+      const prevKey = meshStreamWireKeysRef.current.get(deviceId);
+      meshStreamsRef.current.set(deviceId, stream);
+      meshStreamWireKeysRef.current.set(deviceId, wireKey);
+      if (prevKey !== wireKey) {
+        bumpMeshStreamVersion(deviceId);
+      }
+    },
+    [bumpMeshStreamVersion],
   );
 
-  const setMeshStream = useCallback((deviceId: string, stream: MediaStream) => {
-    meshStreamsRef.current.set(deviceId, stream);
-    setMeshStreams(new Map(meshStreamsRef.current));
-  }, []);
-
-  const removeMeshStream = useCallback((deviceId: string) => {
-    const existing = meshStreamsRef.current.get(deviceId);
-    existing?.getTracks().forEach((t) => t.stop());
-    meshStreamsRef.current.delete(deviceId);
-    setMeshStreams(new Map(meshStreamsRef.current));
-  }, []);
+  const removeMeshStream = useCallback(
+    (deviceId: string) => {
+      const existing = meshStreamsRef.current.get(deviceId);
+      if (!existing) return;
+      existing.getTracks().forEach((t) => t.stop());
+      meshStreamsRef.current.delete(deviceId);
+      meshStreamWireKeysRef.current.delete(deviceId);
+      bumpMeshStreamVersion(deviceId);
+    },
+    [bumpMeshStreamVersion],
+  );
 
   const appendEvent = useCallback((event: SignalingEvent) => {
     setSignalingEvents((prev) => [event, ...prev].slice(0, 100));
@@ -226,17 +277,19 @@ export function CloudCastProvider({
   const buildDeviceReconcileContext = useCallback(
     (device: Device, online: Set<string>, nowMs: number) => {
       const meshStream = meshStreamsRef.current.get(device.deviceId);
+      const whepSnap = peekWhepPoolSnapshot(device.deviceId);
+      const whepStream = whepSnap?.stream ?? null;
       return {
         presenceOnline: online.has(device.deviceId),
         hasMeshStream: isMeshStreamPresent(meshStream),
         hasMeshVideo: hasUsableVideo(meshStream),
+        hasWhepVideo: hasUsableVideo(whepStream),
+        hasWhepAudio: hasUsableAudio(whepStream),
+        whepConnected: whepSnap?.connectionState === 'connected',
         peerState: resolvePeerState(device.deviceId),
         connectingSinceMs: connectingSinceRef.current.get(device.deviceId) ?? null,
         nowMs,
-        videoTransport:
-          sessionRef.current?.connectionMode === 'regal'
-            ? ('cloud' as const)
-            : ('mesh' as const),
+        videoTransport: 'mesh' as const,
       };
     },
     [resolvePeerState],
@@ -401,44 +454,76 @@ export function CloudCastProvider({
   const publishDeviceStream = useCallback(
     (deviceId: string, stream: MediaStream) => {
       setMeshStream(deviceId, stream);
+      const peerKey = peerKeysRef.current.get(deviceId);
+      if (peerKey && peerKey !== deviceId) {
+        setMeshStream(peerKey, stream);
+      }
+      const knownSlot = devicesRef.current.some((d) => d.deviceId === deviceId);
+      if (!knownSlot) {
+        const emptySlots = devicesRef.current.filter(
+          (d) =>
+            isRealDevice(d) &&
+            (d.status === 'live' || d.status === 'connecting') &&
+            !hasUsableVideo(meshStreamsRef.current.get(d.deviceId)),
+        );
+        if (emptySlots.length === 1) {
+          const slotId = emptySlots[0].deviceId;
+          setMeshStream(slotId, stream);
+          peerKeysRef.current.set(slotId, peerKey ?? deviceId);
+        }
+      }
       attachStreamWatchers(deviceId, stream);
 
       const syncStatus = () => {
-        const mode = sessionRef.current?.connectionMode ?? 'mesh';
-        const isRegal = mode === 'regal';
-        const hasVideo = hasUsableVideo(stream);
-        const hasAudio = hasUsableAudio(stream);
+        const device = devicesRef.current.find((d) => d.deviceId === deviceId);
+        const mediaReady = meshDeviceMediaReady(device, stream);
+        const peerKey = peerKeysRef.current.get(deviceId) ?? deviceId;
 
-        if (isRegal) {
-          if (hasVideo) {
-            markDeviceLive(deviceId);
-            return;
-          }
-          if (hasAudio) {
-            markDeviceLinked(deviceId);
-            return;
-          }
-          markDeviceConnecting(deviceId);
+        if (mediaReady) {
+          sendDeviceAckRef.current(peerKey, deviceId, { force: true });
+          markDeviceLive(deviceId);
           return;
         }
 
-        const requireAudio = audioIngressEnabledRef.current;
-        if (!streamHasActiveMedia(stream, { requireAudio })) {
-          markDeviceConnecting(deviceId);
-          return;
-        }
-        markDeviceLive(deviceId);
+        markDeviceConnecting(deviceId);
       };
 
       syncStatus();
       stream.addEventListener('addtrack', syncStatus);
       stream.addEventListener('removetrack', syncStatus);
     },
-    [setMeshStream, attachStreamWatchers, markDeviceLive, markDeviceConnecting, markDeviceLinked],
+    [setMeshStream, attachStreamWatchers, markDeviceLive, markDeviceConnecting],
   );
 
   const broadcast = useCallback((event: string, payload: unknown) => {
     channelRef.current?.send({ type: 'broadcast', event, payload });
+  }, []);
+
+  const clearMeshRecoveryTimers = useCallback(() => {
+    meshRecoveryTimersRef.current.forEach((timer) => clearTimeout(timer));
+    meshRecoveryTimersRef.current = [];
+  }, []);
+
+  const clearMeshRejoinTimers = useCallback(() => {
+    meshRejoinTimersRef.current.forEach((timer) => clearTimeout(timer));
+    meshRejoinTimersRef.current = [];
+  }, []);
+
+  const clearMeshPeerState = useCallback(() => {
+    ackRetryTimersRef.current.forEach((timers) => timers.forEach((timer) => clearTimeout(timer)));
+    ackRetryTimersRef.current.clear();
+    peerDisconnectTimersRef.current.forEach((timer) => clearTimeout(timer));
+    peerDisconnectTimersRef.current.clear();
+    offerInflightRef.current.clear();
+    peerConnections.current.forEach((pc) => pc.close());
+    peerConnections.current.clear();
+    pendingIce.current.clear();
+    ackedPeersRef.current.clear();
+    meshStreamsRef.current.forEach((stream) => stream.getTracks().forEach((t) => t.stop()));
+    meshStreamsRef.current.clear();
+    peerKeysRef.current.clear();
+    meshStreamWireKeysRef.current.clear();
+    setMeshStreamVersions(new Map());
   }, []);
 
   const requestMeshReoffer = useCallback(
@@ -446,22 +531,94 @@ export function CloudCastProvider({
       if (!isSignalingLeaderRef.current || !channelRef.current) return;
 
       const now = Date.now();
-      if (
+      const deviceId = options?.deviceId?.trim();
+
+      if (deviceId) {
+        const lastDevice = lastMeshReofferByDeviceRef.current.get(deviceId) ?? 0;
+        if (
+          !options?.bypassCooldown &&
+          now - lastDevice < MESH_REOFFER_PER_DEVICE_COOLDOWN_MS
+        ) {
+          return;
+        }
+        lastMeshReofferByDeviceRef.current.set(deviceId, now);
+      } else if (
         !options?.bypassCooldown &&
-        now - lastMeshReofferAtRef.current < MESH_REOFFER_COOLDOWN_MS
+        now - lastGlobalMeshReofferAtRef.current < MESH_REOFFER_GLOBAL_COOLDOWN_MS
       ) {
         return;
       }
-      lastMeshReofferAtRef.current = now;
+
+      if (!deviceId) {
+        lastGlobalMeshReofferAtRef.current = now;
+      }
 
       broadcast(SIGNALING_EVENTS.REQUEST_REOFFER, {
         from: dashboardPresenceKeyRef.current,
-        deviceId: options?.deviceId,
+        deviceId,
         timestamp: new Date().toISOString(),
         reason,
       });
     },
     [broadcast],
+  );
+
+  const scheduleDeviceMeshReoffer = useCallback(
+    (
+      deviceIds: string[],
+      reason: string,
+      options?: { bypassCooldown?: boolean },
+    ) => {
+      if (deviceIds.length === 0) return;
+      clearMeshRecoveryTimers();
+
+      const count = deviceIds.length;
+      for (const deviceId of deviceIds) {
+        const delay = meshReofferStaggerMs(deviceId, count);
+        const timer = setTimeout(() => {
+          requestMeshReoffer(`${reason}-device`, {
+            bypassCooldown: options?.bypassCooldown ?? true,
+            deviceId,
+          });
+        }, delay);
+        meshRecoveryTimersRef.current.push(timer);
+      }
+    },
+    [clearMeshRecoveryTimers, requestMeshReoffer],
+  );
+
+  const deviceNeedsMeshRecovery = useCallback((deviceId: string): boolean => {
+    const stream = meshStreamsRef.current.get(deviceId);
+    const device = devicesRef.current.find((d) => d.deviceId === deviceId);
+    if (meshDeviceMediaReady(device, stream)) return false;
+
+    const peerState = peerConnections.current.get(deviceId)?.connectionState;
+    if (!peerState || peerState === 'failed' || peerState === 'closed') return true;
+
+    // Let ICE restart / disconnect grace run before asking mobile to re-offer.
+    if (peerState === 'disconnected') return false;
+
+    if (peerState === 'connected' || peerState === 'connecting' || peerState === 'new') {
+      const since = connectingSinceRef.current.get(deviceId);
+      if (!since) return false;
+      return Date.now() - since >= MESH_CONNECTED_NO_MEDIA_GRACE_MS;
+    }
+
+    return false;
+  }, []);
+
+  const bootstrapMeshRecovery = useCallback(
+    (reason = 'dashboard-reconnect') => {
+      if (!isSignalingLeaderRef.current || !channelRef.current) return;
+
+      const online = presenceDeviceIds(channelRef.current);
+      const needsRecovery = [...online].filter((deviceId) => deviceNeedsMeshRecovery(deviceId));
+
+      if (needsRecovery.length === 0) return;
+
+      scheduleDeviceMeshReoffer(needsRecovery, reason, { bypassCooldown: true });
+    },
+    [scheduleDeviceMeshReoffer, deviceNeedsMeshRecovery],
   );
 
   const pruneDeadMeshStreams = useCallback(() => {
@@ -471,14 +628,12 @@ export function CloudCastProvider({
       if (tracks.length === 0 || tracks.every((track) => track.readyState === 'ended')) {
         tracks.forEach((track) => track.stop());
         meshStreamsRef.current.delete(deviceId);
+        bumpMeshStreamVersion(deviceId);
         pruned = true;
       }
     });
-    if (pruned) {
-      setMeshStreams(new Map(meshStreamsRef.current));
-    }
     return pruned;
-  }, []);
+  }, [bumpMeshStreamVersion]);
 
   const applyPresenceSnapshot = useCallback(
     (channel?: RealtimeChannel | null) => {
@@ -508,34 +663,46 @@ export function CloudCastProvider({
         });
 
         if (channel && sessionRef.current) {
-          const videoTransport =
-            sessionRef.current.connectionMode === 'regal' ? 'cloud' : 'mesh';
           missingLiveStream = next.some((d) => {
             if (d.deviceId.startsWith('slot-') || !online.has(d.deviceId)) return false;
-            const meshStream = meshStreamsRef.current.get(d.deviceId);
-            if (isMeshStreamPresent(meshStream)) {
-              if (videoTransport === 'mesh' || hasUsableVideo(meshStream)) return false;
-            }
-            if (deviceHasCloudPlayback(d, videoTransport) && d.status === 'live' && d.whepUrl) {
-              return false;
-            }
-            const peerState = resolvePeerState(d.deviceId);
-            if (d.status === 'live') return true;
-            return (
-              d.status === 'connecting' &&
-              (!peerState || peerState === 'failed' || peerState === 'closed')
-            );
+            return deviceNeedsMeshRecovery(d.deviceId);
           });
         }
 
-        return next;
+        return devicesConnectivityEqual(prev, next) ? prev : next;
       });
 
-      if (missingLiveStream) {
-        requestMeshReoffer('missing-mesh-stream', { bypassCooldown: true });
+      if (missingLiveStream && channel) {
+        const online = presenceDeviceIds(channel);
+        const needsRecovery = [...online].filter((deviceId) => deviceNeedsMeshRecovery(deviceId));
+        scheduleDeviceMeshReoffer(needsRecovery, 'missing-mesh-stream', { bypassCooldown: true });
       }
     },
-    [pruneDeadMeshStreams, syncDeviceStatusToDb, requestMeshReoffer, buildDeviceReconcileContext, resolvePeerState, productType],
+    [pruneDeadMeshStreams, syncDeviceStatusToDb, buildDeviceReconcileContext, deviceNeedsMeshRecovery, scheduleDeviceMeshReoffer],
+  );
+
+  const scheduleMeshRecovery = useCallback(
+    (reason: string) => {
+      clearMeshRejoinTimers();
+      for (const delay of MESH_REJOIN_RETRY_MS) {
+        const timer = setTimeout(() => {
+          const channel = channelRef.current;
+          if (!channel) return;
+
+          const online = presenceDeviceIds(channel);
+          const needsRecovery = [...online].filter((deviceId) => deviceNeedsMeshRecovery(deviceId));
+          if (needsRecovery.length === 0) {
+            clearMeshRejoinTimers();
+            return;
+          }
+
+          bootstrapMeshRecovery(reason);
+          applyPresenceSnapshot(channel);
+        }, delay);
+        meshRejoinTimersRef.current.push(timer);
+      }
+    },
+    [bootstrapMeshRecovery, clearMeshRejoinTimers, applyPresenceSnapshot, deviceNeedsMeshRecovery],
   );
 
   const schedulePresenceSnapshot = useCallback(
@@ -582,6 +749,8 @@ export function CloudCastProvider({
 
   const teardownSignalingChannel = useCallback((options?: { preservePeers?: boolean }) => {
     signalingEpochRef.current += 1;
+    clearMeshRejoinTimers();
+    clearMeshRecoveryTimers();
 
     if (realtimeRetryTimerRef.current) {
       clearTimeout(realtimeRetryTimerRef.current);
@@ -620,14 +789,16 @@ export function CloudCastProvider({
 
       meshStreamsRef.current.forEach((stream) => stream.getTracks().forEach((t) => t.stop()));
       meshStreamsRef.current.clear();
-      setMeshStreams(new Map());
+      peerKeysRef.current.clear();
+      meshStreamWireKeysRef.current.clear();
+      setMeshStreamVersions(new Map());
     } else {
       pendingIce.current.clear();
     }
 
     setIsPresenceConnected(false);
     setIsSignalingConnected(false);
-  }, []);
+  }, [clearMeshRejoinTimers, clearMeshRecoveryTimers]);
 
   const teardownRealtime = useCallback((options?: { releaseStreams?: boolean; preservePeers?: boolean }) => {
     teardownSignalingChannel(options);
@@ -819,6 +990,7 @@ export function CloudCastProvider({
     (peerKey: string, deviceId: string) => {
       clearAckRetries(deviceId || peerKey);
       clearPeerDisconnectTimer(deviceId || peerKey);
+      if (deviceId) peerKeysRef.current.delete(deviceId);
       peerConnections.current.get(peerKey)?.close();
       peerConnections.current.delete(peerKey);
       if (deviceId && deviceId !== peerKey) {
@@ -843,7 +1015,7 @@ export function CloudCastProvider({
     (peerKey: string, deviceId: string) => {
       const ackId = deviceId || peerKey;
       const timestamp = new Date().toISOString();
-      const connectionMode = sessionRef.current?.connectionMode ?? 'mesh';
+      const connectionMode: ConnectionMode = 'mesh';
       const planId = sessionRef.current?.planId;
 
       const ackPayload = {
@@ -907,6 +1079,7 @@ export function CloudCastProvider({
     },
     [emitDeviceAck, clearAckRetries, markDeviceLinked],
   );
+  sendDeviceAckRef.current = sendDeviceAck;
 
   const absorbPeerMedia = useCallback(
     (pc: RTCPeerConnection, deviceId: string) => {
@@ -917,17 +1090,61 @@ export function CloudCastProvider({
 
       if (tracks.length === 0) return;
 
-      const stream = new MediaStream(tracks);
-      publishDeviceStream(deviceId, stream);
+      const merged = mergeTracksIntoStream(meshStreamsRef.current.get(deviceId), tracks);
+      publishDeviceStream(deviceId, merged);
     },
     [publishDeviceStream],
   );
 
-  const handleMeshTrack = useCallback(
-    (deviceId: string, stream: MediaStream) => {
-      publishDeviceStream(deviceId, stream);
+  const ingestRemoteTrack = useCallback(
+    (deviceId: string, event: RTCTrackEvent) => {
+      const track = event.track;
+      if (!track || track.readyState === 'ended') return;
+
+      const merged = mergeTrackIntoStream(
+        meshStreamsRef.current.get(deviceId),
+        track,
+        event.streams[0] ?? null,
+      );
+      publishDeviceStream(deviceId, merged);
     },
     [publishDeviceStream],
+  );
+
+  const ensureMeshMediaHandshake = useCallback(
+    (_peerKey: string, deviceId: string, pc: RTCPeerConnection) => {
+      const check = () => {
+        if (pc.connectionState !== 'connected') return;
+
+        let stream = meshStreamsRef.current.get(deviceId);
+        if (!isMeshStreamPresent(stream)) {
+          absorbPeerMedia(pc, deviceId);
+          stream = meshStreamsRef.current.get(deviceId);
+        }
+
+        const device = devicesRef.current.find((d) => d.deviceId === deviceId);
+        const audioOnly = device?.deviceRole === 'audio';
+
+        if (audioOnly) {
+          if (!hasUsableAudio(stream)) {
+            requestMeshReoffer('missing-audio-track', { bypassCooldown: true, deviceId });
+          }
+          return;
+        }
+
+        // Never tear down a working video feed just because audio hasn't arrived yet.
+        if (hasUsableVideo(stream)) return;
+
+        absorbPeerMedia(pc, deviceId);
+        if (!hasUsableVideo(meshStreamsRef.current.get(deviceId))) {
+          requestMeshReoffer('missing-video-track', { bypassCooldown: true, deviceId });
+        }
+      };
+
+      window.setTimeout(check, 2500);
+      window.setTimeout(check, 6000);
+    },
+    [absorbPeerMedia, requestMeshReoffer],
   );
 
   const bindIngressStream = useCallback(
@@ -941,21 +1158,28 @@ export function CloudCastProvider({
     (peerKey: string, deviceId: string) => {
       const streamDeviceId = deviceId || peerKey;
 
+      const existingPc = resolvePeerConnection(peerKey, streamDeviceId);
+      if (existingPc) {
+        const device = devicesRef.current.find((d) => d.deviceId === streamDeviceId);
+        const stream = meshStreamsRef.current.get(streamDeviceId);
+        const state = existingPc.connectionState;
+        if (
+          meshDeviceMediaReady(device, stream) &&
+          (state === 'connected' || state === 'connecting')
+        ) {
+          peerKeysRef.current.set(streamDeviceId, peerKey);
+          return existingPc;
+        }
+      }
+
       if (peerConnections.current.has(peerKey) || peerConnections.current.has(streamDeviceId)) {
         removePeerConnection(peerKey, streamDeviceId);
         ackedPeersRef.current.delete(streamDeviceId);
         removeMeshStream(streamDeviceId);
       }
 
-      // Mobile mesh signaling always uses P2P ICE — independent of Regal Cloud video ingest.
+      // Answerer: mobile offer defines m-lines — do not add transceivers here.
       const pc = new RTCPeerConnection(pcConfigForMode('mesh'));
-
-      try {
-        pc.addTransceiver('video', { direction: 'recvonly' });
-        pc.addTransceiver('audio', { direction: 'recvonly' });
-      } catch {
-        /* browser may negotiate from remote offer */
-      }
 
       const cleanupPeer = () => {
         ackedPeersRef.current.delete(streamDeviceId);
@@ -964,20 +1188,20 @@ export function CloudCastProvider({
         markDeviceOffline(streamDeviceId);
       };
 
-      pc.ontrack = () => {
+      pc.ontrack = (event) => {
+        ingestRemoteTrack(streamDeviceId, event);
         absorbPeerMedia(pc, streamDeviceId);
-        sendDeviceAck(peerKey, streamDeviceId);
       };
 
       pc.onicecandidate = (ev) => {
-        if (!ev.candidate || !isSignalingLeaderRef.current) return;
+        if (!isSignalingLeaderRef.current) return;
         broadcast(SIGNALING_EVENTS.ICE, {
           from: dashboardPresenceKeyRef.current,
           to: peerKey,
           deviceId: streamDeviceId,
           streamId: '',
           timestamp: new Date().toISOString(),
-          candidate: ev.candidate.toJSON(),
+          candidate: ev.candidate ? ev.candidate.toJSON() : null,
         });
       };
 
@@ -986,16 +1210,24 @@ export function CloudCastProvider({
 
         if (pc.connectionState === 'connected') {
           clearPeerDisconnectTimer(streamDeviceId);
-          sendDeviceAck(peerKey, streamDeviceId);
-          markDeviceLinked(streamDeviceId);
-          if (!isMeshStreamPresent(meshStreamsRef.current.get(streamDeviceId))) {
-            absorbPeerMedia(pc, streamDeviceId);
+          const device = devicesRef.current.find((d) => d.deviceId === streamDeviceId);
+          const stream = meshStreamsRef.current.get(streamDeviceId);
+          if (!meshDeviceMediaReady(device, stream)) {
+            connectingSinceRef.current.set(streamDeviceId, Date.now());
           }
-          if (!isMeshStreamPresent(meshStreamsRef.current.get(streamDeviceId))) {
+          markDeviceLinked(streamDeviceId);
+          if (meshDeviceMediaReady(device, stream)) {
+            sendDeviceAck(peerKey, streamDeviceId, { force: true });
+          }
+          absorbPeerMedia(pc, streamDeviceId);
+          ensureMeshMediaHandshake(peerKey, streamDeviceId, pc);
+          if (!meshDeviceMediaReady(device, meshStreamsRef.current.get(streamDeviceId))) {
             let attempts = 0;
             const retryAbsorb = () => {
               if (pc.connectionState !== 'connected') return;
-              if (isMeshStreamPresent(meshStreamsRef.current.get(streamDeviceId))) return;
+              const latestDevice = devicesRef.current.find((d) => d.deviceId === streamDeviceId);
+              const latestStream = meshStreamsRef.current.get(streamDeviceId);
+              if (meshDeviceMediaReady(latestDevice, latestStream)) return;
               if (attempts >= 12) return;
               attempts += 1;
               absorbPeerMedia(pc, streamDeviceId);
@@ -1004,7 +1236,9 @@ export function CloudCastProvider({
             setTimeout(retryAbsorb, 400);
             window.setTimeout(() => {
               if (pc.connectionState !== 'connected') return;
-              if (isMeshStreamPresent(meshStreamsRef.current.get(streamDeviceId))) return;
+              const latestDevice = devicesRef.current.find((d) => d.deviceId === streamDeviceId);
+              const latestStream = meshStreamsRef.current.get(streamDeviceId);
+              if (meshDeviceMediaReady(latestDevice, latestStream)) return;
               requestMeshReoffer('connected-no-media', {
                 deviceId: streamDeviceId,
                 bypassCooldown: true,
@@ -1024,7 +1258,7 @@ export function CloudCastProvider({
                   /* ignore */
                 }
               }
-            }, ICE_RESTART_DELAY_MS);
+            }, MESH_ICE_RESTART_DELAY_MS);
 
             const timer = setTimeout(() => {
               peerDisconnectTimersRef.current.delete(streamDeviceId);
@@ -1032,14 +1266,26 @@ export function CloudCastProvider({
                 pc.connectionState === 'disconnected' ||
                 pc.connectionState === 'failed'
               ) {
+                requestMeshReoffer('peer-disconnected', {
+                  deviceId: streamDeviceId,
+                  bypassCooldown: true,
+                });
                 cleanupPeer();
               }
-            }, PEER_DISCONNECT_GRACE_MS);
+            }, MESH_PEER_DISCONNECT_GRACE_MS);
             peerDisconnectTimersRef.current.set(streamDeviceId, timer);
           }
         } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
           clearPeerDisconnectTimer(streamDeviceId);
-          cleanupPeer();
+          requestMeshReoffer('peer-failed', {
+            deviceId: streamDeviceId,
+            bypassCooldown: true,
+          });
+          window.setTimeout(() => {
+            if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+              cleanupPeer();
+            }
+          }, MESH_PEER_FAILED_REOFFER_MS);
         }
       };
 
@@ -1051,18 +1297,17 @@ export function CloudCastProvider({
             if (pc.iceConnectionState === 'disconnected') {
               pc.restartIce?.();
             }
-          }, ICE_RESTART_DELAY_MS);
+          }, MESH_ICE_RESTART_DELAY_MS);
         }
       };
 
       registerPeerConnection(peerKey, streamDeviceId, pc);
+      peerKeysRef.current.set(streamDeviceId, peerKey);
       return pc;
     },
     [
       broadcast,
-      handleMeshTrack,
       removeMeshStream,
-      sendDeviceAck,
       patchDevice,
       markDeviceOffline,
       markDeviceConnecting,
@@ -1070,8 +1315,12 @@ export function CloudCastProvider({
       removePeerConnection,
       registerPeerConnection,
       clearPeerDisconnectTimer,
+      resolvePeerConnection,
       absorbPeerMedia,
+      ingestRemoteTrack,
       requestMeshReoffer,
+      sendDeviceAck,
+      ensureMeshMediaHandshake,
     ],
   );
 
@@ -1084,7 +1333,11 @@ export function CloudCastProvider({
         const sig = JSON.stringify(candidate);
         if (seen.has(sig)) continue;
         seen.add(sig);
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch {
+          /* ignore duplicate or stale ICE */
+        }
       }
       pendingIce.current.delete(key);
     }
@@ -1100,24 +1353,68 @@ export function CloudCastProvider({
 
       const inflightKey = deviceId || peerKey;
       const answerOffer = async () => {
+        ackedPeersRef.current.delete(deviceId);
         const existingPc = resolvePeerConnection(peerKey, deviceId);
+        const offerType = (offer.type as RTCSdpType | undefined) ?? 'offer';
+
         if (
-          existingPc?.connectionState === 'connected' &&
-          isMeshStreamPresent(meshStreamsRef.current.get(deviceId))
+          existingPc &&
+          (existingPc.connectionState === 'connected' || existingPc.connectionState === 'connecting')
         ) {
-          sendDeviceAck(peerKey, deviceId, { force: true });
-          return;
+          if (!meshDeviceMediaReady(
+            devicesRef.current.find((d) => d.deviceId === deviceId),
+            meshStreamsRef.current.get(deviceId),
+          )) {
+            absorbPeerMedia(existingPc, deviceId);
+          }
+          const iceRestart = Boolean(offer.sdp?.includes('a=ice-restart'));
+          if (
+            !iceRestart &&
+            meshDeviceMediaReady(
+              devicesRef.current.find((d) => d.deviceId === deviceId),
+              meshStreamsRef.current.get(deviceId),
+            )
+          ) {
+            sendDeviceAck(peerKey, deviceId, { force: true });
+            return;
+          }
+
+          try {
+            await existingPc.setRemoteDescription({ type: offerType, sdp: offer.sdp });
+            await drainPendingIce(existingPc, peerKey, deviceId);
+            const answer = await existingPc.createAnswer();
+            await existingPc.setLocalDescription(answer);
+            await waitForIceGathering(existingPc, MESH_ICE_GATHER_TIMEOUT_MS);
+
+            const local = existingPc.localDescription ?? answer;
+            broadcast(SIGNALING_EVENTS.ANSWER, {
+              from: dashboardPresenceKeyRef.current,
+              to: peerKey,
+              deviceId,
+              streamId: offer.streamId,
+              timestamp: new Date().toISOString(),
+              sdp: local.sdp!,
+              type: local.type,
+            });
+            return;
+          } catch (err) {
+            console.warn('[CloudCast] Renegotiation failed, recreating peer:', err);
+            removePeerConnection(peerKey, deviceId);
+            removeMeshStream(deviceId);
+          }
+        } else if (existingPc) {
+          removePeerConnection(peerKey, deviceId);
         }
 
         try {
           const pc = createPeerConnection(peerKey, deviceId);
-          await pc.setRemoteDescription({ type: offer.type, sdp: offer.sdp });
+          await pc.setRemoteDescription({ type: offerType, sdp: offer.sdp });
 
           await drainPendingIce(pc, peerKey, deviceId);
 
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          await waitForIceGathering(pc, 800);
+          await waitForIceGathering(pc, MESH_ICE_GATHER_TIMEOUT_MS);
 
           const local = pc.localDescription ?? answer;
           broadcast(SIGNALING_EVENTS.ANSWER, {
@@ -1158,6 +1455,7 @@ export function CloudCastProvider({
       sendDeviceAck,
       removePeerConnection,
       drainPendingIce,
+      absorbPeerMedia,
     ],
   );
 
@@ -1205,6 +1503,8 @@ export function CloudCastProvider({
 
           void iceChainRef.current(chainKey, async () => {
             try {
+              if (!p.candidate) return;
+
               const pc = resolvePeerConnection(peerKey, deviceId);
               if (!pc || !pc.remoteDescription) {
                 queueIceCandidate(peerKey, p.candidate);
@@ -1224,13 +1524,15 @@ export function CloudCastProvider({
           appendEvent({ event: 'stream-ready', payload: p });
           const peerKey = p.from?.trim() || p.deviceId?.trim();
           if (isSignalingLeaderRef.current && peerKey && p.deviceId) {
-            sendDeviceAck(peerKey, p.deviceId, { force: true });
+            const device = devicesRef.current.find((d) => d.deviceId === p.deviceId);
+            const stream = meshStreamsRef.current.get(p.deviceId);
+            if (meshDeviceMediaReady(device, stream)) {
+              sendDeviceAck(peerKey, p.deviceId, { force: true });
+            }
           }
 
           const deviceId = p.deviceId?.trim();
           const whepUrl = p.whepUrl?.trim();
-          const sessionMode = sessionRef.current?.connectionMode ?? 'mesh';
-          const isRegal = sessionMode === 'regal';
 
           if (deviceId && whepUrl) {
             patchDevice(deviceId, {
@@ -1241,23 +1543,6 @@ export function CloudCastProvider({
               connectionState: 'connected',
               lastSeenAt: new Date().toISOString(),
             });
-
-            if (isRegal) {
-              connectAudioIngressWhep(deviceId, whepUrl, {
-                onStream: (id, stream) => {
-                  bindIngressStream(id, stream);
-                  if (isSignalingLeaderRef.current) {
-                    sendDeviceAck(id, id, { force: true });
-                  }
-                },
-                onConnecting: markDeviceConnecting,
-                onStreamLost: (id) => {
-                  if (!isMeshStreamPresent(meshStreamsRef.current.get(id))) {
-                    markDeviceConnecting(id);
-                  }
-                },
-              });
-            }
           }
 
           if (sessionRef.current) void loadDevicesImmediate(sessionRef.current);
@@ -1277,7 +1562,9 @@ export function CloudCastProvider({
           ackedPeersRef.current.clear();
           meshStreamsRef.current.forEach((stream) => stream.getTracks().forEach((t) => t.stop()));
           meshStreamsRef.current.clear();
-          setMeshStreams(new Map());
+          peerKeysRef.current.clear();
+          meshStreamWireKeysRef.current.clear();
+          setMeshStreamVersions(new Map());
           if (sessionRef.current) void loadDevicesImmediate(sessionRef.current);
         })
         .on('broadcast', { event: SIGNALING_EVENTS.STREAM_STOPPED }, ({ payload }) => {
@@ -1301,20 +1588,30 @@ export function CloudCastProvider({
             (newPresences as { deviceId?: string }[])?.[0]?.deviceId?.trim() || key;
           if (joinedId) {
             clearPresenceLeaveTimer(joinedId);
-            const hasStream = isMeshStreamPresent(meshStreamsRef.current.get(joinedId));
-            if (!hasStream) {
+            const joinedDevice = devicesRef.current.find((d) => d.deviceId === joinedId);
+            const joinedStream = meshStreamsRef.current.get(joinedId);
+            const mediaReady = meshDeviceMediaReady(joinedDevice, joinedStream);
+            if (!mediaReady) {
               markDeviceConnecting(joinedId);
             }
             if (isSignalingLeaderRef.current) {
-              const pc = resolvePeerConnection(joinedId, joinedId);
+              const peerKey = peerKeysRef.current.get(joinedId) ?? joinedId;
+              const pc = resolvePeerConnection(peerKey, joinedId);
               if (pc?.connectionState === 'connected') {
-                sendDeviceAck(joinedId, joinedId, { force: hasStream });
-              } else if (
-                !hasStream &&
-                (!pc ||
-                  pc.connectionState === 'failed' ||
-                  pc.connectionState === 'closed')
-              ) {
+                if (mediaReady) {
+                  sendDeviceAck(peerKey, joinedId, { force: true });
+                } else {
+                  absorbPeerMedia(pc, joinedId);
+                  const afterAbsorb = meshStreamsRef.current.get(joinedId);
+                  if (!meshDeviceMediaReady(joinedDevice, afterAbsorb)) {
+                    connectingSinceRef.current.set(joinedId, Date.now());
+                    requestMeshReoffer('device-presence-join', {
+                      deviceId: joinedId,
+                      bypassCooldown: true,
+                    });
+                  }
+                }
+              } else if (!mediaReady && deviceNeedsMeshRecovery(joinedId)) {
                 requestMeshReoffer('device-presence-join', {
                   deviceId: joinedId,
                   bypassCooldown: true,
@@ -1363,9 +1660,7 @@ export function CloudCastProvider({
             }
             applyPresenceSnapshot(channel);
             if (isSignalingLeaderRef.current) {
-              requestMeshReoffer(
-                hadActivePeers ? 'channel-resubscribe' : 'dashboard-join',
-              );
+              scheduleMeshRecovery(hadActivePeers ? 'channel-resubscribe' : 'dashboard-join');
             }
           } else if (
             status === 'CHANNEL_ERROR' ||
@@ -1406,6 +1701,7 @@ export function CloudCastProvider({
     },
     [
       appendEvent,
+      sendDeviceAck,
       createAnswerForOffer,
       scheduleLoadDevices,
       removeMeshStream,
@@ -1414,6 +1710,7 @@ export function CloudCastProvider({
       resolvePeerConnection,
       sendDeviceAck,
       requestMeshReoffer,
+      scheduleMeshRecovery,
       removePeerConnection,
       applyPresenceSnapshot,
       markDeviceOffline,
@@ -1427,6 +1724,8 @@ export function CloudCastProvider({
       loadDevicesImmediate,
       bindIngressStream,
       patchDevice,
+      deviceNeedsMeshRecovery,
+      absorbPeerMedia,
     ],
   );
 
@@ -1517,9 +1816,14 @@ export function CloudCastProvider({
     if (session) void loadDevicesImmediate(session);
   }, [session, loadDevicesImmediate]);
 
+  const reconnectRef = useRef<() => void>(() => {});
+
   const reconnect = useCallback(() => {
     realtimeRetryRef.current = 0;
     dbSessionIdRef.current = null;
+    clearMeshRejoinTimers();
+    clearMeshRecoveryTimers();
+    clearMeshPeerState();
     if (session) {
       connectRealtime(session);
       subscribeDbChanges(session);
@@ -1527,7 +1831,17 @@ export function CloudCastProvider({
     } else {
       void initSession();
     }
-  }, [session, connectRealtime, subscribeDbChanges, loadDevicesImmediate, initSession]);
+  }, [
+    session,
+    connectRealtime,
+    subscribeDbChanges,
+    loadDevicesImmediate,
+    initSession,
+    clearMeshRejoinTimers,
+    clearMeshRecoveryTimers,
+    clearMeshPeerState,
+  ]);
+  reconnectRef.current = reconnect;
 
   const regenerateCode = useCallback(async () => {
     if (!session) return;
@@ -1544,7 +1858,9 @@ export function CloudCastProvider({
       ackedPeersRef.current.clear();
       meshStreamsRef.current.forEach((stream) => stream.getTracks().forEach((t) => t.stop()));
       meshStreamsRef.current.clear();
-      setMeshStreams(new Map());
+      peerKeysRef.current.clear();
+      meshStreamWireKeysRef.current.clear();
+      setMeshStreamVersions(new Map());
 
       const updated = await regenerateAccessCode(session.sessionId, session.accessCode);
       saveStoredSession(
@@ -1627,10 +1943,67 @@ export function CloudCastProvider({
 
   useEffect(() => {
     if (isSignalingLeader && !wasSignalingLeaderRef.current && channelRef.current) {
-      requestMeshReoffer('signaling-leader');
+      const online = presenceDeviceIds(channelRef.current);
+      const needsRecovery = [...online].some((deviceId) => deviceNeedsMeshRecovery(deviceId));
+      if (needsRecovery) scheduleMeshRecovery('signaling-leader');
     }
     wasSignalingLeaderRef.current = isSignalingLeader;
-  }, [isSignalingLeader, requestMeshReoffer]);
+  }, [isSignalingLeader, scheduleMeshRecovery, deviceNeedsMeshRecovery]);
+
+  useEffect(() => {
+    const onMeshReofferRequest = (event: Event) => {
+      if (!isSignalingLeaderRef.current) return;
+      const detail = (event as CustomEvent<{ deviceId?: string; reason?: string }>).detail;
+      requestMeshReoffer(detail?.reason ?? 'client-request', {
+        bypassCooldown: true,
+        deviceId: detail?.deviceId,
+      });
+    };
+    window.addEventListener('cloudcast:request-mesh-reoffer', onMeshReofferRequest);
+    return () => window.removeEventListener('cloudcast:request-mesh-reoffer', onMeshReofferRequest);
+  }, [requestMeshReoffer]);
+
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!sessionRef.current) return;
+
+      if (event.persisted) {
+        reconnectRef.current();
+        return;
+      }
+
+      if (!channelRef.current) return;
+      const online = presenceDeviceIds(channelRef.current);
+      const needsRecovery = [...online].some((deviceId) => deviceNeedsMeshRecovery(deviceId));
+      if (needsRecovery) scheduleMeshRecovery('pageshow');
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, [scheduleMeshRecovery]);
+
+  useEffect(() => {
+    if (!session || !isSignalingLeader) return;
+
+    const sweep = () => {
+      if (!isSignalingLeaderRef.current || !channelRef.current) return;
+
+      const online = presenceDeviceIds(channelRef.current);
+      const needsRecovery = [...online].filter((deviceId) => deviceNeedsMeshRecovery(deviceId));
+      if (needsRecovery.length === 0) return;
+
+      scheduleDeviceMeshReoffer(needsRecovery, 'health-sweep');
+      applyPresenceSnapshot(channelRef.current);
+    };
+
+    const timer = window.setInterval(sweep, MESH_HEALTH_SWEEP_MS);
+    return () => window.clearInterval(timer);
+  }, [
+    session,
+    isSignalingLeader,
+    deviceNeedsMeshRecovery,
+    scheduleDeviceMeshReoffer,
+    applyPresenceSnapshot,
+  ]);
 
   const bindIngressStreamWithAck = useCallback(
     (deviceId: string, stream: MediaStream) => {
@@ -1643,46 +2016,17 @@ export function CloudCastProvider({
   );
 
   useAudioIngressStreams({
-    enabled: sessionConnectionMode !== 'mesh',
-    connectionMode: sessionConnectionMode,
+    enabled: false,
+    connectionMode: 'mesh',
     devices,
     onStream: bindIngressStreamWithAck,
     onConnecting: markDeviceConnecting,
     onStreamLost: (deviceId) => {
       if (!isMeshStreamPresent(meshStreamsRef.current.get(deviceId))) {
         markDeviceConnecting(deviceId);
-        if (sessionRef.current?.connectionMode === 'regal') {
-          requestMeshReoffer('whep-stream-lost', { bypassCooldown: true, deviceId });
-        }
       }
     },
   });
-
-  useEffect(() => {
-    const onMeshReoffer = (event: Event) => {
-      const detail = (event as CustomEvent<{ deviceId?: string; reason?: string }>).detail;
-      if (sessionRef.current?.connectionMode !== 'regal') return;
-      requestMeshReoffer(detail?.reason ?? 'whep-fallback', {
-        bypassCooldown: true,
-        deviceId: detail?.deviceId,
-      });
-    };
-
-    const onWhepPool = (event: Event) => {
-      const detail = (event as CustomEvent<{ deviceId?: string; connectionState?: string }>).detail;
-      if (sessionRef.current?.connectionMode !== 'regal') return;
-      if (detail?.connectionState === 'failed' || detail?.connectionState === 'disconnected') {
-        requestMeshReoffer('whep-failed', { bypassCooldown: true, deviceId: detail?.deviceId });
-      }
-    };
-
-    window.addEventListener('cloudcast:request-mesh-reoffer', onMeshReoffer);
-    window.addEventListener('cloudcast:whep-pool', onWhepPool);
-    return () => {
-      window.removeEventListener('cloudcast:request-mesh-reoffer', onMeshReoffer);
-      window.removeEventListener('cloudcast:whep-pool', onWhepPool);
-    };
-  }, [requestMeshReoffer]);
 
   useEffect(() => {
     if (!session || !profile) return;
@@ -1724,6 +2068,12 @@ export function CloudCastProvider({
   useEffect(() => {
     if (!session) return;
     const timer = setInterval(() => {
+      if (document.hidden) {
+        const hasActive = devicesRef.current.some(
+          (d) => d.status === 'live' || d.status === 'connecting',
+        );
+        if (!hasActive) return;
+      }
       applyPresenceSnapshot(channelRef.current);
     }, DEVICE_STATUS_SWEEP_MS);
     return () => clearInterval(timer);
@@ -1752,12 +2102,8 @@ export function CloudCastProvider({
       applyPresenceSnapshot(channelRef.current);
       if (isSignalingLeaderRef.current && channelRef.current) {
         const online = presenceDeviceIds(channelRef.current);
-        const needsReoffer = [...online].some((deviceId) => {
-          if (isMeshStreamPresent(meshStreamsRef.current.get(deviceId))) return false;
-          const peerState = peerConnections.current.get(deviceId)?.connectionState;
-          return !peerState || peerState === 'failed' || peerState === 'closed';
-        });
-        if (needsReoffer) requestMeshReoffer('session-recover');
+        const needsReoffer = [...online].some((deviceId) => deviceNeedsMeshRecovery(deviceId));
+        if (needsReoffer) scheduleMeshRecovery('session-recover');
       }
     };
 
@@ -1774,7 +2120,7 @@ export function CloudCastProvider({
       window.clearInterval(healthTimer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [session, isSessionChannelHealthy, isDbChannelHealthy, scheduleRealtimeReconnect, applyPresenceSnapshot, requestMeshReoffer]);
+  }, [session, isSessionChannelHealthy, isDbChannelHealthy, scheduleRealtimeReconnect, applyPresenceSnapshot, scheduleMeshRecovery, deviceNeedsMeshRecovery]);
 
   const contextValue = useMemo<CloudCastContextValue>(
     () => ({
@@ -1782,7 +2128,7 @@ export function CloudCastProvider({
       sessionLoading,
       devices,
       connectionMode,
-      meshStreams,
+      meshStreamVersions,
       getMeshStream,
       isPresenceConnected,
       isSignalingConnected,
@@ -1800,7 +2146,7 @@ export function CloudCastProvider({
       sessionLoading,
       devices,
       connectionMode,
-      meshStreams,
+      meshStreamVersions,
       getMeshStream,
       isPresenceConnected,
       isSignalingConnected,

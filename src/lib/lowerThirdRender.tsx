@@ -80,13 +80,29 @@ export function renderLowerThird({
     </>
   );
 
+  /** Operator-uploaded logo on the plate — scaled against the headline size. */
+  const logoScale = Math.min(200, Math.max(40, c.logoScale ?? 100));
+  const PlateContent = c.logoDataUrl ? (
+    <div className="flex items-center gap-2.5">
+      <img
+        src={c.logoDataUrl}
+        alt=""
+        className="shrink-0 object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]"
+        style={{ height: `${Math.round((18 * logoScale) / 100)}px`, maxWidth: '96px' }}
+      />
+      <div className="min-w-0">{HeadlineBlock}</div>
+    </div>
+  ) : (
+    HeadlineBlock
+  );
+
   switch (layout as LowerThirdLayout) {
     case 'accent-top':
       return (
         <div className={wrapperClass} style={wrapperStyle}>
           <div className={cn('inline-flex min-w-[180px] max-w-full flex-col overflow-hidden shadow-lg', RADIUS[c.borderRadius])}>
             <div className="h-1" style={{ background: `linear-gradient(90deg, ${c.accentColor}, ${c.accentColor}99)` }} />
-            <div className="px-4 py-2.5 backdrop-blur-sm" style={panelStyle}>{HeadlineBlock}</div>
+            <div className="px-4 py-2.5 backdrop-blur-sm" style={panelStyle}>{PlateContent}</div>
           </div>
         </div>
       );
@@ -95,7 +111,7 @@ export function renderLowerThird({
       return (
         <div className={wrapperClass} style={wrapperStyle}>
           <div className={cn('inline-flex max-w-full overflow-hidden shadow-xl', RADIUS[c.borderRadius])}>
-            <div className="flex min-w-[180px] flex-col px-4 py-2.5" style={panelStyle}>{HeadlineBlock}</div>
+            <div className="flex min-w-[180px] flex-col px-4 py-2.5" style={panelStyle}>{PlateContent}</div>
             <div className="w-1 shrink-0" style={{ backgroundColor: c.accentColor }} />
           </div>
         </div>
@@ -108,7 +124,7 @@ export function renderLowerThird({
             <div className="flex items-center px-2" style={{ background: `linear-gradient(180deg, ${c.accentColor}, ${c.accentColor}cc)` }}>
               <span className="text-[10px] font-black text-black">▶</span>
             </div>
-            <div className="px-4 py-2.5" style={panelStyle}>{HeadlineBlock}</div>
+            <div className="px-4 py-2.5" style={panelStyle}>{PlateContent}</div>
           </div>
         </div>
       );
@@ -120,7 +136,7 @@ export function renderLowerThird({
             className={cn('inline-block max-w-full border-l-2 px-4 py-2 backdrop-blur-md', RADIUS[c.borderRadius])}
             style={{ ...panelStyle, borderColor: c.accentColor }}
           >
-            {HeadlineBlock}
+            {PlateContent}
           </div>
         </div>
       );
@@ -130,7 +146,7 @@ export function renderLowerThird({
         <div className={wrapperClass} style={wrapperStyle}>
           <div className={cn('inline-flex max-w-full overflow-hidden shadow-lg', RADIUS[c.borderRadius])}>
             <div className="w-1 shrink-0" style={{ background: `linear-gradient(180deg, ${c.accentColor}, ${c.accentColor}88)` }} />
-            <div className="px-4 py-2.5" style={panelStyle}>{HeadlineBlock}</div>
+            <div className="px-4 py-2.5" style={panelStyle}>{PlateContent}</div>
           </div>
         </div>
       );
@@ -143,7 +159,7 @@ export function renderLowerThird({
             style={{ ...panelStyle, background: `linear-gradient(90deg, ${c.backgroundColor}, ${c.accentColor}55)` }}
           >
             {LiveBadge}
-            <div className="min-w-0">{HeadlineBlock}</div>
+            <div className="min-w-0">{PlateContent}</div>
           </div>
         </div>
       );
@@ -152,7 +168,7 @@ export function renderLowerThird({
       return (
         <div className={wrapperClass} style={wrapperStyle}>
           <div className={cn('inline-flex max-w-full overflow-hidden border-l-4 shadow-md', RADIUS[c.borderRadius])} style={{ ...panelStyle, borderColor: c.accentColor }}>
-            <div className="px-4 py-2.5">{HeadlineBlock}</div>
+            <div className="px-4 py-2.5">{PlateContent}</div>
           </div>
         </div>
       );
@@ -162,7 +178,7 @@ export function renderLowerThird({
         <div className={wrapperClass} style={wrapperStyle}>
           <div className={cn('inline-flex max-w-full flex-col overflow-hidden', RADIUS[c.borderRadius])}>
             <div className="h-px w-full" style={{ backgroundColor: c.accentColor }} />
-            <div className="px-4 py-2.5" style={panelStyle}>{HeadlineBlock}</div>
+            <div className="px-4 py-2.5" style={panelStyle}>{PlateContent}</div>
             <div className="h-px w-full opacity-60" style={{ backgroundColor: c.accentColor }} />
           </div>
         </div>
@@ -172,7 +188,7 @@ export function renderLowerThird({
       return (
         <div className={wrapperClass} style={wrapperStyle}>
           <div className="inline-flex max-w-full -skew-x-6 overflow-hidden shadow-lg">
-            <div className="skew-x-6 px-5 py-2.5" style={panelStyle}>{HeadlineBlock}</div>
+            <div className="skew-x-6 px-5 py-2.5" style={panelStyle}>{PlateContent}</div>
             <div className="w-3 skew-x-6" style={{ backgroundColor: c.accentColor }} />
           </div>
         </div>
@@ -185,7 +201,7 @@ export function renderLowerThird({
             className={cn('inline-block max-w-full px-4 py-2.5 shadow-lg', RADIUS[c.borderRadius])}
             style={{ ...panelStyle, boxShadow: `0 0 18px ${c.accentColor}88, inset 0 0 0 1px ${c.accentColor}` }}
           >
-            {HeadlineBlock}
+            {PlateContent}
           </div>
         </div>
       );
@@ -197,7 +213,7 @@ export function renderLowerThird({
             <div className="flex items-center px-3 py-2.5 font-black uppercase" style={{ backgroundColor: c.accentColor, color: '#0f172a' }}>
               <span className="text-[10px]">LIVE</span>
             </div>
-            <div className="px-4 py-2.5" style={panelStyle}>{HeadlineBlock}</div>
+            <div className="px-4 py-2.5" style={panelStyle}>{PlateContent}</div>
           </div>
         </div>
       );
@@ -209,7 +225,7 @@ export function renderLowerThird({
             className={cn('inline-block max-w-full border px-4 py-2.5 backdrop-blur-sm', RADIUS[c.borderRadius])}
             style={{ ...panelStyle, borderColor: `${c.accentColor}99` }}
           >
-            {HeadlineBlock}
+            {PlateContent}
           </div>
         </div>
       );

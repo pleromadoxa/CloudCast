@@ -94,6 +94,7 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
     onToggleMonitorMute,
     onToggleConsoleEnabled,
     onTogglePeakHold,
+    onSetConsoleViewMode,
     onSetFatParam,
     onToggleHpfBypass,
     onPatchNoiseCancel,
@@ -422,47 +423,51 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
       aria-hidden={hidden}
     >
       {!hidden && (
-      <header className="audio-mixer-header flex shrink-0 items-center justify-between gap-2 border-b border-sky-500/20 px-3 py-2 sm:px-4">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <CloudCastLogo variant={CLOUDCAST_NAV_LOGO.variant} className={CLOUDCAST_NAV_LOGO.className} />
-          <span className="hidden items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sky-300 sm:inline-flex">
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            Audio Mixer · {AUDIO_MIXER_MAX_CHANNELS}ch
-          </span>
-          {profile && (
-            <span className="rounded bg-sky-500/15 px-2 py-0.5 text-[9px] font-bold tracking-wider text-sky-200 ring-1 ring-sky-400/20">
-              {profile.entitlements?.universal ? 'UNIVERSAL' : planId.toUpperCase()}
+      <header className="audio-mixer-header dashboard-header flex shrink-0 flex-col gap-1 border-b border-sky-500/20 px-3 py-2 sm:px-4">
+        <div className="dashboard-header-top flex min-w-0 items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <CloudCastLogo variant={CLOUDCAST_NAV_LOGO.variant} className={CLOUDCAST_NAV_LOGO.className} />
+            <span className="hidden items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sky-300 sm:inline-flex">
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Audio Mixer · {AUDIO_MIXER_MAX_CHANNELS}ch
             </span>
-          )}
+            {profile && (
+              <span className="rounded bg-sky-500/15 px-2 py-0.5 text-[9px] font-bold tracking-wider text-sky-200 ring-1 ring-sky-400/20">
+                {profile.entitlements?.universal ? 'UNIVERSAL' : planId.toUpperCase()}
+              </span>
+            )}
+          </div>
+          <AccessCodePanel
+            session={session}
+            isLoading={sessionLoading}
+            onRegenerate={regenerateCode}
+            isRegenerating={isRegenerating}
+            product="audio"
+            error={error}
+            onRetry={reconnect}
+            className="dashboard-header-access shrink-0"
+          />
         </div>
-        <AccessCodePanel
-          session={session}
-          isLoading={sessionLoading}
-          onRegenerate={regenerateCode}
-          isRegenerating={isRegenerating}
-          product="audio"
-          error={error}
-          onRetry={reconnect}
-          className="min-w-0 flex"
-        />
-        <VideoBridgePanel
-          mode="audio"
-          sessionId={session?.sessionId}
-          accessCode={session?.accessCode}
-          realtimeChannel={session?.realtimeChannel}
-          sessionLoading={sessionLoading}
-          onBridgeCodeChange={setBridgeCode}
-          className="hidden lg:flex shrink-0"
-        />
-        <ProgramPresetToolbar />
-        <div className="flex shrink-0 items-center gap-2 text-[10px]">
-          <Link to="/hub" className="hidden items-center gap-1 text-sky-200/60 hover:text-white sm:inline-flex" title="All products">
-            <LayoutGrid className="h-3.5 w-3.5" /> HUB
-          </Link>
-          <Link to="/profile" className="hidden text-sky-200/60 hover:text-white lg:inline">Profile</Link>
-          <button type="button" onClick={() => { void signOut(); }} className="mixer-btn p-1" title="Sign out">
-            <LogOut className="h-3 w-3" />
-          </button>
+        <div className="dashboard-header-bottom flex min-w-0 items-center justify-end gap-2">
+          <VideoBridgePanel
+            mode="audio"
+            sessionId={session?.sessionId}
+            accessCode={session?.accessCode}
+            realtimeChannel={session?.realtimeChannel}
+            sessionLoading={sessionLoading}
+            onBridgeCodeChange={setBridgeCode}
+            className="hidden lg:flex shrink-0"
+          />
+          <ProgramPresetToolbar />
+          <div className="flex shrink-0 items-center gap-2 text-[10px]">
+            <Link to="/hub" className="hidden items-center gap-1 text-sky-200/60 hover:text-white sm:inline-flex" title="All products">
+              <LayoutGrid className="h-3.5 w-3.5" /> HUB
+            </Link>
+            <Link to="/profile" className="hidden text-sky-200/60 hover:text-white lg:inline">Profile</Link>
+            <button type="button" onClick={() => { void signOut(); }} className="mixer-btn p-1" title="Sign out">
+              <LogOut className="h-3 w-3" />
+            </button>
+          </div>
         </div>
       </header>
       )}
@@ -498,6 +503,7 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
             onToggleMonitorMute={handleToggleMonitorMute}
             onToggleConsoleEnabled={handleToggleConsoleEnabled}
             onTogglePeakHold={guard(onTogglePeakHold)}
+            onSetConsoleViewMode={guard(onSetConsoleViewMode)}
             onSetFatParam={guard(onSetFatParam)}
             onToggleHpfBypass={guard(onToggleHpfBypass)}
             onPatchNoiseCancel={guard(onPatchNoiseCancel)}

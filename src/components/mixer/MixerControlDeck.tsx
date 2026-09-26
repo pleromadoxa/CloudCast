@@ -1,4 +1,5 @@
-import { Mic, MicOff, Radio, KeyRound } from 'lucide-react';
+import type { BroadcastStatus } from '../../hooks/usePgmBroadcast';
+import { Radio, KeyRound, Contrast } from 'lucide-react';
 import { MIXER_PANELS } from '../../config/mixerPanels';
 import type { DashboardControls } from '../../types/controls';
 import type { MixerPanel } from '../../types/mixer';
@@ -13,6 +14,7 @@ import { planAllowsChromaKey } from '../../lib/planFeatures';
 import { resolveChassisPanelClass, resolveMultiPanelGridColumns } from '../../lib/mixerPanelLayout';
 import { cn } from '../../lib/utils';
 import { AudioMeters } from './AudioMeters';
+import { MixerRockerSwitch } from './MixerRockerSwitch';
 import { SourcesPanel } from './panels/SourcesPanel';
 import { LayersPanel } from './panels/LayersPanel';
 import { AudioMixerPanel } from './panels/AudioMixerPanel';
@@ -20,6 +22,8 @@ import { TransitionPanel } from './panels/TransitionPanel';
 import { DevicesPanel } from './panels/DevicesPanel';
 import { SettingsPanel } from './panels/SettingsPanel';
 import { StreamSettingsPanel } from './panels/StreamSettingsPanel';
+import { MediaPanel } from './panels/MediaPanel';
+import { BrowserPanel } from './panels/BrowserPanel';
 import { MixerPanelHeader } from './MixerPanelHeader';
 import { MixerTabGuide } from './MixerTabGuide';
 
@@ -46,6 +50,8 @@ interface MixerControlDeckProps {
   onCommitTbar: (v: number) => void;
   onGoLive: () => void;
   isStreamValidating?: boolean;
+  broadcastStatus?: BroadcastStatus;
+  isBroadcastTransmitting?: boolean;
   streamNotice?: { type: 'error' | 'success' | 'info'; message: string } | null;
   onTestStreamConnection: (input: {
     name: string;
@@ -77,6 +83,8 @@ interface MixerControlDeckProps {
   onSetQuality: (q: DashboardControls['defaultQuality']) => void;
   onSetAspectRatio: (ratio: VideoAspectRatio) => void;
   onSetViewMode: (mode: DashboardControls['viewMode']) => void;
+  onSetMixerViewMode: (mode: DashboardControls['mixerViewMode']) => void;
+  onToggleSimpleProductionView: () => void;
   onSetKeyboardShortcuts: (bindings: DashboardControls['keyboardShortcuts']) => void;
   onSetGlobalOverlay: (overlay: import('../../types/device').OverlayType) => void;
   onUnpair: (id: string) => void;
@@ -91,25 +99,65 @@ interface MixerControlDeckProps {
   ipCameraSlot: number;
   onSaveIpCamera: (input: { label: string; url: string; enabled: boolean }) => { ok: boolean; message: string };
   onRemoveIpCamera: () => void;
+  onPreviewMedia?: () => void;
+  onPreviewBrowser?: () => void;
+  onTakeBrowser?: () => void;
+  onTakeMedia?: () => void;
+  dashboardPreferences?: import('../../types/plans').DashboardPreferences | null;
+  onUpdateDashboardPreferences?: (prefs: Partial<import('../../types/plans').DashboardPreferences>) => Promise<void>;
+  dashboardPrefsSaving?: boolean;
 }
 
 function panelMeta(panel: MixerPanel) {
   return MIXER_PANELS.find((entry) => entry.id === panel);
 }
 
+function resolveStreamButtonLabel(
+  isOnAir: boolean,
+  isValidating: boolean,
+  broadcastStatus: BroadcastStatus | undefined,
+  isTransmitting: boolean,
+): string {
+  if (isValidating) return '…';
+  if (!isOnAir) return 'STREAM';
+  if (broadcastStatus === 'connecting') return 'STARTING';
+  if (broadcastStatus === 'reconnecting' || broadcastStatus === 'error') return 'RECONNECT';
+  if (broadcastStatus === 'live' && isTransmitting) return 'ON AIR';
+  if (broadcastStatus === 'live') return 'BUFFER';
+  return 'ON AIR';
+}
+
 export function MixerControlDeck(props: MixerControlDeckProps) {
   const { controls, devices, pstDeviceId, pgmDeviceId, onSetPanel, onToggleOpenPanel } = props;
   const slots = devices;
+  const compactMode = controls.mixerViewMode === 'compact';
   const visiblePanels = controls.openPanels.length > 0 ? controls.openPanels : [controls.activePanel];
   const isMultiPanel = visiblePanels.length > 1;
   const showGlobalTransport = visiblePanels.some((panel) =>
-    ['layers', 'devices', 'stream', 'settings', 'audio'].includes(panel),
+    ['layers', 'media', 'browser', 'devices', 'stream', 'settings', 'audio'].includes(panel),
   );
   const chassisClass = resolveChassisPanelClass(visiblePanels, controls.activePanel);
   const narrowOutputCol = visiblePanels.some((panel) => panel === 'audio' || panel === 'devices');
   const canTake = Boolean(pstDeviceId && pgmDeviceId && pstDeviceId !== pgmDeviceId);
   const keyAllowed = planAllowsChromaKey(props.planId);
+  const streamLabel = resolveStreamButtonLabel(
+    controls.isOnAir,
+    Boolean(props.isStreamValidating),
+    props.broadcastStatus,
+    Boolean(props.isBroadcastTransmitting),
+  );
+  const streamLiveVisual =
+    controls.isOnAir &&
+    props.broadcastStatus === 'live' &&
+    Boolean(props.isBroadcastTransmitting);
+  const streamRecovering =
+    controls.isOnAir &&
+    (props.broadcastStatus === 'reconnecting' ||
+      props.broadcastStatus === 'error' ||
+      props.broadcastStatus === 'connecting');
   const keyOn = controls.outputMode === 'key' && controls.key.enabled;
+  const lumaOn = keyOn && controls.key.keyType === 'luma';
+  const chromaKeyOn = keyOn && controls.key.keyType !== 'luma';
 
   const renderPanel = (panel: MixerPanel, compact: boolean) => {
     if (panel === 'sources') {
@@ -227,11 +275,36 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
           />
       );
     }
+    if (panel === 'media') {
+      return (
+          <MediaPanel
+            compact={compact}
+            layers={controls.layers}
+            pgmLayers={props.pgmLayers}
+            selectedLayerId={props.selectedGraphicsLayerId}
+            onSelectLayer={props.onSelectGraphicsLayer}
+            onPatchLayers={props.onPatchLayers}
+            onPreviewMedia={props.onPreviewMedia}
+            onTakeMedia={props.onTakeMedia}
+            graphics={props.graphics}
+          />
+      );
+    }
+    if (panel === 'browser') {
+      return (
+          <BrowserPanel
+            compact={compact}
+            onPreviewBrowser={props.onPreviewBrowser}
+            onTakeBrowser={props.onTakeBrowser}
+          />
+      );
+    }
     return (
           <SettingsPanel
             compact={compact}
             aspectRatio={controls.display.aspectRatio}
             viewMode={controls.viewMode}
+            mixerViewMode={controls.mixerViewMode}
             showMultiview={controls.showMultiview}
             fullscreenPgm={controls.fullscreenPgm}
             externalDisplayOpen={props.externalDisplayOpen}
@@ -239,6 +312,9 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
             keyboardShortcuts={controls.keyboardShortcuts}
             onSetAspectRatio={props.onSetAspectRatio}
             onSetViewMode={props.onSetViewMode}
+            onSetMixerViewMode={props.onSetMixerViewMode}
+            simpleProductionView={controls.simpleProductionView}
+            onToggleSimpleProductionView={props.onToggleSimpleProductionView}
             onToggleMultiview={props.onToggleMultiview}
             onToggleFullscreen={props.onToggleFullscreen}
             onToggleExternalDisplay={props.onToggleExternalDisplay}
@@ -250,6 +326,9 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
             onSetGlobalOverlay={props.onSetGlobalOverlay}
             onPatchLayers={props.onPatchLayers}
             accessCode={props.accessCode}
+            dashboardPreferences={props.dashboardPreferences}
+            onUpdateDashboardPreferences={props.onUpdateDashboardPreferences}
+            dashboardPrefsSaving={props.dashboardPrefsSaving}
           />
     );
   };
@@ -267,6 +346,7 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
           className="shrink-0 border-b border-mixer-border/60 px-2 py-1.5"
           activePanel={controls.activePanel}
           openPanels={visiblePanels}
+          simpleProductionView={controls.simpleProductionView}
           onSelectPanel={onSetPanel}
           onToggleOpenPanel={onToggleOpenPanel}
         />
@@ -318,7 +398,7 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
                   />
                 )}
                 <div className="atem-multi-panel-content min-h-0">
-                  {renderPanel(panel, false)}
+                  {renderPanel(panel, compactMode)}
                 </div>
               </div>
             );
@@ -348,26 +428,48 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
             </div>
             <div className="flex items-center gap-2">
               {keyAllowed && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (keyOn) {
-                      props.onSetOutputMode('main');
-                      props.onPatchKey({ enabled: false });
-                    } else {
-                      props.onSetOutputMode('key');
-                      props.onPatchKey({ enabled: true });
-                    }
-                  }}
-                  className={cn(
-                    'atem-auto-btn !h-11 !min-w-[56px] !text-xs',
-                    keyOn && 'bg-emerald-600/40 text-emerald-200 ring-1 ring-emerald-500/50',
-                  )}
-                  title="Toggle chroma/luma KEY on PGM"
-                >
-                  <KeyRound className="mx-auto h-3.5 w-3.5" />
-                  KEY
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (chromaKeyOn) {
+                        props.onSetOutputMode('main');
+                        props.onPatchKey({ enabled: false });
+                      } else {
+                        props.onSetOutputMode('key');
+                        props.onPatchKey({ enabled: true, keyType: 'chroma' });
+                      }
+                    }}
+                    className={cn(
+                      'atem-auto-btn !h-11 !min-w-[56px] !text-xs',
+                      chromaKeyOn && 'bg-emerald-600/40 text-emerald-200 ring-1 ring-emerald-500/50',
+                    )}
+                    title="Chroma KEY — green/blue screen (Regal Display overlays)"
+                  >
+                    <KeyRound className="mx-auto h-3.5 w-3.5" />
+                    KEY
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (lumaOn) {
+                        props.onSetOutputMode('main');
+                        props.onPatchKey({ enabled: false });
+                      } else {
+                        props.onSetOutputMode('key');
+                        props.onPatchKey({ enabled: true, keyType: 'luma' });
+                      }
+                    }}
+                    className={cn(
+                      'atem-auto-btn !h-11 !min-w-[56px] !text-xs',
+                      lumaOn && 'bg-violet-600/40 text-violet-200 ring-1 ring-violet-500/50',
+                    )}
+                    title="Luma KEY — remove dark/black areas from media"
+                  >
+                    <Contrast className="mx-auto h-3.5 w-3.5" />
+                    LUMA
+                  </button>
+                </>
               )}
               <button type="button" onClick={props.onCut} className="atem-cut-btn !h-11 !min-w-[64px] !text-xs">CUT</button>
               <button type="button" onClick={props.onTake} disabled={!canTake} className="atem-auto-btn !h-11 !min-w-[64px] !text-xs">TAKE</button>
@@ -375,9 +477,13 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
                 type="button"
                 onClick={props.onGoLive}
                 disabled={props.isStreamValidating}
-                className={cn('atem-stream-btn !h-11 !min-w-[72px] !text-xs', controls.isOnAir && 'atem-stream-live')}
+                className={cn(
+                  'atem-stream-btn !h-11 !min-w-[72px] !text-xs',
+                  streamLiveVisual && 'atem-stream-live',
+                  streamRecovering && 'animate-pulse',
+                )}
               >
-                {props.isStreamValidating ? '…' : controls.isOnAir ? 'ON AIR' : 'STREAM'}
+                {streamLabel}
               </button>
             </div>
           </div>
@@ -386,14 +492,31 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
 
       <div className={cn('atem-output-col shrink-0', narrowOutputCol && 'atem-output-col--narrow')}>
           <p className="atem-group-label mb-1">Video Out</p>
+          <div className="atem-output-power">
+            <MixerRockerSwitch
+              size="sm"
+              checked={!controls.audio.masterMuted}
+              label="Program audio power"
+              title={
+                controls.audio.masterMuted
+                  ? 'Program muted — flip to power audio on'
+                  : 'Program audio on — flip to mute'
+              }
+              onCheckedChange={(on) => props.onPatchAudio({ masterMuted: !on })}
+            />
+          </div>
           <button
             type="button"
             onClick={props.onGoLive}
             disabled={props.isStreamValidating}
-            className={cn('atem-output-air', controls.isOnAir && 'atem-output-air-live')}
+            className={cn(
+              'atem-output-air',
+              streamLiveVisual && 'atem-output-air-live',
+              streamRecovering && 'animate-pulse',
+            )}
           >
             <Radio className="mx-auto mb-1 h-5 w-5" />
-            {controls.isOnAir ? 'ON AIR' : 'STREAM'}
+            {streamLabel}
           </button>
           <button
             type="button"
@@ -401,17 +524,6 @@ export function MixerControlDeck(props: MixerControlDeckProps) {
             className={cn('atem-output-rec', controls.isRecording && 'atem-output-rec-live')}
           >
             ● REC
-          </button>
-          <button
-            type="button"
-            onClick={() => props.onPatchAudio({ masterMuted: !controls.audio.masterMuted })}
-            className={cn(
-              'atem-output-mute',
-              controls.audio.masterMuted ? 'atem-toggle-glow' : 'atem-toggle-on',
-            )}
-            title="Master mute"
-          >
-            {controls.audio.masterMuted ? <MicOff className="mx-auto h-4 w-4" /> : <Mic className="mx-auto h-4 w-4" />}
           </button>
           <AudioMeters active={Boolean(pgmDeviceId)} muted={controls.audio.masterMuted} />
           <span className="atem-group-label mt-1">PGM OUT</span>

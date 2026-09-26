@@ -14,6 +14,8 @@ export const SIGNALING_EVENTS = {
   ACCESS_CODE_REVOKED: 'access-code-revoked',
   /** Dashboard leader regained — mobile should re-send mesh offer. */
   REQUEST_REOFFER: 'request-reoffer',
+  /** Regal Cloud — dashboard provisioned WHIP/WHEP; mobile should publish to whip_url. */
+  REQUEST_CLOUD_INGEST: 'request-cloud-ingest',
   /** Regal Display — live congregation output sync. */
   DISPLAY_FEED_SYNC: 'display-feed-sync',
   /** Regal Prism Eye — phone gyro virtual camera sync. */

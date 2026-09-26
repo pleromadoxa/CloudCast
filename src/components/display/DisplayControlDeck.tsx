@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import {
   BookOpen,
   Bookmark,
@@ -10,8 +10,10 @@ import {
   LayoutTemplate,
   ListOrdered,
   Loader2,
+  Monitor,
   Music2,
   Palette,
+  Play,
   Plus,
   Save,
   Search,
@@ -39,7 +41,9 @@ import {
   type BibleSearchSuggestion,
 } from '../../lib/bibleApi';
 import { customTemplateFromPartial, customTemplateFromPreviewSlide } from '../../lib/displayTemplateUtils';
+import { FOREGROUND_POSITION_PRESETS } from '../../lib/displayForegroundPosition';
 import { exportDisplayPlaylist, parseDisplayPlaylistExport } from '../../lib/displayPlaylistExport';
+import { inferDisplayForegroundSize, loadImageDimensions } from '../../lib/mediaImagePlacement';
 import { cn } from '../../lib/utils';
 
 const PANELS: { id: DisplayPanel; icon: typeof Type; label: string }[] = [
@@ -59,6 +63,7 @@ const SLIDE_TYPES: { id: DisplaySlideType; label: string }[] = [
   { id: 'announcement', label: 'Announcement' },
   { id: 'lyrics', label: 'Lyrics' },
   { id: 'media', label: 'Media' },
+  { id: 'overlay', label: 'Overlay (key)' },
   { id: 'blank', label: 'Blank' },
 ];
 
@@ -112,6 +117,12 @@ export function DisplayControlDeck() {
   const scriptureInputRef = useRef<HTMLInputElement>(null);
   const [lyricsTitle, setLyricsTitle] = useState('');
   const [lyricsText, setLyricsText] = useState('');
+  const [slideSaveName, setSlideSaveName] = useState('');
+  const [fieldImagePickerId, setFieldImagePickerId] = useState<string | null>(null);
+  const [mediaDragOver, setMediaDragOver] = useState(false);
+  const [showOverlayPicker, setShowOverlayPicker] = useState(false);
+  const overlayImageInputRef = useRef<HTMLInputElement>(null);
+  const videoPreviewRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   const filteredTemplates = useMemo(() => {
     const q = templateSearch.trim().toLowerCase();
@@ -245,6 +256,30 @@ export function DisplayControlDeck() {
     [feed],
   );
 
+  const handleMediaDrop = useCallback(
+    async (e: DragEvent) => {
+      e.preventDefault();
+      setMediaDragOver(false);
+      const files = Array.from(e.dataTransfer.files).filter(
+        (f) => f.type.startsWith('image/') || f.type.startsWith('video/'),
+      );
+      for (const file of files) {
+        await feed.addMedia(file);
+      }
+    },
+    [feed],
+  );
+
+  const toggleVideoPreview = useCallback((id: string) => {
+    const el = videoPreviewRefs.current[id];
+    if (!el) return;
+    if (el.paused) {
+      void el.play();
+    } else {
+      el.pause();
+    }
+  }, []);
+
   const handleExportPlaylist = useCallback(() => {
     const payload = exportDisplayPlaylist(feed.state);
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -273,7 +308,47 @@ export function DisplayControlDeck() {
     [feed],
   );
 
+  const handleOverlayImageUpload = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file?.type.startsWith('image/')) return;
+      const item = await feed.addMedia(file);
+      if (item) {
+        const dims = await loadImageDimensions(item.url);
+        feed.addOverlaySlide(item.url, item.name, dims);
+        setShowOverlayPicker(false);
+      }
+      e.target.value = '';
+    },
+    [feed],
+  );
+
+  const applyOverlayImageFromLibrary = useCallback(
+    async (url: string, name: string) => {
+      const dims = await loadImageDimensions(url);
+      feed.addOverlaySlide(url, name, dims);
+      setShowOverlayPicker(false);
+    },
+    [feed],
+  );
+
+  const applyForegroundImageFromLibrary = useCallback(
+    async (slideId: string, url: string) => {
+      const dims = await loadImageDimensions(url);
+      const size = inferDisplayForegroundSize(dims.width, dims.height);
+      feed.updateSlide(slideId, {
+        foregroundImageUrl: url,
+        foregroundX: 50,
+        foregroundY: 50,
+        foregroundWidthPct: size.widthPct,
+        foregroundHeightPct: size.heightPct,
+      });
+    },
+    [feed],
+  );
+
   const previewSlide = feed.previewSlide;
+  const isPreviewOverlay = previewSlide?.type === 'overlay' || previewSlide?.background.kind === 'chroma';
 
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-mixer-border bg-[#0d0d0d]">
@@ -299,16 +374,74 @@ export function DisplayControlDeck() {
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {panel === 'slides' && (
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-[10px] font-bold tracking-wider text-mixer-muted">ALL SLIDES</p>
-              <button
-                type="button"
-                onClick={() => feed.addSlide()}
-                className="flex items-center gap-1 rounded bg-violet-600/20 px-2 py-1 text-[10px] font-bold text-violet-200 hover:bg-violet-600/40"
-              >
-                <Plus className="h-3 w-3" /> NEW
-              </button>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => feed.addSlide()}
+                  className="flex items-center gap-1 rounded bg-violet-600/20 px-2 py-1 text-[10px] font-bold text-violet-200 hover:bg-violet-600/40"
+                >
+                  <Plus className="h-3 w-3" /> NEW
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowOverlayPicker((v) => !v)}
+                  className="flex items-center gap-1 rounded bg-emerald-600/20 px-2 py-1 text-[10px] font-bold text-emerald-200 hover:bg-emerald-600/40"
+                >
+                  <Layers className="h-3 w-3" /> ADD OVERLAY
+                </button>
+              </div>
             </div>
+            {showOverlayPicker && (
+              <div className="space-y-2 rounded border border-emerald-500/40 bg-emerald-950/20 p-2.5">
+                <p className="text-[10px] font-bold tracking-wider text-emerald-300">TRANSPARENT OVERLAY SLIDE</p>
+                <p className="text-[9px] leading-snug text-mixer-muted">
+                  Green areas key out in the video mixer — your image floats over the live camera feed.
+                  KEY mode turns on automatically.
+                </p>
+                <input
+                  ref={overlayImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(e) => void handleOverlayImageUpload(e)}
+                />
+                <button
+                  type="button"
+                  onClick={() => overlayImageInputRef.current?.click()}
+                  className="w-full rounded border border-dashed border-emerald-500/40 py-2 text-[9px] font-bold tracking-wider text-emerald-200 hover:bg-emerald-950/40"
+                >
+                  UPLOAD PNG / IMAGE
+                </button>
+                {feed.state.mediaLibrary.filter((m) => m.type === 'image').length > 0 && (
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {feed.state.mediaLibrary
+                      .filter((m) => m.type === 'image')
+                      .map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => void applyOverlayImageFromLibrary(item.url, item.name)}
+                          className="overflow-hidden rounded border border-mixer-border hover:border-emerald-500/50"
+                        >
+                          <img src={item.url} alt={item.name} className="aspect-video w-full object-contain bg-[#0a0a0a]" />
+                        </button>
+                      ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    feed.addOverlaySlide();
+                    setShowOverlayPicker(false);
+                  }}
+                  className="w-full rounded bg-white/5 py-1.5 text-[9px] font-bold text-mixer-muted hover:text-white"
+                >
+                  Blank overlay (add image in Fields)
+                </button>
+              </div>
+            )}
             <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
               {feed.state.slides.map((slide) => (
                 <button
@@ -322,13 +455,40 @@ export function DisplayControlDeck() {
                   className={cn(
                     'group relative rounded border p-2 text-left transition-colors',
                     feed.state.previewSlideId === slide.id
-                      ? 'border-violet-500/60 bg-violet-950/40'
+                      ? 'border-violet-500/60 bg-violet-950/40 ring-1 ring-violet-500/40'
                       : 'border-mixer-border bg-mixer-surface hover:border-violet-500/30',
                     feed.state.liveSlideId === slide.id && 'ring-1 ring-emerald-500/50',
                   )}
                 >
                   <p className="truncate text-xs font-semibold text-white">{slide.title}</p>
                   <p className="text-[9px] uppercase tracking-wider text-mixer-muted">{slide.type}</p>
+                  {slide.type === 'overlay' && (
+                    <span className="mt-0.5 inline-block rounded bg-emerald-600/30 px-1 py-0.5 text-[7px] font-bold text-emerald-200">
+                      KEY OVERLAY
+                    </span>
+                  )}
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        feed.setPreviewSlide(slide.id);
+                      }}
+                      className={cn(
+                        'rounded px-1.5 py-0.5 text-[8px] font-bold tracking-wider',
+                        feed.state.previewSlideId === slide.id
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-white/10 text-mixer-muted hover:text-white',
+                      )}
+                    >
+                      PREVIEW
+                    </button>
+                    {slide.videoUrl && (
+                      <span className="rounded bg-black/40 px-1.5 py-0.5 text-[8px] font-bold text-violet-200">
+                        VIDEO
+                      </span>
+                    )}
+                  </div>
                   <p className="mt-0.5 text-[8px] text-mixer-muted/70">Double-click to go live</p>
                   {feed.state.liveSlideId === slide.id && (
                     <span className="absolute right-1.5 top-1.5 rounded bg-emerald-600/80 px-1 py-0.5 text-[8px] font-bold text-white">
@@ -607,6 +767,139 @@ export function DisplayControlDeck() {
                 </div>
               )}
             </div>
+            {isPreviewOverlay && (
+              <div className="rounded border border-emerald-500/40 bg-emerald-950/25 p-2.5">
+                <p className="mb-1 text-[10px] font-bold tracking-wider text-emerald-300">MIXER OVERLAY</p>
+                <p className="mb-2 text-[9px] leading-snug text-mixer-muted">
+                  Green = transparent over cameras when KEY is on. Position and size your PNG below, then GO LIVE + CUT TO PGM.
+                </p>
+                {!previewSlide.foregroundImageUrl && (
+                  <div className="mb-2 grid grid-cols-3 gap-1.5">
+                    {feed.state.mediaLibrary
+                      .filter((m) => m.type === 'image')
+                      .map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => void applyForegroundImageFromLibrary(previewSlide.id, item.url)}
+                          className="overflow-hidden rounded border border-mixer-border hover:border-emerald-500/50"
+                        >
+                          <img src={item.url} alt={item.name} className="aspect-video w-full object-contain bg-black" />
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {(previewSlide.foregroundImageUrl || isPreviewOverlay) && (
+              <div className="rounded border border-violet-500/30 bg-violet-950/20 p-2.5">
+                <p className="mb-2 text-[10px] font-bold tracking-wider text-violet-300">IMAGE ON SLIDE</p>
+                <div className="mb-2 flex flex-wrap gap-1">
+                  {(Object.keys(FOREGROUND_POSITION_PRESETS) as Array<keyof typeof FOREGROUND_POSITION_PRESETS>).map(
+                    (key) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => {
+                          const preset = FOREGROUND_POSITION_PRESETS[key];
+                          feed.updateSlide(previewSlide.id, {
+                            foregroundPosition: key,
+                            foregroundX: preset.x,
+                            foregroundY: preset.y,
+                          });
+                        }}
+                        className={cn(
+                          'rounded px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider',
+                          previewSlide.foregroundPosition === key
+                            ? 'bg-violet-600 text-white'
+                            : 'bg-white/10 text-mixer-muted hover:text-white',
+                        )}
+                      >
+                        {FOREGROUND_POSITION_PRESETS[key].label}
+                      </button>
+                    ),
+                  )}
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="text-[9px] text-mixer-muted">
+                    Width ({previewSlide.foregroundWidthPct ?? 35}% of screen)
+                    <input
+                      type="range"
+                      min={5}
+                      max={100}
+                      value={previewSlide.foregroundWidthPct ?? 35}
+                      onChange={(e) =>
+                        feed.updateSlide(previewSlide.id, { foregroundWidthPct: Number(e.target.value) })
+                      }
+                      className="mt-1 w-full"
+                    />
+                  </label>
+                  <label className="text-[9px] text-mixer-muted">
+                    Height ({previewSlide.foregroundHeightPct ?? 'auto'}%)
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={previewSlide.foregroundHeightPct ?? 0}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        feed.updateSlide(previewSlide.id, {
+                          foregroundHeightPct: v > 0 ? v : undefined,
+                        });
+                      }}
+                      className="mt-1 w-full"
+                    />
+                  </label>
+                  <label className="text-[9px] text-mixer-muted sm:col-span-1">
+                    Horizontal ({previewSlide.foregroundX ?? 50}%)
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={previewSlide.foregroundX ?? 50}
+                      onChange={(e) =>
+                        feed.updateSlide(previewSlide.id, { foregroundX: Number(e.target.value) })
+                      }
+                      className="mt-1 w-full"
+                    />
+                  </label>
+                  <label className="text-[9px] text-mixer-muted">
+                    Vertical ({previewSlide.foregroundY ?? 50}%)
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={previewSlide.foregroundY ?? 50}
+                      onChange={(e) =>
+                        feed.updateSlide(previewSlide.id, { foregroundY: Number(e.target.value) })
+                      }
+                      className="mt-1 w-full"
+                    />
+                  </label>
+                </div>
+                <select
+                  value={previewSlide.foregroundSize ?? 'medium'}
+                  onChange={(e) =>
+                    feed.updateSlide(previewSlide.id, {
+                      foregroundSize: e.target.value as NonNullable<typeof previewSlide.foregroundSize>,
+                    })
+                  }
+                  className="mt-2 w-full rounded border border-mixer-border/60 bg-black/30 px-2 py-1 text-[9px] text-white"
+                >
+                  <option value="small">Small overlay</option>
+                  <option value="medium">Medium overlay</option>
+                  <option value="large">Large overlay</option>
+                </select>
+              </div>
+            )}
+            {previewSlide.videoUrl && (
+              <div className="rounded border border-mixer-border bg-mixer-surface/50 p-2">
+                <p className="mb-1 text-[10px] font-bold tracking-wider text-mixer-muted">VIDEO SLIDE</p>
+                <p className="text-[9px] text-mixer-muted">
+                  Video plays automatically in preview and live output when this slide is shown.
+                </p>
+              </div>
+            )}
             {previewSlide.fields.map((field) => (
               <div key={field.id} className="rounded border border-mixer-border bg-mixer-surface/50 p-2">
                 <div className="mb-1.5 flex items-center justify-between">
@@ -658,8 +951,68 @@ export function DisplayControlDeck() {
                     <option value="right">Right</option>
                   </select>
                 </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFieldImagePickerId(fieldImagePickerId === field.id ? null : field.id)}
+                    className="rounded border border-mixer-border/60 bg-black/30 px-2 py-0.5 text-[9px] font-bold text-violet-200 hover:bg-violet-950/40"
+                  >
+                    {field.imageUrl ? 'Change image' : 'Add image from media'}
+                  </button>
+                  {field.imageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => feed.updatePreviewField(field.id, { imageUrl: undefined })}
+                      className="rounded border border-red-500/30 px-2 py-0.5 text-[9px] text-red-300"
+                    >
+                      Remove image
+                    </button>
+                  )}
+                </div>
+                {fieldImagePickerId === field.id && feed.state.mediaLibrary.length > 0 && (
+                  <div className="mt-2 grid grid-cols-3 gap-1.5">
+                    {feed.state.mediaLibrary
+                      .filter((m) => m.type === 'image')
+                      .map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            feed.updatePreviewField(field.id, { imageUrl: item.url, visible: true });
+                            setFieldImagePickerId(null);
+                          }}
+                          className="overflow-hidden rounded border border-mixer-border hover:border-violet-500/50"
+                        >
+                          <img src={item.url} alt={item.name} className="aspect-video w-full object-cover" />
+                        </button>
+                      ))}
+                  </div>
+                )}
               </div>
             ))}
+            <div className="rounded border border-violet-500/30 bg-violet-950/20 p-2.5">
+              <p className="mb-2 text-[10px] font-bold tracking-wider text-violet-300">SAVE FOR LATER</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={slideSaveName}
+                  onChange={(e) => setSlideSaveName(e.target.value)}
+                  placeholder={previewSlide.title}
+                  className="min-w-0 flex-1 rounded border border-mixer-border bg-black/40 px-2 py-1.5 text-xs text-white"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    feed.savePreviewSlideTemplate(slideSaveName || previewSlide.title);
+                    setSlideSaveName('');
+                  }}
+                  className="flex shrink-0 items-center gap-1 rounded bg-violet-600/40 px-2 py-1.5 text-[9px] font-bold text-violet-100 hover:bg-violet-600/60"
+                >
+                  <Save className="h-3 w-3" /> SAVE SLIDE
+                </button>
+              </div>
+              <p className="mt-1 text-[8px] text-mixer-muted">Saved slides appear in Templates → Custom.</p>
+            </div>
             {previewSlide.notes !== undefined && (
               <div>
                 <label className="mb-1 block text-[10px] font-bold tracking-wider text-mixer-muted">
@@ -896,7 +1249,7 @@ export function DisplayControlDeck() {
         {panel === 'lyrics' && (
           <div className="space-y-3">
             <p className="text-[10px] text-mixer-muted">
-              Paste song lyrics — blank lines split stanzas into separate slides. Great for worship sets.
+              Paste song lyrics — blank lines split stanzas into separate slides. Save songs to reuse later.
             </p>
             <input
               type="text"
@@ -937,6 +1290,59 @@ export function DisplayControlDeck() {
                 ADD & GO LIVE
               </button>
             </div>
+            <button
+              type="button"
+              disabled={!lyricsText.trim()}
+              onClick={() => {
+                feed.saveLyricsPreset(lyricsTitle, lyricsText);
+              }}
+              className="flex w-full items-center justify-center gap-1.5 rounded border border-violet-500/40 py-2 text-[9px] font-bold tracking-wider text-violet-200 hover:bg-violet-950/40 disabled:opacity-40"
+            >
+              <Save className="h-3 w-3" /> SAVE LYRICS FOR LATER
+            </button>
+            {feed.state.lyricsPresets.length > 0 && (
+              <div className="space-y-1.5 border-t border-mixer-border pt-3">
+                <p className="text-[10px] font-bold tracking-wider text-mixer-muted">SAVED LYRICS</p>
+                {feed.state.lyricsPresets.map((preset) => (
+                  <div
+                    key={preset.id}
+                    className="flex items-start gap-2 rounded border border-mixer-border/60 bg-mixer-surface/30 p-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold text-white">{preset.title}</p>
+                      <p className="line-clamp-2 text-[10px] text-mixer-muted">{preset.lyrics.split('\n')[0]}</p>
+                    </div>
+                    <div className="flex shrink-0 flex-col gap-1">
+                      <button
+                        type="button"
+                        onClick={() => feed.applyLyricsPreset(preset.id)}
+                        className="rounded bg-violet-600/40 px-2 py-0.5 text-[8px] font-bold text-violet-100 hover:bg-violet-600/60"
+                      >
+                        PREVIEW
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          feed.applyLyricsPreset(preset.id);
+                          feed.goLive();
+                        }}
+                        className="rounded bg-emerald-600/30 px-2 py-0.5 text-[8px] font-bold text-emerald-100"
+                      >
+                        LIVE
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => feed.removeLyricsPreset(preset.id)}
+                        className="rounded p-0.5 hover:bg-red-500/20"
+                        title="Delete saved lyrics"
+                      >
+                        <Trash2 className="h-3 w-3 text-mixer-red" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1000,48 +1406,103 @@ export function DisplayControlDeck() {
         {panel === 'media' && (
           <div className="space-y-3">
             <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple hidden onChange={handleMediaUpload} />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex w-full items-center justify-center gap-2 rounded border border-dashed border-violet-500/40 py-4 text-[10px] font-bold tracking-wider text-violet-200 hover:bg-violet-950/30"
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setMediaDragOver(true);
+              }}
+              onDragLeave={() => setMediaDragOver(false)}
+              onDrop={(e) => void handleMediaDrop(e)}
+              className={cn(
+                'rounded border border-dashed py-4 text-center transition-colors',
+                mediaDragOver
+                  ? 'border-violet-400 bg-violet-950/40'
+                  : 'border-violet-500/40 hover:bg-violet-950/20',
+              )}
             >
-              <ImageIcon className="h-4 w-4" /> UPLOAD IMAGES & VIDEO
-            </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex w-full flex-col items-center justify-center gap-2 text-[10px] font-bold tracking-wider text-violet-200"
+              >
+                <ImageIcon className="h-5 w-5" />
+                UPLOAD OR DROP IMAGES & VIDEO
+              </button>
+              <p className="mt-1 text-[9px] text-mixer-muted">PNG with transparency works great as lower-thirds.</p>
+            </div>
             {feed.state.mediaLibrary.length === 0 ? (
-              <p className="text-center text-[10px] text-mixer-muted">No media yet — upload backgrounds or logos.</p>
+              <p className="text-center text-[10px] text-mixer-muted">No media yet — upload backgrounds, logos, or videos.</p>
             ) : (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {feed.state.mediaLibrary.map((item) => (
-                  <div key={item.id} className="group relative overflow-hidden rounded border border-mixer-border">
-                    {item.type === 'image' ? (
-                      <img src={item.url} alt={item.name} className="aspect-video w-full object-cover" />
-                    ) : (
-                      <video src={item.url} className="aspect-video w-full object-cover" muted />
-                    )}
-                    <p className="truncate px-1 py-0.5 text-[8px] text-mixer-muted">{item.name}</p>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/70 opacity-0 transition-opacity group-hover:opacity-100">
+                  <div key={item.id} className="overflow-hidden rounded border border-mixer-border bg-mixer-surface/40">
+                    <div className="relative aspect-video bg-[#0a0a0a]">
+                      {item.type === 'image' ? (
+                        <img src={item.url} alt={item.name} className="h-full w-full object-contain" />
+                      ) : (
+                        <>
+                          <video
+                            ref={(el) => {
+                              videoPreviewRefs.current[item.id] = el;
+                            }}
+                            src={item.url}
+                            className="h-full w-full object-contain"
+                            muted
+                            playsInline
+                            loop
+                          />
+                          <button
+                            type="button"
+                            onClick={() => toggleVideoPreview(item.id)}
+                            className="absolute inset-0 flex items-center justify-center bg-black/30 text-white hover:bg-black/50"
+                            title="Play / pause preview"
+                          >
+                            <Play className="h-8 w-8" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    <p className="truncate px-2 py-1 text-[9px] text-mixer-muted">{item.name}</p>
+                    <div className="flex flex-wrap gap-1 border-t border-mixer-border/60 p-2">
+                      <button
+                        type="button"
+                        onClick={() => feed.stageMediaInPreview(item.id)}
+                        className="rounded bg-violet-600/50 px-2 py-1 text-[8px] font-bold text-white hover:bg-violet-600/70"
+                      >
+                        <Monitor className="mr-0.5 inline h-3 w-3" />
+                        PREVIEW
+                      </button>
                       {item.type === 'image' && (
                         <>
                           <button
                             type="button"
                             onClick={() => feed.applyMediaAsBackground(item.id)}
-                            className="rounded bg-violet-600/80 px-2 py-0.5 text-[8px] font-bold text-white"
+                            className="rounded bg-white/10 px-2 py-1 text-[8px] font-bold text-white hover:bg-white/20"
                           >
-                            BACKGROUND
+                            BG
                           </button>
                           <button
                             type="button"
-                            onClick={() => feed.applyMediaAsForeground(item.id)}
-                            className="rounded bg-white/20 px-2 py-0.5 text-[8px] font-bold text-white"
+                            onClick={() => void feed.applyMediaAsForeground(item.id, 'lower-third')}
+                            className="rounded bg-white/10 px-2 py-1 text-[8px] font-bold text-white hover:bg-white/20"
                           >
-                            FOREGROUND
+                            OVERLAY
                           </button>
                         </>
+                      )}
+                      {item.type === 'video' && (
+                        <button
+                          type="button"
+                          onClick={() => feed.createVideoSlide(item.id)}
+                          className="rounded bg-emerald-600/40 px-2 py-1 text-[8px] font-bold text-emerald-100 hover:bg-emerald-600/60"
+                        >
+                          VIDEO SLIDE
+                        </button>
                       )}
                       <button
                         type="button"
                         onClick={() => feed.removeMedia(item.id)}
-                        className="rounded bg-red-600/80 px-2 py-0.5 text-[8px] font-bold text-white"
+                        className="ml-auto rounded bg-red-600/30 px-2 py-1 text-[8px] font-bold text-red-200 hover:bg-red-600/50"
                       >
                         DELETE
                       </button>

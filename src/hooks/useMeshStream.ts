@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useCloudCast } from '../context/CloudCastContext';
 import { isMeshStreamActive } from '../lib/deviceConnection';
 import type { ConnectionMode } from '../types/plans';
@@ -9,23 +9,20 @@ export interface UseMeshStreamResult {
 }
 
 export function useMeshStream(deviceId: string, enabled: boolean, _mode: ConnectionMode): UseMeshStreamResult {
-  const { meshStreams } = useCloudCast();
+  const { getMeshStream, meshStreamVersions } = useCloudCast();
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | 'idle'>('idle');
-  const streamRef = useRef<MediaStream | null>(null);
+  const streamRevision = meshStreamVersions.get(deviceId) ?? 0;
 
-  const stream =
-    enabled ? meshStreams.get(deviceId) ?? null : null;
+  const stream = enabled ? getMeshStream(deviceId) : null;
 
   useEffect(() => {
     if (stream) {
-      streamRef.current = stream;
       setConnectionState(isMeshStreamActive(stream) ? 'connected' : 'connecting');
     } else {
-      streamRef.current = null;
       if (enabled) setConnectionState('connecting');
       else setConnectionState('idle');
     }
-  }, [stream, enabled]);
+  }, [stream, enabled, streamRevision]);
 
   return { stream, connectionState };
 }

@@ -23,6 +23,7 @@ interface AudioInputStripProps {
   onVolumeChange: (value: number) => void;
   volumeDisabled?: boolean;
   sliderAccent?: 'green' | 'red';
+  overrideStream?: MediaStream | null;
 }
 
 export function AudioInputStrip({
@@ -44,6 +45,7 @@ export function AudioInputStrip({
   onVolumeChange,
   volumeDisabled = false,
   sliderAccent = 'green',
+  overrideStream,
 }: AudioInputStripProps) {
   const slot = device.slotNumber ?? index + 1;
 
@@ -76,6 +78,7 @@ export function AudioInputStrip({
           layout="strip"
           size="xs"
           className="audio-input-strip__viz"
+          overrideStream={overrideStream}
         />
 
         <div className="audio-input-strip__pads">

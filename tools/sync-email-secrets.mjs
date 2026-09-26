@@ -35,7 +35,7 @@ const appPublicUrl = (() => {
 })();
 
 const fromEmail =
-  process.env.FROM_EMAIL?.trim() || 'CloudCast by Quantum Regal <notifications@cloudcast.regal>';
+  process.env.FROM_EMAIL?.trim() || 'CloudCast by Spatial Regal <notifications@cloudcast.regal>';
 
 const webhookSecret =
   process.env.EMAIL_WEBHOOK_SECRET?.trim() || fetchDbSetting('email_webhook_secret');

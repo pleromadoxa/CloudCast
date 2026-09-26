@@ -6,6 +6,8 @@ const PANEL_HEIGHT_TIER: Record<MixerPanel, number> = {
   stream: 2,
   audio: 2,
   devices: 3,
+  media: 3,
+  browser: 3,
   layers: 4,
   settings: 4,
 };
@@ -18,6 +20,8 @@ const VALID_MIXER_PANELS: MixerPanel[] = [
   'devices',
   'stream',
   'settings',
+  'media',
+  'browser',
 ];
 
 export function normalizeOpenPanels(
@@ -36,12 +40,16 @@ export const PANEL_MIN_WIDTH: Record<MixerPanel, number> = {
   stream: 260,
   audio: 280,
   devices: 300,
+  media: 320,
+  browser: 320,
   layers: 340,
   settings: 300,
 };
 
 const PANEL_TRACK_WEIGHT: Partial<Record<MixerPanel, number>> = {
   layers: 2,
+  media: 1.35,
+  browser: 1.35,
   devices: 1.25,
   settings: 1.2,
   audio: 1.15,

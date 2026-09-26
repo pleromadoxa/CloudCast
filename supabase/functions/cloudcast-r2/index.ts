@@ -14,6 +14,8 @@ import {
   symphonyObjectKey,
   replayObjectKey,
   isOwnedReplayPath,
+  mixerMediaObjectKey,
+  isOwnedMixerMediaPath,
 } from "../_shared/r2.ts";
 
 const corsHeaders = {
@@ -143,6 +145,8 @@ Deno.serve(async (req: Request) => {
   if (action === "symphony-presign-upload") {
     const mimeType = String(body.mime_type ?? "application/json").trim() || "application/json";
     const sizeBytes = Math.max(0, Number(body.size_bytes ?? 0));
+    const quotaErr = await assertRecordingQuota(auth.client, sizeBytes);
+    if (quotaErr) return quotaErr;
     const projectId = String(body.project_id ?? crypto.randomUUID());
     const storagePath = `${auth.id}/${projectId}.ccsym`;
     const objectKey = symphonyObjectKey(storagePath);
@@ -215,6 +219,49 @@ Deno.serve(async (req: Request) => {
     }
 
     const deleted = await deleteR2Objects(config, [replayObjectKey(storagePath)]);
+    return json(200, { deleted });
+  }
+
+  // ── Video Mixer media library ──
+
+  if (action === "mixer-media-presign-upload") {
+    const mimeType = String(body.mime_type ?? "application/octet-stream").trim() || "application/octet-stream";
+    const sizeBytes = Math.max(0, Number(body.size_bytes ?? 0));
+    const quotaErr = await assertRecordingQuota(auth.client, sizeBytes);
+    if (quotaErr) return quotaErr;
+
+    const mediaId = String(body.media_id ?? crypto.randomUUID());
+    const ext = String(body.file_ext ?? "bin").trim().replace(/^\./, "") || "bin";
+    const storagePath = `${auth.id}/${mediaId}.${ext}`;
+    const objectKey = mixerMediaObjectKey(storagePath);
+    const presigned = await presignUpload(config, objectKey, mimeType);
+
+    return json(200, {
+      uploadUrl: presigned.uploadUrl,
+      storagePath,
+      objectKey,
+      mediaId,
+    });
+  }
+
+  if (action === "mixer-media-presign-download") {
+    const storagePath = String(body.storage_path ?? "").trim();
+    const fileName = String(body.file_name ?? "media").trim() || "media";
+    if (!isOwnedMixerMediaPath(auth.id, storagePath)) {
+      return json(403, { error: "Invalid storage path" });
+    }
+
+    const url = await presignDownload(config, mixerMediaObjectKey(storagePath), fileName);
+    return json(200, { url });
+  }
+
+  if (action === "mixer-media-delete") {
+    const storagePath = String(body.storage_path ?? "").trim();
+    if (!isOwnedMixerMediaPath(auth.id, storagePath)) {
+      return json(403, { error: "Invalid storage path" });
+    }
+
+    const deleted = await deleteR2Objects(config, [mixerMediaObjectKey(storagePath)]);
     return json(200, { deleted });
   }
 

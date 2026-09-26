@@ -19,7 +19,9 @@ export function DisplayFeedPlayer({
 }: DisplayFeedPlayerProps) {
   const display = useDisplayFeedOptional();
 
-  const slide = live ? display?.liveSlide : display?.previewSlide;
+  const slide = live
+    ? (display?.liveSlide ?? display?.previewSlide)
+    : display?.previewSlide;
   const holdBg = display?.state.holdBackground;
   const keyMode = display?.state.keyMode ?? false;
   const label = live

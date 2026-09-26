@@ -8,6 +8,7 @@ function consoleState(partial: Partial<AudioConsoleState> = {}): AudioConsoleSta
   return {
     consoleEnabled: true,
     peakHoldEnabled: false,
+    consoleViewMode: 'advanced',
     masterVolume: 80,
     masterMuted: false,
     monitorMuted: false,

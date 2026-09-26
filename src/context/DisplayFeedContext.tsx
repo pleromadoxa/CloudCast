@@ -14,19 +14,24 @@ import type {
   DisplayMediaItem,
   DisplaySlide,
   DisplayTextField,
+  LyricsPreset,
   ScripturePreset,
 } from '../types/displayFeed';
 import {
   createDefaultDisplayFeedState,
   createEmptySlide,
   createScriptureSlide,
+  DEFAULT_DISPLAY_FIELDS,
 } from '../types/displayFeed';
 import { loadDisplayFeedState, saveDisplayFeedState } from '../lib/displayFeedStorage';
 import {
   buildSlideFromCustomTemplate,
   buildSlideFromTemplate,
+  customTemplateFromPreviewSlide,
 } from '../lib/displayTemplateUtils';
 import { splitLyricsIntoSlides } from '../lib/displayLyrics';
+import { createOverlaySlide, isOverlaySlide } from '../lib/displayOverlaySlide';
+import { inferDisplayForegroundSize, loadImageDimensions } from '../lib/mediaImagePlacement';
 
 interface DisplayFeedContextValue {
   state: DisplayFeedState;
@@ -43,6 +48,11 @@ interface DisplayFeedContextValue {
   clearLive: () => void;
   /** Add / update / remove slides */
   addSlide: (slide?: Partial<DisplaySlide>) => string;
+  addOverlaySlide: (
+    imageUrl?: string,
+    title?: string,
+    imageSize?: { width: number; height: number },
+  ) => string;
   updateSlide: (id: string, partial: Partial<DisplaySlide>) => void;
   removeSlide: (id: string) => void;
   duplicateSlide: (id: string) => string;
@@ -62,7 +72,16 @@ interface DisplayFeedContextValue {
   addMedia: (file: File) => Promise<DisplayMediaItem | null>;
   removeMedia: (id: string) => void;
   applyMediaAsBackground: (mediaId: string) => void;
-  applyMediaAsForeground: (mediaId: string) => void;
+  applyMediaAsForeground: (
+    mediaId: string,
+    position?: DisplaySlide['foregroundPosition'],
+  ) => Promise<void>;
+  createVideoSlide: (mediaId: string) => string;
+  stageMediaInPreview: (mediaId: string) => void;
+  saveLyricsPreset: (title: string, lyrics: string) => void;
+  removeLyricsPreset: (id: string) => void;
+  applyLyricsPreset: (id: string) => string[];
+  savePreviewSlideTemplate: (name: string) => void;
   applyTemplate: (templateId: string) => string;
   applyCustomTemplate: (templateId: string) => string;
   saveCustomTemplate: (template: DisplayCustomTemplate) => void;
@@ -97,26 +116,40 @@ export function DisplayFeedProvider({ children }: { children: ReactNode }) {
   const isLive = Boolean(state.liveSlideId);
 
   const setPreviewSlide = useCallback((id: string) => {
-    setState((prev) => ({ ...prev, previewSlideId: id }));
+    setState((prev) => {
+      const slide = findSlide(prev, id);
+      return {
+        ...prev,
+        previewSlideId: id,
+        keyMode: isOverlaySlide(slide) ? true : prev.keyMode,
+      };
+    });
   }, []);
 
   const goLive = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      liveSlideId: prev.previewSlideId,
-    }));
+    setState((prev) => {
+      const slide = findSlide(prev, prev.previewSlideId);
+      return {
+        ...prev,
+        liveSlideId: prev.previewSlideId,
+        keyMode: isOverlaySlide(slide) ? true : prev.keyMode,
+      };
+    });
   }, []);
 
   const takeLiveAndAdvance = useCallback(() => {
     setState((prev) => {
+      const slide = findSlide(prev, prev.previewSlideId);
       const liveSlideId = prev.previewSlideId;
+      const keyMode = isOverlaySlide(slide) ? true : prev.keyMode;
       if (!prev.playlist.length) {
-        return { ...prev, liveSlideId };
+        return { ...prev, liveSlideId, keyMode };
       }
       const nextIndex = (prev.playlistIndex + 1) % prev.playlist.length;
       return {
         ...prev,
         liveSlideId,
+        keyMode,
         playlistIndex: nextIndex,
         previewSlideId: prev.playlist[nextIndex],
       };
@@ -133,6 +166,36 @@ export function DisplayFeedProvider({ children }: { children: ReactNode }) {
       ...prev,
       slides: [...prev.slides, slide],
       previewSlideId: slide.id,
+    }));
+    return slide.id;
+  }, []);
+
+  const addOverlaySlide = useCallback((
+    imageUrl?: string,
+    title?: string,
+    imageSize?: { width: number; height: number },
+  ) => {
+    let foregroundWidthPct: number | undefined;
+    let foregroundHeightPct: number | undefined;
+    if (imageUrl && imageSize) {
+      const size = inferDisplayForegroundSize(imageSize.width, imageSize.height);
+      foregroundWidthPct = size.widthPct;
+      foregroundHeightPct = size.heightPct;
+    }
+    const slide = createOverlaySlide({
+      imageUrl,
+      title: title?.replace(/\.[^.]+$/, '') || 'Overlay',
+      foregroundWidthPct,
+      foregroundHeightPct,
+      foregroundX: 50,
+      foregroundY: 50,
+    });
+    setState((prev) => ({
+      ...prev,
+      slides: [...prev.slides, slide],
+      previewSlideId: slide.id,
+      keyMode: true,
+      playlist: prev.playlist.includes(slide.id) ? prev.playlist : [...prev.playlist, slide.id],
     }));
     return slide.id;
   }, []);
@@ -329,15 +392,118 @@ export function DisplayFeedProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const applyMediaAsForeground = useCallback((mediaId: string) => {
+  const applyMediaAsForeground = useCallback(async (
+    mediaId: string,
+    position: DisplaySlide['foregroundPosition'] = 'center',
+  ) => {
+    const media = state.mediaLibrary.find((m) => m.id === mediaId);
+    if (!media || media.type !== 'image' || !state.previewSlideId) return;
+    const dims = await loadImageDimensions(media.url);
+    const size = inferDisplayForegroundSize(dims.width, dims.height);
+    const preset =
+      position === 'lower-third' || position === 'bottom'
+        ? { x: 50, y: 82 }
+        : position === 'top'
+          ? { x: 50, y: 18 }
+          : position === 'left'
+            ? { x: 18, y: 50 }
+            : position === 'right'
+              ? { x: 82, y: 50 }
+              : { x: 50, y: 50 };
+    setState((prev) => ({
+      ...prev,
+      slides: prev.slides.map((s) =>
+        s.id === prev.previewSlideId
+          ? {
+              ...s,
+              foregroundImageUrl: media.url,
+              foregroundPosition: position,
+              foregroundSize: position === 'lower-third' ? 'medium' : 'medium',
+              foregroundX: preset.x,
+              foregroundY: preset.y,
+              foregroundWidthPct: size.widthPct,
+              foregroundHeightPct: size.heightPct,
+              updatedAt: new Date().toISOString(),
+            }
+          : s,
+      ),
+    }));
+  }, [state.mediaLibrary, state.previewSlideId]);
+
+  const createVideoSlide = useCallback((mediaId: string) => {
+    let slideId = '';
     setState((prev) => {
       const media = prev.mediaLibrary.find((m) => m.id === mediaId);
-      if (!media || media.type !== 'image' || !prev.previewSlideId) return prev;
+      if (!media || media.type !== 'video') return prev;
+      const slide = createEmptySlide({
+        title: media.name.replace(/\.[^.]+$/, '') || 'Video',
+        type: 'media',
+        background: { kind: 'color', color: '#000000', overlayOpacity: 0 },
+        videoUrl: media.url,
+        videoLoop: true,
+        videoMuted: true,
+        fields: DEFAULT_DISPLAY_FIELDS.map((f, i) => ({
+          ...f,
+          id: `field-${i}`,
+          visible: false,
+          value: '',
+        })),
+      });
+      slideId = slide.id;
       return {
         ...prev,
+        slides: [...prev.slides, slide],
+        previewSlideId: slide.id,
+        playlist: prev.playlist.includes(slide.id) ? prev.playlist : [...prev.playlist, slide.id],
+      };
+    });
+    return slideId;
+  }, []);
+
+  const stageMediaInPreview = useCallback((mediaId: string) => {
+    setState((prev) => {
+      const media = prev.mediaLibrary.find((m) => m.id === mediaId);
+      if (!media) return prev;
+      if (media.type === 'video') {
+        const existing = prev.slides.find((s) => s.videoUrl === media.url);
+        if (existing) {
+          return { ...prev, previewSlideId: existing.id };
+        }
+        const slide = createEmptySlide({
+          title: media.name.replace(/\.[^.]+$/, '') || 'Video',
+          type: 'media',
+          background: { kind: 'color', color: '#000000', overlayOpacity: 0 },
+          videoUrl: media.url,
+          videoLoop: true,
+          videoMuted: true,
+          fields: DEFAULT_DISPLAY_FIELDS.map((f, i) => ({
+            ...f,
+            id: `field-${i}`,
+            visible: false,
+            value: '',
+          })),
+        });
+        return {
+          ...prev,
+          slides: [...prev.slides, slide],
+          previewSlideId: slide.id,
+          playlist: prev.playlist.includes(slide.id) ? prev.playlist : [...prev.playlist, slide.id],
+        };
+      }
+      if (!prev.previewSlideId) return prev;
+      return {
+        ...prev,
+        previewSlideId: prev.previewSlideId,
         slides: prev.slides.map((s) =>
           s.id === prev.previewSlideId
-            ? { ...s, foregroundImageUrl: media.url, foregroundPosition: 'center', foregroundSize: 'medium' }
+            ? {
+                ...s,
+                foregroundImageUrl: media.url,
+                foregroundPosition: 'lower-third',
+                foregroundX: 50,
+                foregroundY: 82,
+                updatedAt: new Date().toISOString(),
+              }
             : s,
         ),
       };
@@ -426,6 +592,60 @@ export function DisplayFeedProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const saveLyricsPreset = useCallback((title: string, lyrics: string) => {
+    const trimmedTitle = title.trim() || 'Untitled song';
+    const trimmedLyrics = lyrics.trim();
+    if (!trimmedLyrics) return;
+    const preset: LyricsPreset = {
+      id: crypto.randomUUID(),
+      title: trimmedTitle,
+      lyrics: trimmedLyrics,
+      savedAt: new Date().toISOString(),
+    };
+    setState((prev) => ({
+      ...prev,
+      lyricsPresets: [preset, ...prev.lyricsPresets.filter((p) => p.title !== trimmedTitle)],
+    }));
+  }, []);
+
+  const removeLyricsPreset = useCallback((id: string) => {
+    setState((prev) => ({
+      ...prev,
+      lyricsPresets: prev.lyricsPresets.filter((p) => p.id !== id),
+    }));
+  }, []);
+
+  const applyLyricsPreset = useCallback((id: string) => {
+    let createdIds: string[] = [];
+    setState((prev) => {
+      const preset = prev.lyricsPresets.find((p) => p.id === id);
+      if (!preset) return prev;
+      const slides = splitLyricsIntoSlides(preset.lyrics, preset.title);
+      if (!slides.length) return prev;
+      createdIds = slides.map((slide) => slide.id);
+      return {
+        ...prev,
+        slides: [...prev.slides, ...slides],
+        previewSlideId: slides[0].id,
+        playlist: [...prev.playlist, ...slides.map((slide) => slide.id)],
+        playlistIndex: prev.playlist.length,
+      };
+    });
+    return createdIds;
+  }, []);
+
+  const savePreviewSlideTemplate = useCallback((name: string) => {
+    setState((prev) => {
+      const slide = findSlide(prev, prev.previewSlideId);
+      if (!slide) return prev;
+      const template = customTemplateFromPreviewSlide(slide, name.trim() || slide.title);
+      return {
+        ...prev,
+        customTemplates: [...prev.customTemplates.filter((t) => t.name !== template.name), template],
+      };
+    });
+  }, []);
+
   const importLyricsSlides = useCallback((lyrics: string, songTitle: string) => {
     const slides = splitLyricsIntoSlides(lyrics, songTitle);
     if (!slides.length) return [];
@@ -494,6 +714,7 @@ export function DisplayFeedProvider({ children }: { children: ReactNode }) {
       takeLiveAndAdvance,
       clearLive,
       addSlide,
+      addOverlaySlide,
       updateSlide,
       removeSlide,
       duplicateSlide,
@@ -510,6 +731,8 @@ export function DisplayFeedProvider({ children }: { children: ReactNode }) {
       removeMedia,
       applyMediaAsBackground,
       applyMediaAsForeground,
+      createVideoSlide,
+      stageMediaInPreview,
       applyTemplate,
       applyCustomTemplate,
       saveCustomTemplate,
@@ -517,6 +740,10 @@ export function DisplayFeedProvider({ children }: { children: ReactNode }) {
       saveScripturePreset,
       removeScripturePreset,
       applyScripturePreset,
+      saveLyricsPreset,
+      removeLyricsPreset,
+      applyLyricsPreset,
+      savePreviewSlideTemplate,
       importLyricsSlides,
       importPlaylistExport,
       setHoldBackground,
@@ -533,6 +760,7 @@ export function DisplayFeedProvider({ children }: { children: ReactNode }) {
       takeLiveAndAdvance,
       clearLive,
       addSlide,
+      addOverlaySlide,
       updateSlide,
       removeSlide,
       duplicateSlide,
@@ -549,6 +777,8 @@ export function DisplayFeedProvider({ children }: { children: ReactNode }) {
       removeMedia,
       applyMediaAsBackground,
       applyMediaAsForeground,
+      createVideoSlide,
+      stageMediaInPreview,
       applyTemplate,
       applyCustomTemplate,
       saveCustomTemplate,
@@ -556,6 +786,10 @@ export function DisplayFeedProvider({ children }: { children: ReactNode }) {
       saveScripturePreset,
       removeScripturePreset,
       applyScripturePreset,
+      saveLyricsPreset,
+      removeLyricsPreset,
+      applyLyricsPreset,
+      savePreviewSlideTemplate,
       importLyricsSlides,
       importPlaylistExport,
       setHoldBackground,

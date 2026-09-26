@@ -22,8 +22,9 @@ const ITEMS = [
 /** Always-clickable product switcher rendered above kept-alive consoles. */
 export function ProductionShellNav({ className }: { className?: string }) {
   const { pathname } = useLocation();
-  const { profile } = useAuth();
+  const { profile, platformServices } = useAuth();
   const current = pathname.replace(/\/+$/, '') || '/';
+  void platformServices;
 
   return (
     <nav

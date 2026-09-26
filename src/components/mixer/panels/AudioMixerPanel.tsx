@@ -8,6 +8,9 @@ import { unlockDashboardAudio } from '../../../lib/audioOutput';
 import { cn } from '../../../lib/utils';
 import { AudioMeters } from '../AudioMeters';
 import { AudioInputStrip } from '../AudioInputStrip';
+import { useMediaFeedOptional } from '../../../context/MediaFeedContext';
+import { isMediaFeedDevice, isVirtualFeedDevice } from '../../../lib/mediaFeedDevice';
+import { REGAL_MEDIA_DEVICE_ID } from '../../../types/mediaFeed';
 
 interface AudioMixerPanelProps {
   devices: Device[];
@@ -44,6 +47,14 @@ export function AudioMixerPanel({
 }: AudioMixerPanelProps) {
   const videoInputs = devices.filter(isVideoDevice);
   const usbAudioDevices = devices.filter(isAudioOnlyDevice);
+  const mediaFeed = useMediaFeedOptional();
+
+  const mediaMonitorStream = mediaFeed?.previewStream ?? null;
+  const mediaPgmStream = mediaFeed?.programStream ?? null;
+  const mediaHasVideo =
+    Boolean(mediaFeed?.pstMedia?.kind === 'video' && mediaFeed.pstMedia.playUrl) ||
+    Boolean(mediaFeed?.pgmMedia?.kind === 'video' && mediaFeed.pgmMedia.playUrl) ||
+    Boolean(mediaFeed?.livePgmMedia?.kind === 'video' && mediaFeed.livePgmMedia.playUrl);
 
   return (
     <div className="audio-mixer-grid min-h-0 h-full w-full">
@@ -78,8 +89,15 @@ export function AudioMixerPanel({
           {videoInputs.map((d, i) => {
             const viewMuted = audio.viewAudioMuted?.[d.deviceId] ?? false;
             const isOnPgm = d.deviceId === pgmDeviceId;
-            const monitorEnabled =
-              isRealDevice(d) && d.status !== 'offline' && !audio.monitorMasterMuted && !viewMuted;
+            const isMedia = isMediaFeedDevice(d);
+            const monitorStream = isMedia ? mediaMonitorStream : undefined;
+            const monitorEnabled = isMedia
+              ? mediaHasVideo &&
+                Boolean(monitorStream) &&
+                Boolean(mediaFeed?.transport.playing) &&
+                !audio.monitorMasterMuted &&
+                !viewMuted
+              : isRealDevice(d) && d.status !== 'offline' && !audio.monitorMasterMuted && !viewMuted;
 
             return (
               <AudioInputStrip
@@ -101,6 +119,7 @@ export function AudioMixerPanel({
                 onVolumeChange={(v) => onSetViewMonitorVolume(d.deviceId, v)}
                 volumeDisabled={audio.monitorMasterMuted || viewMuted}
                 sliderAccent="green"
+                overrideStream={monitorStream}
               />
             );
           })}
@@ -163,21 +182,33 @@ export function AudioMixerPanel({
           )}
           {videoInputs.map((d, i) => {
             const isOnPgm = d.deviceId === pgmDeviceId;
+            const isMedia = isMediaFeedDevice(d);
             const pgmMuted = audio.inputMuted?.[d.deviceId];
             const soloed = audio.soloInputId === d.deviceId;
             const soloBlocked = Boolean(audio.soloInputId && !soloed);
+            const mediaOnPgm = pgmDeviceId === REGAL_MEDIA_DEVICE_ID;
+            const mediaOverlayLive = Boolean(
+              !mediaOnPgm &&
+                mediaFeed?.programStream &&
+                mediaFeed.livePgmMedia?.kind === 'video',
+            );
+            const mediaPgmActive = isMedia && (isOnPgm || mediaOverlayLive);
+            const pgmStream = isMedia && mediaPgmActive ? mediaPgmStream : undefined;
+            const pgmEnabled = isMedia
+              ? mediaPgmActive && Boolean(mediaFeed?.transport.playing)
+              : isRealDevice(d) && d.status !== 'offline';
 
             return (
               <AudioInputStrip
                 key={`pgm-${d.deviceId}`}
                 device={d}
                 index={i}
-                accent={isOnPgm ? 'red' : 'neutral'}
-                enabled={isRealDevice(d) && d.status !== 'offline'}
+                accent={isOnPgm || mediaOverlayLive ? 'red' : 'neutral'}
+                enabled={pgmEnabled}
                 getAudioSourceForDevice={getAudioSourceForDevice}
                 linkedUsbAudio={audio.linkedUsbAudio}
-                isOnAir={isOnPgm}
-                badge={isOnPgm ? 'live' : null}
+                isOnAir={isOnPgm || (isMedia && mediaOverlayLive)}
+                badge={isOnPgm || (isMedia && mediaOverlayLive) ? 'live' : null}
                 muteActive={Boolean(pgmMuted)}
                 onMute={() => onToggleInputMute(d.deviceId)}
                 muteTitle="Mute on PGM bus"
@@ -186,8 +217,9 @@ export function AudioMixerPanel({
                 onSolo={() => onToggleInputSolo(d.deviceId)}
                 volume={audio.inputVolumes?.[d.deviceId] ?? 100}
                 onVolumeChange={(v) => onSetInputVolume(d.deviceId, v)}
-                volumeDisabled={!isOnPgm && audio.audioFollowVideo}
+                volumeDisabled={!isOnPgm && !mediaOverlayLive && audio.audioFollowVideo && !isMedia}
                 sliderAccent="red"
+                overrideStream={pgmStream}
               />
             );
           })}
@@ -210,6 +242,24 @@ export function AudioMixerPanel({
             <p className="text-[9px] text-mixer-muted">Pair devices to route audio</p>
           ) : (
             videoInputs.map((d) => {
+              if (isVirtualFeedDevice(d)) {
+                return (
+                  <article key={d.deviceId} className="audio-route-strip">
+                    <div className="audio-route-strip__label">
+                      <span className="audio-input-strip__slot">{d.slotNumber ?? '?'}</span>
+                      <span className="audio-input-strip__name" title={d.label}>
+                        {d.label}
+                      </span>
+                    </div>
+                    <p className="audio-route-strip__hint">
+                      {isMediaFeedDevice(d)
+                        ? 'Embedded media audio — use Monitor / PGM faders above.'
+                        : 'Virtual feed — no external audio routing.'}
+                    </p>
+                  </article>
+                );
+              }
+
               const source = getAudioSourceForDevice(d.deviceId);
               const needsLinkedDevice = source === 'usb_audio' || source === 'capture_card';
 

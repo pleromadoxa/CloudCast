@@ -154,10 +154,12 @@ export function useGoLive({
 
       const broadcast = await startBroadcast(enabled);
       if (!broadcast.ok) {
-        const noSignal = /no video signal|wait for video/i.test(broadcast.message);
+        const retryable = /no video signal|wait for video|relay|timed out|encoder is running but video is not reaching|could not connect/i.test(
+          broadcast.message,
+        );
         return {
           ok: false,
-          fatal: !noSignal,
+          fatal: !retryable,
           message: broadcast.message,
         };
       }

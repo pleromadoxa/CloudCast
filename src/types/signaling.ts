@@ -19,7 +19,7 @@ export interface AnswerPayload extends SignalingPayload {
 }
 
 export interface IcePayload extends SignalingPayload {
-  candidate: RTCIceCandidateInit;
+  candidate: RTCIceCandidateInit | null;
 }
 
 export interface StreamReadyPayload extends SignalingPayload {

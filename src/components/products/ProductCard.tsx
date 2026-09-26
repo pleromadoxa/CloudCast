@@ -4,6 +4,7 @@ import type { CloudCastProduct } from '../../types/products';
 import { productLandingPath, productPricingPath } from '../../config/productLanding';
 import { cn } from '../../lib/utils';
 import { canAccessProduct, isUniversalPlan, resolveProductPlan } from '../../lib/productEntitlements';
+import { isPlatformProductEnabled } from '../../lib/platformProductServices';
 import { UNIVERSAL_PLAN_FROM_CENTS, UNIVERSAL_TIERS } from '../../config/products';
 import { useAuth } from '../../context/AuthContext';
 import { formatPrice, isUniversalPlanTier, PLAN_LABELS } from '../../types/plans';
@@ -26,13 +27,15 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product, compact = false, show3D = false }: ProductCardProps) {
-  const { profile, user } = useAuth();
+  const { profile, user, platformServices } = useAuth();
   const Icon = ICONS[product.id];
+  void platformServices;
+  const platformOn = isPlatformProductEnabled(product.id);
   const hasAccess = user ? canAccessProduct(profile, product.id) : true;
   const plan = user ? resolveProductPlan(profile, product.id) : null;
   const accent = productAccentTheme(product.accent);
   const pricingPath = productPricingPath(product.id);
-  const pricingLabel = product.id === 'instant_replay' ? 'VIDEO PLANS' : 'PRICING';
+  const pricingLabel = product.id === 'instant_replay' ? 'VIDEO PLANS' : 'PLANS';
 
   return (
     <article
@@ -70,7 +73,14 @@ export function ProductCard({ product, compact = false, show3D = false }: Produc
 
         <div className="mt-6 flex flex-wrap gap-2">
           {user ? (
-            hasAccess ? (
+            !platformOn ? (
+              <span
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded border border-white/15 py-2.5 text-xs font-bold tracking-wider text-mixer-muted"
+                title="This service is temporarily unavailable"
+              >
+                <Lock className="h-3.5 w-3.5" /> UNAVAILABLE
+              </span>
+            ) : hasAccess ? (
               <Link
                 to={product.dashboardPath}
                 className={cn(
@@ -82,10 +92,11 @@ export function ProductCard({ product, compact = false, show3D = false }: Produc
               </Link>
             ) : (
               <Link
-                to={pricingPath}
+                to="/hub"
                 className="inline-flex flex-1 items-center justify-center gap-2 rounded border border-white/20 py-2.5 text-xs font-bold tracking-wider hover:border-white/40"
+                title="Enable this dashboard from Video Mixer Setup"
               >
-                <Lock className="h-3.5 w-3.5" /> UPGRADE
+                <Lock className="h-3.5 w-3.5" /> ENABLE IN SETUP
               </Link>
             )
           ) : (
@@ -151,7 +162,7 @@ export function UniversalPlanCard() {
             : 'bg-amber-500 text-black hover:bg-amber-400',
         )}
       >
-        {isUniversal ? 'CURRENT UNIVERSAL PLAN' : 'VIEW UNIVERSAL PLAN'}
+        {isUniversal ? 'CURRENT UNIVERSAL PLAN' : 'COMING SOON'}
       </Link>
     </article>
   );
@@ -160,7 +171,6 @@ export function UniversalPlanCard() {
 /** Three-tier Universal comparison — used on the product guide and pricing-adjacent pages. */
 export function UniversalTiersSection({ hideHeader = false }: { hideHeader?: boolean }) {
   const { profile } = useAuth();
-  const isUniversal = profile ? isUniversalPlan(profile.plan_id) || profile.entitlements?.universal : false;
   const currentUniversalTier = isUniversalPlanTier(profile?.plan_id)
     ? profile.plan_id
     : profile?.entitlements?.universal_tier;
@@ -246,7 +256,7 @@ export function UniversalTiersSection({ hideHeader = false }: { hideHeader?: boo
                         : 'border border-white/20 hover:border-white/40',
                 )}
               >
-                {isCurrent ? 'CURRENT PLAN' : isUniversal ? `SWITCH TO ${tier.shortName.toUpperCase()}` : `VIEW ${tier.shortName.toUpperCase()}`}
+                {isCurrent ? 'CURRENT PLAN' : 'COMING SOON'}
               </Link>
             </article>
           );

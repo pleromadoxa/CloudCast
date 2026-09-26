@@ -1,9 +1,9 @@
 /** Company & legal metadata — keep in sync with email templates in supabase/functions/_shared/legal.ts */
 export const SITE_LEGAL = {
   productName: 'CloudCast',
-  companyName: 'Quantum Regal Digital Labs',
-  companyShortName: 'Quantum Regal',
-  brandLine: 'CloudCast by Quantum Regal',
+  companyName: 'Spatial Regal Digital Labs',
+  companyShortName: 'Spatial Regal',
+  brandLine: 'CloudCast by Spatial Regal',
   tagline: 'Professional multi-source video mixing',
   supportEmail: 'support@cloudcast.regal',
   legalEmail: 'legal@cloudcast.regal',
@@ -11,7 +11,7 @@ export const SITE_LEGAL = {
   securityEmail: 'security@cloudcast.regal',
   dpoEmail: 'privacy@cloudcast.regal',
   address: {
-    line1: 'Quantum Regal Digital Labs',
+    line1: 'Spatial Regal Digital Labs',
     line2: '1200 Broadcast Way, Suite 400',
     city: 'Atlanta',
     region: 'GA',

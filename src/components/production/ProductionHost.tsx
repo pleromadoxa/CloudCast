@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useNetworkOptional } from '../../context/NetworkContext';
@@ -8,11 +8,7 @@ import { usePrismFeedOptional } from '../../context/PrismFeedContext';
 import { useDisplayFeedOptional } from '../../context/DisplayFeedContext';
 import { PgmAudioProvider } from '../../context/PgmAudioContext';
 import { DashboardLayout } from '../layout/DashboardLayout';
-import { DisplayLayout } from '../display/DisplayLayout';
 import { DisplayFeedSyncBridge } from '../display/DisplayFeedSyncBridge';
-import { AudioMixerLayout } from '../audio/AudioMixerLayout';
-import { PrismLayout } from '../prism/PrismLayout';
-import { ReplayLayout } from '../replay/ReplayLayout';
 import { ReplayPgmOverlay } from '../replay/ReplayPgmOverlay';
 import { MixerErrorBoundary } from '../error/MixerErrorBoundary';
 import { RegalCloudBootScreen, useRegalCloudBootVisible } from '../system/RegalCloudBootScreen';
@@ -21,6 +17,24 @@ import { ProgramPresetGate } from '../presets/ProgramPresetGate';
 import { ProductionShellNav } from './ProductionShellNav';
 import { CLOUDCAST_PRODUCTS } from '../../config/products';
 import { isRegalCloudBootDoneThisSession } from '../../lib/regalCloudBoot';
+import { readCachedProfile } from '../../lib/profileCache';
+
+const ReplayLayout = lazy(() =>
+  import('../replay/ReplayLayout').then((m) => ({ default: m.ReplayLayout })),
+);
+const DisplayLayout = lazy(() =>
+  import('../display/DisplayLayout').then((m) => ({ default: m.DisplayLayout })),
+);
+const AudioMixerLayout = lazy(() =>
+  import('../audio/AudioMixerLayout').then((m) => ({ default: m.AudioMixerLayout })),
+);
+const PrismLayout = lazy(() =>
+  import('../prism/PrismLayout').then((m) => ({ default: m.PrismLayout })),
+);
+
+function ConsoleSuspense({ children }: { children: ReactNode }) {
+  return <Suspense fallback={null}>{children}</Suspense>;
+}
 
 type ProductionConsoleId = 'video' | 'audio' | 'replay' | 'display' | 'prism';
 
@@ -38,7 +52,7 @@ const INITIAL_MOUNTED_CONSOLES: Record<ProductionConsoleId, boolean> = {
  * every console is idle and the user leaves production dashboards.
  */
 export function ProductionHost() {
-  const { user, profile, loading } = useAuth();
+  const { user, loading } = useAuth();
   const { pathname } = useLocation();
   const { isOnAir, audioConsoleActive, setAudioConsoleActive, setReplayConsoleActive } =
     useProduction();
@@ -138,9 +152,10 @@ export function ProductionHost() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [keepAlive]);
 
-  const waitingForAuth = Boolean((loading || (user && !profile && isOnline)) && onProductionRoute);
+  const waitingForAuth = Boolean(loading && onProductionRoute);
+  const hasCachedProfile = Boolean(user?.id && readCachedProfile(user.id));
   const showBoot = useRegalCloudBootVisible(waitingForAuth, {
-    enforceMinOnReady: onProductionRoute && !isRegalCloudBootDoneThisSession(),
+    enforceMinOnReady: onProductionRoute && !isRegalCloudBootDoneThisSession() && !hasCachedProfile,
   });
 
   if (!keepAlive) return null;
@@ -159,16 +174,28 @@ export function ProductionHost() {
         <div className="relative min-h-0 flex-1 overflow-hidden">
           <MixerErrorBoundary>
             <CloudCastProvider audioMixerActive={audioMixerActive}>
-              <PgmAudioProvider>
+              <PgmAudioProvider localPlayback={!onAudio}>
                 <DisplayFeedSyncBridge enabled={displayFeedLive || onDisplay} />
                 <ReplayPgmOverlay />
-                {mountedConsoles.replay && <ReplayLayout hidden={!onReplay} />}
-                {mountedConsoles.display && <DisplayLayout hidden={!onDisplay} />}
-                {mountedConsoles.prism && <PrismLayout hidden={!onPrism} />}
+                {mountedConsoles.replay && (
+                  <ConsoleSuspense>
+                    <ReplayLayout hidden={!onReplay} />
+                  </ConsoleSuspense>
+                )}
+                {mountedConsoles.display && (
+                  <ConsoleSuspense>
+                    <DisplayLayout hidden={!onDisplay} />
+                  </ConsoleSuspense>
+                )}
+                {mountedConsoles.prism && (
+                  <ConsoleSuspense>
+                    <PrismLayout hidden={!onPrism} />
+                  </ConsoleSuspense>
+                )}
                 {mountedConsoles.audio && (
-                  <PgmAudioProvider localPlayback={false}>
+                  <ConsoleSuspense>
                     <AudioMixerLayout hidden={!onAudio} />
-                  </PgmAudioProvider>
+                  </ConsoleSuspense>
                 )}
                 {mountedConsoles.video && (
                   <div

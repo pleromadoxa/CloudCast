@@ -38,10 +38,6 @@ function writeU32BE(view: DataView, offset: number, value: number) {
   view.setUint32(offset, value >>> 0, false);
 }
 
-function readU32BE(view: DataView, offset: number): number {
-  return view.getUint32(offset, false);
-}
-
 function buildHandshakeC0C1(): Uint8Array {
   const packet = new Uint8Array(1537);
   packet[0] = 0x03;
@@ -88,8 +84,11 @@ function amfObject(pairs: Record<string, Uint8Array>): Uint8Array {
   const chunks: Uint8Array[] = [new Uint8Array([0x03])];
   for (const [key, val] of Object.entries(pairs)) {
     const keyBytes = new TextEncoder().encode(key);
-    const keyPart = new Uint8Array(keyBytes.length);
-    keyPart.set(keyBytes);
+    // AMF0 object keys are length-prefixed with a 2-byte (U16 BE) length, no type marker.
+    const keyPart = new Uint8Array(2 + keyBytes.length);
+    keyPart[0] = (keyBytes.length >> 8) & 0xff;
+    keyPart[1] = keyBytes.length & 0xff;
+    keyPart.set(keyBytes, 2);
     chunks.push(keyPart, val);
   }
   chunks.push(new Uint8Array([0x00, 0x00, 0x09]));
@@ -127,14 +126,63 @@ function buildAmfCommand(
   return concat(...parts);
 }
 
+/** Max payload bytes per RTMP chunk before a continuation header is required. */
+const RTMP_CHUNK_SIZE = 128;
+
 function buildRtmpChunk(messageType: number, payload: Uint8Array, chunkStreamId = 3): Uint8Array {
+  const csid = chunkStreamId & 0x3f;
+
+  // Type 0 chunk: 1-byte basic header + 11-byte message header = 12 bytes.
   const header = new Uint8Array(12);
-  header[0] = chunkStreamId & 0x3f;
-  const view = new DataView(header.buffer);
-  writeU32BE(view, 4, payload.length);
-  header[8] = messageType;
-  writeU32BE(view, 9, 0);
-  return concat(header, payload);
+  header[0] = csid; // fmt (0) << 6 | csid
+  // bytes 1-3: timestamp (0)
+  const len = payload.length;
+  header[4] = (len >> 16) & 0xff; // bytes 4-6: message length (3-byte BE)
+  header[5] = (len >> 8) & 0xff;
+  header[6] = len & 0xff;
+  header[7] = messageType; // byte 7: message type id
+  // bytes 8-11: message stream id (4-byte LE, 0)
+
+  const parts: Uint8Array[] = [header, payload.subarray(0, RTMP_CHUNK_SIZE)];
+
+  // Split payloads larger than the chunk size with fmt=3 continuation headers.
+  let offset = RTMP_CHUNK_SIZE;
+  while (offset < payload.length) {
+    parts.push(new Uint8Array([0xc0 | csid]));
+    parts.push(payload.subarray(offset, offset + RTMP_CHUNK_SIZE));
+    offset += RTMP_CHUNK_SIZE;
+  }
+
+  return concat(...parts);
+}
+
+/**
+ * Race a promise against a timer. `Deno.Conn.read` has no native timeout and can
+ * block forever, so every read/connect must be wrapped or the function hangs.
+ */
+function raceTimeout<T>(promise: Promise<T>, ms: number, onTimeout?: () => void): Promise<T | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      onTimeout?.();
+      resolve(null);
+    }, ms);
+    promise
+      .then((value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch(() => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(null);
+      });
+  });
 }
 
 async function readExact(conn: Deno.Conn, length: number, timeoutMs: number): Promise<Uint8Array | null> {
@@ -143,9 +191,16 @@ async function readExact(conn: Deno.Conn, length: number, timeoutMs: number): Pr
   const deadline = Date.now() + timeoutMs;
 
   while (read < length) {
-    if (Date.now() > deadline) return null;
-    const n = await conn.read(buf.subarray(read));
-    if (n === null) return null;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return null;
+    const n = await raceTimeout(conn.read(buf.subarray(read)), remaining, () => {
+      try {
+        conn.close();
+      } catch {
+        /* already closed */
+      }
+    });
+    if (n === null || n === 0) return null; // timeout, EOF, or closed
     read += n;
   }
   return buf;
@@ -157,13 +212,15 @@ async function readAvailable(conn: Deno.Conn, timeoutMs: number): Promise<Uint8A
   let total = 0;
 
   while (Date.now() < deadline) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
     const buf = new Uint8Array(4096);
-    const n = await conn.read(buf);
-    if (n === null) break;
+    const n = await raceTimeout(conn.read(buf), remaining);
+    if (n === null || n === 0) break; // timeout, EOF, or closed
     chunks.push(buf.subarray(0, n));
     total += n;
     if (total > 65536) break;
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 50));
   }
 
   const out = new Uint8Array(total);
@@ -199,6 +256,12 @@ function responseIndicatesFailure(bytes: Uint8Array): string | null {
   return null;
 }
 
+// Bounded so the whole probe finishes well under the client-side 14s timeout.
+const CONNECT_TIMEOUT_MS = 3500;
+const HANDSHAKE_TIMEOUT_MS = 2500;
+const CONNECT_RESPONSE_TIMEOUT_MS = 2500;
+const PUBLISH_RESPONSE_TIMEOUT_MS = 2500;
+
 export async function validateRtmpDestination(
   streamUrl: string,
   streamKey: string,
@@ -209,16 +272,12 @@ export async function validateRtmpDestination(
     return { ok: false, message: "Stream key looks too short.", stage: "format" };
   }
 
-  let conn: Deno.Conn | null = null;
+  const connectAttempt = parsed.tls
+    ? Deno.connectTls({ hostname: parsed.host, port: parsed.port })
+    : Deno.connect({ hostname: parsed.host, port: parsed.port });
 
-  try {
-    conn = parsed.tls
-      ? await Deno.connectTls({ hostname: parsed.host, port: parsed.port })
-      : await Deno.connect({ hostname: parsed.host, port: parsed.port });
-
-    conn.setReadTimeout?.(8000);
-    conn.setWriteTimeout?.(8000);
-  } catch {
+  const conn = await raceTimeout(connectAttempt, CONNECT_TIMEOUT_MS);
+  if (!conn) {
     return {
       ok: false,
       message: `Cannot reach stream server at ${parsed.host}:${parsed.port}. Check the stream URL / host.`,
@@ -229,7 +288,7 @@ export async function validateRtmpDestination(
   try {
     await conn.write(buildHandshakeC0C1());
 
-    const s0 = await readExact(conn, 1, 8000);
+    const s0 = await readExact(conn, 1, HANDSHAKE_TIMEOUT_MS);
     if (!s0 || s0[0] !== 0x03) {
       return {
         ok: false,
@@ -238,8 +297,8 @@ export async function validateRtmpDestination(
       };
     }
 
-    const s1 = await readExact(conn, 1536, 8000);
-    const s2 = await readExact(conn, 1536, 8000);
+    const s1 = await readExact(conn, 1536, HANDSHAKE_TIMEOUT_MS);
+    const s2 = await readExact(conn, 1536, HANDSHAKE_TIMEOUT_MS);
     if (!s1 || !s2) {
       return {
         ok: false,
@@ -262,7 +321,7 @@ export async function validateRtmpDestination(
     });
 
     await conn.write(buildRtmpChunk(0x14, connectPayload));
-    const connectResponse = await readAvailable(conn, 4000);
+    const connectResponse = await readAvailable(conn, CONNECT_RESPONSE_TIMEOUT_MS);
     const connectFail = responseIndicatesFailure(connectResponse);
     if (connectFail) {
       return { ok: false, message: connectFail, stage: "connect" };
@@ -274,7 +333,7 @@ export async function validateRtmpDestination(
     const publishPayload = buildAmfCommand("publish", 3, null, amfString(key), amfString("live"));
     await conn.write(buildRtmpChunk(0x14, publishPayload));
 
-    const publishResponse = await readAvailable(conn, 5000);
+    const publishResponse = await readAvailable(conn, PUBLISH_RESPONSE_TIMEOUT_MS);
     const publishFail = responseIndicatesFailure(publishResponse);
     if (publishFail) {
       return { ok: false, message: publishFail, stage: "publish" };

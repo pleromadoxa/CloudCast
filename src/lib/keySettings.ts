@@ -19,6 +19,11 @@ export function normalizeKeySettings(partial?: Partial<KeySettings>): KeySetting
     ...partial,
     keyType: partial?.keyType === 'luma' ? 'luma' : 'chroma',
     backgroundId: resolveChromaBackgroundId(partial?.backgroundId ?? DEFAULT_KEY_SETTINGS.backgroundId),
-    fillSource: partial?.fillSource === 'camera' ? 'camera' : 'preset',
+    fillSource:
+      partial?.fillSource === 'camera'
+        ? 'camera'
+        : partial?.fillSource === 'transparent'
+          ? 'transparent'
+          : 'preset',
   };
 }

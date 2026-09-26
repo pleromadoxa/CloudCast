@@ -75,7 +75,7 @@ export function MobileHandshakeDebugPanel({
     session,
     connectionMode,
     devices,
-    meshStreams,
+    meshStreamVersions,
     getMeshStream,
     isPresenceConnected,
     isSignalingConnected,
@@ -132,7 +132,7 @@ export function MobileHandshakeDebugPanel({
           peekWhepPoolSnapshot(device.deviceId),
         ),
       ),
-    [liveDevices, connectionMode, getMeshStream, meshStreams, tick],
+    [liveDevices, connectionMode, getMeshStream, meshStreamVersions, tick],
   );
 
   const snapshot = useMemo(
@@ -252,7 +252,7 @@ export function MobileHandshakeDebugPanel({
               {isSignalingLeader ? ' · leader' : ' · follower'}
             </span>
             <span>
-              <strong>Streams in map</strong> {meshStreams.size}
+              <strong>Streams in map</strong> {meshStreamVersions.size}
             </span>
           </div>
 

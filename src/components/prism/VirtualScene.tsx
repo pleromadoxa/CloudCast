@@ -1,11 +1,11 @@
-import { Suspense, useEffect, useMemo } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Environment, ContactShadows, Text, MeshReflectorMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 import type { VirtualSetDefinition } from '../../lib/prism/virtualSets';
 import { ImportedModelGroup, type ImportedModelEntry } from './ImportedModelGroup';
 import { ProceduralModelGroup } from './ProceduralModelGroup';
-import { PhotorealisticRoomShell, environmentPresetFor } from './PhotorealisticRoomShell';
+import { PhotorealisticRoomShell } from './PhotorealisticRoomShell';
 import { SceneOrbitControls } from './SceneOrbitControls';
 import type { PrismSceneObject } from '../../types/prismFeed';
 
@@ -17,6 +17,8 @@ interface VirtualSceneProps {
   cameraYaw: number;
   cameraPitch: number;
   cameraZoom: number;
+  /** Free-camera look-at point — panning flies the camera anywhere in the set. */
+  cameraTarget?: [number, number, number];
   showShadows: boolean;
   showReflections: boolean;
   importedModels?: ImportedModelEntry[];
@@ -25,7 +27,12 @@ interface VirtualSceneProps {
   keyerEnabled?: boolean;
   virtualSetEnabled?: boolean;
   orbitEnabled?: boolean;
-  onCameraChange?: (patch: { yaw?: number; pitch?: number; zoom?: number }) => void;
+  onCameraChange?: (patch: {
+    yaw?: number;
+    pitch?: number;
+    zoom?: number;
+    target?: [number, number, number];
+  }) => void;
 }
 
 function RawTalent({ video }: { video: HTMLVideoElement | null }) {
@@ -35,17 +42,23 @@ function RawTalent({ video }: { video: HTMLVideoElement | null }) {
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
     tex.colorSpace = THREE.SRGBColorSpace;
+    // Un-mirror the mirrored camera feed so the output reads the right way round.
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.repeat.x = -1;
+    tex.offset.x = 1;
     return tex;
   }, [video]);
 
   useFrame(() => {
+    // live video/canvas textures must be re-uploaded to the GPU every frame
+    // eslint-disable-next-line react-hooks/immutability
     if (texture) texture.needsUpdate = true;
   });
 
   if (!texture) return null;
 
   return (
-    <group position={[0, -0.85, 0.5]}>
+    <group position={[0, 0.95, 0.55]}>
       <mesh>
         <planeGeometry args={[2.4, 1.35]} />
         <meshBasicMaterial map={texture} side={THREE.DoubleSide} />
@@ -67,25 +80,31 @@ function KeyedTalent({
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
     tex.colorSpace = THREE.SRGBColorSpace;
+    // Un-mirror the mirrored camera feed so the output reads the right way round.
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.repeat.x = -1;
+    tex.offset.x = 1;
     return tex;
   }, [canvas]);
 
   useFrame(() => {
+    // live video/canvas textures must be re-uploaded to the GPU every frame
+    // eslint-disable-next-line react-hooks/immutability
     if (texture) texture.needsUpdate = true;
   });
 
   if (!texture) return null;
 
   return (
-    <group position={[0, -0.85, 0.5]}>
+    <group position={[0, 0.95, 0.55]}>
       <mesh>
         <planeGeometry args={[2.4, 1.35]} />
         <meshBasicMaterial map={texture} transparent alphaTest={0.02} side={THREE.DoubleSide} />
       </mesh>
       {showReflections && (
-        <mesh position={[0, -1.35, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh position={[0, -0.936, 0.378]} rotation={[-Math.PI / 2, 0, 0]}>
           <planeGeometry args={[2.4, 0.6]} />
-          <meshBasicMaterial map={texture} transparent opacity={0.25} alphaTest={0.02} />
+          <meshBasicMaterial map={texture} transparent opacity={0.18} alphaTest={0.02} depthWrite={false} />
         </mesh>
       )}
     </group>
@@ -99,10 +118,16 @@ function ArCameraBackground({ video }: { video: HTMLVideoElement | null }) {
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
     tex.colorSpace = THREE.SRGBColorSpace;
+    // Un-mirror the mirrored camera plate so the AR background reads correctly.
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.repeat.x = -1;
+    tex.offset.x = 1;
     return tex;
   }, [video]);
 
   useFrame(() => {
+    // live video/canvas textures must be re-uploaded to the GPU every frame
+    // eslint-disable-next-line react-hooks/immutability
     if (texture) texture.needsUpdate = true;
   });
 
@@ -114,6 +139,33 @@ function ArCameraBackground({ video }: { video: HTMLVideoElement | null }) {
       <meshBasicMaterial map={texture} toneMapped={false} />
     </mesh>
   );
+}
+
+/**
+ * Local CC0 HDRI per set family — real image-based lighting gives materials
+ * believable ambient, colour bleed and reflections instead of flat studio fill.
+ */
+function hdriFor(environment: VirtualSetDefinition['environment']): string {
+  switch (environment) {
+    case 'kitchen_set':
+    case 'furnished_living':
+    case 'furnished_bedroom':
+    case 'church_stage':
+      // warm, soft interior light
+      return '/hdri/brown_photostudio_02_1k.hdr';
+    case 'newsroom_full':
+    case 'news_studio':
+    case 'talk_show':
+    case 'broadcast_desk':
+      // neutral photographic studio
+      return '/hdri/photo_studio_01_1k.hdr';
+    case 'conference_room':
+    case 'corporate':
+      // bright, clean overhead studio
+      return '/hdri/studio_small_08_1k.hdr';
+    default:
+      return '/hdri/stadium_01_1k.hdr';
+  }
 }
 
 function StudioEnvironment({ environment }: { environment: VirtualSetDefinition['environment'] }) {
@@ -327,16 +379,49 @@ function XrExtensionOverlay() {
   );
 }
 
-function CameraRig({ yaw, pitch, zoom, wide }: { yaw: number; pitch: number; zoom: number; wide?: boolean }) {
+function CameraRig({
+  yaw,
+  pitch,
+  zoom,
+  wide,
+  target,
+}: {
+  yaw: number;
+  pitch: number;
+  zoom: number;
+  wide?: boolean;
+  target?: [number, number, number];
+}) {
   const { camera } = useThree();
-  useFrame(() => {
-    const effectiveZoom = wide ? zoom * 0.82 : zoom;
+  const look = useRef(new THREE.Vector3(0, 0.5, 0));
+  // Eased pose — shot recalls glide like a jib in the classic sets too,
+  // matching the photoreal rig's feel.
+  const pose = useRef({ yaw, pitch, zoom });
+  // The R3F frame loop intentionally drives the camera + eased look-at ref.
+  // eslint-disable-next-line react-hooks/immutability
+  useFrame((_, rawDt) => {
+    const dt = Math.max(0.001, Math.min(0.1, rawDt || 0.016));
+    const lambda = 8;
+    pose.current.yaw = THREE.MathUtils.damp(pose.current.yaw, yaw, lambda, dt);
+    pose.current.pitch = THREE.MathUtils.damp(pose.current.pitch, pitch, lambda, dt);
+    pose.current.zoom = THREE.MathUtils.damp(pose.current.zoom, zoom, lambda, dt);
+    const [gx, gy, gz] = target ?? [0, 0.5, 0];
+    look.current.x = THREE.MathUtils.damp(look.current.x, gx, lambda, dt);
+    look.current.y = THREE.MathUtils.damp(look.current.y, gy, lambda, dt);
+    look.current.z = THREE.MathUtils.damp(look.current.z, gz, lambda, dt);
+    const effectiveZoom = wide ? pose.current.zoom * 0.82 : pose.current.zoom;
     const radius = 5 / effectiveZoom;
-    const y = Math.sin(pitch) * radius + 1.2;
-    const xz = Math.cos(pitch) * radius;
-    camera.position.set(Math.sin(yaw) * xz, y, Math.cos(yaw) * xz);
-    camera.lookAt(0, 0.5, 0);
+    const y = Math.sin(pose.current.pitch) * radius + look.current.y + 0.7;
+    const xz = Math.cos(pose.current.pitch) * radius;
+    camera.position.set(
+      look.current.x + Math.sin(pose.current.yaw) * xz,
+      y,
+      look.current.z + Math.cos(pose.current.yaw) * xz,
+    );
+    camera.lookAt(look.current);
     if (wide && 'fov' in camera) {
+      // imperative lens simulation on the live three.js camera instance
+      // eslint-disable-next-line react-hooks/immutability
       (camera as THREE.PerspectiveCamera).fov = 58;
       (camera as THREE.PerspectiveCamera).updateProjectionMatrix();
     }
@@ -360,6 +445,7 @@ export function VirtualScene({
   cameraYaw,
   cameraPitch,
   cameraZoom,
+  cameraTarget,
   showShadows,
   showReflections,
   importedModels = [],
@@ -373,7 +459,11 @@ export function VirtualScene({
   const isAr = mode === 'augmented_reality';
   const isXr = mode === 'xr_extension';
   const showSet = virtualSetEnabled && !isAr;
-  const envPreset = environmentPresetFor(virtualSet.environment);
+  // Floor height per set family — talent and contact shadows must sit on it.
+  const floorY =
+    virtualSet.environment === 'xr_stage' ? -0.85
+      : virtualSet.environment === 'broadcast_desk' ? -0.55
+        : 0;
   const xrAccent = virtualSet.environment === 'broadcast_desk' ? '#22c55e'
     : virtualSet.environment === 'news_studio' || virtualSet.environment === 'newsroom_full' ? '#e11d48'
     : virtualSet.environment === 'church_stage' ? '#f59e0b'
@@ -384,43 +474,72 @@ export function VirtualScene({
   return (
     <Canvas
       camera={{ fov: isXr ? 58 : 50, near: 0.1, far: 100, position: [0, 1.2, 5] }}
-      gl={{ alpha: isAr, antialias: true, preserveDrawingBuffer: true }}
+      dpr={[1, 2]}
+      shadows={showShadows ? 'soft' : false}
+      gl={{
+        alpha: isAr,
+        antialias: true,
+        preserveDrawingBuffer: true,
+        powerPreference: 'high-performance',
+        // AgX rolls highlights off like real camera media — essential so
+        // emissive set pieces and lamps bloom naturally instead of clipping.
+        toneMapping: THREE.AgXToneMapping,
+        toneMappingExposure: 1,
+      }}
       style={{ background: isAr ? 'transparent' : undefined }}
     >
       <Suspense fallback={null}>
         <GlCanvasReporter onGlReady={onGlReady} />
-        <CameraRig yaw={cameraYaw} pitch={cameraPitch} zoom={cameraZoom} wide={isXr} />
+        <CameraRig yaw={cameraYaw} pitch={cameraPitch} zoom={cameraZoom} wide={isXr} target={cameraTarget} />
         {onCameraChange && (
           <SceneOrbitControls
             yaw={cameraYaw}
             pitch={cameraPitch}
             zoom={cameraZoom}
+            target={cameraTarget}
             enabled={orbitEnabled}
             onChange={onCameraChange}
           />
         )}
-        <ambientLight intensity={isXr ? 0.45 : 0.28} />
-        <hemisphereLight args={['#fff7ed', '#1c1917', 0.55]} />
-        <directionalLight position={[5, 8, 5]} intensity={1.35} castShadow={showShadows} shadow-mapSize={[1024, 1024]} />
-        <directionalLight position={[-4, 6, 3]} intensity={0.35} color="#fde68a" />
-        <pointLight position={[-3, 4, 2]} intensity={0.45} color="#fbbf24" />
+        {/* Physical light rig — key/fill/rim on top of the HDRI ambient. */}
+        <ambientLight intensity={isXr ? 0.22 : 0.07} />
+        <hemisphereLight args={['#fff7ed', '#292524', 0.16]} />
+        <directionalLight
+          position={[5, 8, 5]}
+          intensity={1.45}
+          castShadow={showShadows}
+          shadow-mapSize={[2048, 2048]}
+          shadow-bias={-0.00015}
+          shadow-normalBias={0.02}
+          shadow-camera-left={-9}
+          shadow-camera-right={9}
+          shadow-camera-top={9}
+          shadow-camera-bottom={-9}
+        />
+        <directionalLight position={[-4, 6, 3]} intensity={0.32} color="#fde68a" />
+        <directionalLight position={[0, 3.5, -6]} intensity={0.22} color="#bfdbfe" />
+        <pointLight position={[-3, 4, 2]} intensity={0.38} color="#fbbf24" decay={2} />
         {isAr && <ArCameraBackground video={rawVideo ?? null} />}
         {showSet && !isXr && <StudioEnvironment environment={virtualSet.environment} />}
         {showSet && isXr && <XrLedStage accent={xrAccent} />}
         {isXr && <XrExtensionOverlay />}
         {!isAr && (
-          keyerEnabled ? (
-            <KeyedTalent canvas={keyedCanvas} showReflections={showReflections && showSet} />
-          ) : (
-            <RawTalent video={rawVideo ?? null} />
-          )
+          <group position={[0, floorY, 0]}>
+            {keyerEnabled ? (
+              <KeyedTalent canvas={keyedCanvas} showReflections={showReflections && showSet} />
+            ) : (
+              <RawTalent video={rawVideo ?? null} />
+            )}
+          </group>
         )}
         {importedModels.length > 0 && <ImportedModelGroup models={importedModels} />}
         {sceneObjects.length > 0 && <ProceduralModelGroup objects={sceneObjects} />}
         {showShadows && !isAr && (
-          <ContactShadows position={[0, -0.85, 0.5]} opacity={0.5} scale={3} blur={2} far={2} />
+          <ContactShadows position={[0, floorY + 0.012, 0.5]} opacity={0.5} scale={14} blur={2.2} far={2.5} resolution={512} />
         )}
-        <Environment preset={envPreset} />
+        {/* Image-based lighting from local CC0 HDRIs — real ambient, colour
+            bleed and reflections; no CDN dependency. */}
+        <Environment files={hdriFor(virtualSet.environment)} environmentIntensity={0.8} />
       </Suspense>
     </Canvas>
   );

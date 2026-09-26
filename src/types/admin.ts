@@ -1,4 +1,5 @@
 import type { PlanTier } from './plans';
+import type { CloudCastProductId } from './products';
 
 export type AdminRole = 'admin' | 'super_admin' | 'support';
 
@@ -338,6 +339,14 @@ export interface EmailQueueList {
   items: EmailQueueRow[];
 }
 
+export interface PlatformProductServiceRow {
+  product_id: CloudCastProductId;
+  is_enabled: boolean;
+  updated_at: string;
+  updated_by?: string | null;
+  updated_by_email?: string | null;
+}
+
 export type AdminTab =
   | 'overview'
   | 'users'
@@ -345,6 +354,7 @@ export type AdminTab =
   | 'plan_grants'
   | 'coupons'
   | 'broadcasting'
+  | 'services'
   | 'mobile_apps'
   | 'sessions'
   | 'devices'

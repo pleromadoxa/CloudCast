@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useEffect,
   type MutableRefObject,
   type ReactNode,
 } from 'react';
@@ -13,9 +14,14 @@ import { PrismOutputCapture } from '../lib/prism/prismOutputCapture';
 import type { ImportedModelEntry } from '../components/prism/ImportedModelGroup';
 import type { PrismProductionMode } from '../lib/prism/virtualSets';
 import { createDefaultPrismFeedState, type PrismFeedState, type PrismLowerThird, type PrismSceneObject } from '../types/prismFeed';
-import { DEFAULT_NODE_GRAPH, type PrismNodeGraph, toggleNode, type PrismNodeId } from '../lib/prism/nodeGraph';
+import { DEFAULT_NODE_GRAPH, type PrismNodeGraph, toggleNode, type PrismNodeId, pipelineNode } from '../lib/prism/nodeGraph';
+import type { PrismMotionState } from '../lib/prism/motionGraphics';
 import { DEFAULT_SECONDARY_SLOTS, type PrismSecondarySlot } from '../types/prismCameras';
-import type { PrismPipOverlay } from '../lib/prism/prismOutputCapture';
+import type { PrismPipOverlay, PrismMotionOverlay } from '../lib/prism/prismOutputCapture';
+import { defaultPhotorealState, type PhotorealStudioState } from '../lib/virtualStudio/types';
+
+/** Which renderer draws the main viewport. */
+export type PrismRenderEngine = 'classic' | 'photoreal';
 
 export interface PrismStudioState {
   virtualSetId: string;
@@ -24,6 +30,10 @@ export interface PrismStudioState {
   cameraYaw: number;
   cameraPitch: number;
   cameraZoom: number;
+  /** Free-camera look-at point — panning flies the camera anywhere in the set. */
+  cameraTarget?: [number, number, number];
+  /** Lens field of view in degrees (camera deck lens buttons). */
+  cameraFov?: number;
   showShadows: boolean;
   showReflections: boolean;
   importedModels: ImportedModelEntry[];
@@ -31,6 +41,10 @@ export interface PrismStudioState {
   cameraActive: boolean;
   nodeGraph: PrismNodeGraph;
   secondarySlots: PrismSecondarySlot[];
+  /** Renderer used for the viewport: classic sets or photoreal studio. */
+  renderEngine: PrismRenderEngine;
+  /** Photoreal studio scene, screen bindings and look controls. */
+  photoreal: PhotorealStudioState;
 }
 
 interface PrismFeedContextValue {
@@ -42,13 +56,18 @@ interface PrismFeedContextValue {
   patchStudio: (partial: Partial<PrismStudioState>) => void;
   setKeySettings: (settings: ChromaKeySettings) => void;
   setLowerThird: (partial: Partial<PrismLowerThird>) => void;
-  attachGlCanvas: (canvas: HTMLCanvasElement | null) => void;
+  setMotion: (partial: Partial<PrismMotionState>) => void;
+  attachGlCanvas: (canvas: HTMLCanvasElement | HTMLVideoElement | null) => void;
   goLive: () => void;
   stopLive: () => void;
   refreshCapture: () => void;
   togglePipelineNode: (id: PrismNodeId) => void;
   setSecondarySlots: (slots: PrismSecondarySlot[]) => void;
   getPipOverlaysRef: MutableRefObject<() => PrismPipOverlay[]>;
+  /** Latest 3D motion graphics canvas, composited over the program output. */
+  getMotionOverlayRef: MutableRefObject<() => PrismMotionOverlay | null>;
+  /** Latest WebGPU backdrop plate, composited under the motion graphics. */
+  getMotionBackdropRef: MutableRefObject<() => PrismMotionOverlay | null>;
 }
 
 const defaultStudio = (): PrismStudioState => ({
@@ -65,6 +84,11 @@ const defaultStudio = (): PrismStudioState => ({
   cameraActive: false,
   nodeGraph: DEFAULT_NODE_GRAPH,
   secondarySlots: DEFAULT_SECONDARY_SLOTS.map((s) => ({ ...s })),
+  // Default to the production 3D engine so VS/AR/XR open as a full photoreal
+  // stage (filmic rendering, PBR sets, adaptive quality) rather than the flat
+  // classic backdrop. Classic remains available via the sets panel.
+  renderEngine: 'photoreal',
+  photoreal: defaultPhotorealState(),
 });
 
 const PrismFeedContext = createContext<PrismFeedContextValue | null>(null);
@@ -75,12 +99,21 @@ export function PrismFeedProvider({ children }: { children: ReactNode }) {
   const [programStream, setProgramStream] = useState<MediaStream | null>(null);
   const [isLive, setIsLive] = useState(false);
   const captureRef = useRef<PrismOutputCapture | null>(null);
-  const glCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const glCanvasRef = useRef<HTMLCanvasElement | HTMLVideoElement | null>(null);
   const stateRef = useRef(state);
-  stateRef.current = state;
   const studioRef = useRef(studio);
-  studioRef.current = studio;
   const pipOverlaysRef = useRef<() => PrismPipOverlay[]>(() => []);
+  const motionOverlayRef = useRef<() => PrismMotionOverlay | null>(() => null);
+  const motionBackdropRef = useRef<() => PrismMotionOverlay | null>(() => null);
+
+  // Latest-value refs for capture callbacks — updated after commit, never
+  // during render (so captures always read the committed state).
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+  useEffect(() => {
+    studioRef.current = studio;
+  }, [studio]);
 
   const patchState = useCallback((partial: Partial<PrismFeedState>) => {
     setState((prev) => ({ ...prev, ...partial }));
@@ -102,6 +135,13 @@ export function PrismFeedProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const setMotion = useCallback((partial: Partial<PrismMotionState>) => {
+    setState((prev) => ({
+      ...prev,
+      motion: { ...prev.motion, ...partial },
+    }));
+  }, []);
+
   const startCapture = useCallback(() => {
     const canvas = glCanvasRef.current;
     if (!canvas) return;
@@ -111,12 +151,20 @@ export function PrismFeedProvider({ children }: { children: ReactNode }) {
     const stream = capture.start(canvas, {
       getOverlay: () => ({
         watermark: stateRef.current.showWatermark,
-        lowerThird: studioRef.current.nodeGraph.nodes.graphics.enabled
+        lowerThird: pipelineNode(studioRef.current.nodeGraph, 'graphics').enabled
           ? stateRef.current.lowerThird
           : null,
-        pipOverlays: studioRef.current.nodeGraph.nodes.pip.enabled
+        pipOverlays: pipelineNode(studioRef.current.nodeGraph, 'pip').enabled
           ? pipOverlaysRef.current()
           : [],
+        // 3D motion graphics composite above the set but below the watermark,
+        // with the WebGPU backdrop plate underneath them.
+        motionBackdrop: pipelineNode(studioRef.current.nodeGraph, 'motion').enabled
+          ? motionBackdropRef.current()
+          : null,
+        motion: pipelineNode(studioRef.current.nodeGraph, 'motion').enabled
+          ? motionOverlayRef.current()
+          : null,
       }),
     });
     captureRef.current = capture;
@@ -128,7 +176,7 @@ export function PrismFeedProvider({ children }: { children: ReactNode }) {
   }, [isLive, startCapture]);
 
   const attachGlCanvas = useCallback(
-    (canvas: HTMLCanvasElement | null) => {
+    (canvas: HTMLCanvasElement | HTMLVideoElement | null) => {
       glCanvasRef.current = canvas;
       if (canvas && isLive) startCapture();
     },
@@ -170,6 +218,7 @@ export function PrismFeedProvider({ children }: { children: ReactNode }) {
       patchStudio,
       setKeySettings,
       setLowerThird,
+      setMotion,
       attachGlCanvas,
       goLive,
       stopLive,
@@ -177,8 +226,10 @@ export function PrismFeedProvider({ children }: { children: ReactNode }) {
       togglePipelineNode,
       setSecondarySlots,
       getPipOverlaysRef: pipOverlaysRef,
+      getMotionOverlayRef: motionOverlayRef,
+      getMotionBackdropRef: motionBackdropRef,
     }),
-    [state, studio, programStream, isLive, patchState, patchStudio, setKeySettings, setLowerThird, attachGlCanvas, goLive, stopLive, refreshCapture, togglePipelineNode, setSecondarySlots],
+    [state, studio, programStream, isLive, patchState, patchStudio, setKeySettings, setLowerThird, setMotion, attachGlCanvas, goLive, stopLive, refreshCapture, togglePipelineNode, setSecondarySlots],
   );
 
   return <PrismFeedContext.Provider value={value}>{children}</PrismFeedContext.Provider>;

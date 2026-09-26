@@ -13,29 +13,45 @@ import { clearStoredSession } from '../lib/sessionStorage';
 import { normalizeConnectionMode } from '../lib/branding';
 import { fetchAdminAccess } from '../lib/adminService';
 import { pingSupabase } from '../lib/supabaseHeartbeat';
+import { withTimeout } from '../lib/asyncTimeout';
+import { buildBootstrapFallbackProfile } from '../lib/bootstrapProfile';
 import { clearCachedProfile, readCachedProfile, writeCachedProfile } from '../lib/profileCache';
 import { clearRegalCloudBootSession } from '../lib/regalCloudBoot';
 import type { AdminAccess } from '../types/admin';
-import type { PlanTier, SubscriptionPlan, UserProfile } from '../types/plans';
+import type { DashboardPreferences, PlanTier, SubscriptionPlan, UserProfile } from '../types/plans';
 import type { CloudCastProductId } from '../types/products';
+import { normalizeDashboardPreferences } from '../lib/dashboardPreferences';
 import { buildEntitlementsFromProfile, isUniversalPlan } from '../lib/productEntitlements';
+import {
+  defaultPlatformProductServiceMap,
+  fetchPlatformProductServices,
+  type PlatformProductServiceMap,
+} from '../lib/platformProductServices';
+import { updateUserDashboardPreferences } from '../lib/profileService';
 
 interface AuthContextValue {
   user: User | null;
   session: Session | null;
   profile: UserProfile | null;
   adminAccess: AdminAccess | null;
+  /** Platform-wide product enable flags (admin Services tab). */
+  platformServices: PlatformProductServiceMap;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signOut: () => Promise<void>;
   updatePlan: (planId: PlanTier) => Promise<void>;
   updateProductPlan: (product: CloudCastProductId | 'universal', planId: PlanTier) => Promise<void>;
-  refreshProfile: () => Promise<void>;
+  updateDashboardPreferences: (prefs: Partial<DashboardPreferences>) => Promise<void>;
+  refreshProfile: () => Promise<boolean>;
   refreshAdminAccess: () => Promise<void>;
+  refreshPlatformServices: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+const AUTH_SESSION_TIMEOUT_MS = 8_000;
+const PROFILE_BOOTSTRAP_TIMEOUT_MS = 10_000;
 
 function mapPlan(row: Record<string, unknown>): SubscriptionPlan {
   return {
@@ -58,6 +74,14 @@ function mapProfileRow(p: Record<string, unknown>): UserProfile {
     plan_id: p.plan_id as PlanTier,
     plan: mapPlan(p.plan as Record<string, unknown>),
     entitlements: buildEntitlementsFromProfile(p),
+    dashboard_preferences: normalizeDashboardPreferences({
+      audio_dashboard_enabled:
+        typeof p.audio_dashboard_enabled === 'boolean' ? p.audio_dashboard_enabled : undefined,
+      prism_dashboard_enabled:
+        typeof p.prism_dashboard_enabled === 'boolean' ? p.prism_dashboard_enabled : undefined,
+      replay_dashboard_enabled:
+        typeof p.replay_dashboard_enabled === 'boolean' ? p.replay_dashboard_enabled : undefined,
+    }),
   };
 }
 
@@ -66,6 +90,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [adminAccess, setAdminAccess] = useState<AdminAccess | null>(null);
+  const [platformServices, setPlatformServices] = useState<PlatformProductServiceMap>(
+    () => defaultPlatformProductServiceMap(),
+  );
   const [loading, setLoading] = useState(true);
   const hydrateInflightRef = useRef<Promise<void> | null>(null);
   const hydratedUserIdRef = useRef<string | null>(null);
@@ -83,17 +110,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const refreshProfile = useCallback(async () => {
-    if (!isSupabaseConfigured()) return;
+  const refreshPlatformServices = useCallback(async () => {
+    if (!isSupabaseConfigured()) {
+      setPlatformServices(defaultPlatformProductServiceMap());
+      return;
+    }
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    try {
+      setPlatformServices(await fetchPlatformProductServices());
+    } catch {
+      // Keep last known / defaults — fail open for availability.
+    }
+  }, []);
+
+  // Keep the platform service flags live so admin toggles take effect in open
+  // sessions — service off = off, service on = resumes — without a reload.
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    const refresh = () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      void refreshPlatformServices();
+    };
+    const onVisible = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') refresh();
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisible);
+    const timer = window.setInterval(refresh, 60_000);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.clearInterval(timer);
+    };
+  }, [refreshPlatformServices]);
+
+  const refreshProfile = useCallback(async (): Promise<boolean> => {
+    if (!isSupabaseConfigured()) return false;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return false;
     try {
       const { data, error } = await getSupabase().rpc('get_user_profile');
       if (error) throw error;
       const next = mapProfileRow(data as Record<string, unknown>);
       setProfile(next);
       writeCachedProfile(next.id, next);
+      return true;
     } catch {
-      /* keep cached profile when refresh fails */
+      return false;
     }
   }, []);
 
@@ -121,6 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setAdminAccess(null);
           clearCachedProfile();
           setLoading(false);
+          void refreshPlatformServices();
           return;
         }
 
@@ -133,17 +196,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           void pingSupabase('auth-bootstrap');
           void refreshProfile();
           void refreshAdminAccess();
+          void refreshPlatformServices();
           return;
         }
 
         setLoading(true);
         try {
           void pingSupabase('auth-bootstrap');
-          await refreshProfile();
+          const profileOk = await withTimeout(refreshProfile(), PROFILE_BOOTSTRAP_TIMEOUT_MS, false);
+          if (!profileOk) {
+            setProfile(buildBootstrapFallbackProfile(nextSession.user));
+            void refreshProfile();
+          }
           hydratedUserIdRef.current = userId;
         } finally {
           setLoading(false);
           void refreshAdminAccess();
+          void refreshPlatformServices();
         }
       })();
 
@@ -157,7 +226,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    void supabase.auth.getSession().then(({ data }) => hydrateSession(data.session));
+    void withTimeout(
+      supabase.auth.getSession(),
+      AUTH_SESSION_TIMEOUT_MS,
+      { data: { session: null }, error: null },
+    )
+      .then(({ data }) => hydrateSession(data.session))
+      .catch(() => {
+        setLoading(false);
+      });
 
     const { data: sub } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, nextSession) => {
       if (event === 'TOKEN_REFRESHED') {
@@ -172,7 +249,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => sub.subscription.unsubscribe();
-  }, [refreshProfile, refreshAdminAccess]);
+  }, [refreshProfile, refreshAdminAccess, refreshPlatformServices]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await getSupabase().auth.signInWithPassword({ email, password });
@@ -228,6 +305,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [updateProductPlan],
   );
 
+  const updateDashboardPreferences = useCallback(
+    async (prefs: Partial<DashboardPreferences>) => {
+      const next = await updateUserDashboardPreferences(prefs);
+      setProfile((prev) => {
+        if (!prev) return prev;
+        const merged: UserProfile = {
+          ...prev,
+          dashboard_preferences: normalizeDashboardPreferences({
+            ...prev.dashboard_preferences,
+            ...next,
+          }),
+        };
+        writeCachedProfile(merged.id, merged);
+        return merged;
+      });
+      await refreshProfile();
+    },
+    [refreshProfile],
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -235,14 +332,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         profile,
         adminAccess,
+        platformServices,
         loading,
         signIn,
         signUp,
         signOut,
         updatePlan,
         updateProductPlan,
+        updateDashboardPreferences,
         refreshProfile,
         refreshAdminAccess,
+        refreshPlatformServices,
       }}
     >
       {children}

@@ -9,7 +9,7 @@ export interface PrismSceneBundle {
   tier: 'free' | 'pro' | 'pro_master';
   tags: string[];
   /** Suggested camera for this layout */
-  camera: { yaw: number; pitch: number; zoom: number };
+  camera: { yaw: number; pitch: number; zoom: number; fov?: number; target?: [number, number, number] };
   objects: Omit<PrismSceneObject, 'id'>[];
 }
 

@@ -1,6 +1,6 @@
 import { GitBranch, ToggleLeft, ToggleRight } from 'lucide-react';
 import { usePrismFeed } from '../../context/PrismFeedContext';
-import { NODE_ORDER, type PrismNodeId } from '../../lib/prism/nodeGraph';
+import { NODE_ORDER, pipelineNode, type PrismNodeId } from '../../lib/prism/nodeGraph';
 import { cn } from '../../lib/utils';
 
 export function PrismNodeEditor() {
@@ -13,7 +13,7 @@ export function PrismNodeEditor() {
         Compositor pipeline — toggle nodes like Aximetry compounds
       </p>
       {NODE_ORDER.map((id, i) => {
-        const node = studio.nodeGraph.nodes[id];
+        const node = pipelineNode(studio.nodeGraph, id);
         const locked = id === 'camera' || id === 'output';
         return (
           <div key={id}>

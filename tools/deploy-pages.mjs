@@ -29,7 +29,9 @@ function loadEnv() {
 
 function portInUse(port) {
   try {
-    const out = execSync(`lsof -ti:${port} 2>/dev/null`, { encoding: 'utf8' }).trim();
+    // Only true listeners block a deploy — client sockets in CLOSE_WAIT (IDE
+    // preview tabs, browsers) must not count as a running dev server.
+    const out = execSync(`lsof -ti:${port} -sTCP:LISTEN 2>/dev/null`, { encoding: 'utf8' }).trim();
     return Boolean(out);
   } catch {
     return false;
@@ -113,22 +115,35 @@ async function main() {
   }
 
   process.env.CLOUDFLARE_ACCOUNT_ID = accountId;
+  process.env.VITE_APP_BUILD_ID = process.env.VITE_APP_BUILD_ID?.trim() || String(Date.now());
 
   console.log('CloudCast — Cloudflare frontend deploy\n');
 
-  await ensurePagesProject(accountId, token);
+  const pagesProject = await ensurePagesProject(accountId, token);
 
   run('npm run build', 'Vite production build');
 
   run('npx wrangler deploy', 'Deploy to Cloudflare Workers');
 
+  // Also publish to the real Pages project (cloudcast.pages.dev). Without this
+  // the Pages deployment goes stale and serves an old bundle.
+  if (pagesProject) {
+    run(
+      'npx wrangler pages deploy dist --project-name cloudcast --branch main --commit-dirty=true',
+      'Deploy to Cloudflare Pages',
+    );
+  } else {
+    console.warn('⚠ Pages project unavailable — skipped cloudcast.pages.dev deployment.');
+  }
+
   console.log(`
 ✓ Frontend deployed.
 
-  Worker URL:  https://cloudcast.<your-subdomain>.workers.dev  (see wrangler output above)
+  Worker URL:  https://cloudcast.pleromadoxa.workers.dev  (see wrangler output above)
+  Pages URL:   https://cloudcast.pages.dev  (kept in sync by this script)
   Production:  https://cloudcast.live  (after zone is on this Cloudflare account — npm run setup:dns)
 
-  The app runs on the "cloudcast" Worker with SPA routing — not a separate Pages CNAME.
+  The app runs on the "cloudcast" Worker with SPA routing; the Pages project mirrors the same build.
   Backend: npm run deploy:cloudflare  (R2 + Stream edge functions)
 `);
 }

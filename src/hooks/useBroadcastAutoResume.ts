@@ -1,11 +1,8 @@
 import { useEffect, useRef } from 'react';
-import type { Device } from '../types/device';
-import { isRealDevice } from '../types/device';
-import { hasPgmVideoSignal } from '../lib/broadcast/pgmProgramCapture';
+import { isPgmReadyForBroadcast } from '../lib/broadcast/pgmProgramCapture';
 import type { BroadcastStatus } from './usePgmBroadcast';
 import type { StreamNotice } from './useGoLive';
 
-const RESUME_TIMEOUT_MS = 90_000;
 const RETRY_INTERVAL_MS = 2_000;
 
 interface UseBroadcastAutoResumeOptions {
@@ -13,107 +10,111 @@ interface UseBroadcastAutoResumeOptions {
   sessionLoading: boolean;
   isSignalingConnected: boolean;
   broadcastStatus: BroadcastStatus;
-  pgmDevice: Device | null;
   getPgmOutputContainer: () => HTMLElement | null;
   resumeBroadcast: () => Promise<{ ok: boolean; message: string; fatal?: boolean }>;
   setOnAir: (onAir: boolean) => void;
   setStreamNotice: (notice: StreamNotice | null) => void;
 }
 
+/** While ON AIR, keep trying to restore a live relay encode whenever the broadcast drops. */
 export function useBroadcastAutoResume({
   wantsResume,
   sessionLoading,
   isSignalingConnected,
   broadcastStatus,
-  pgmDevice,
   getPgmOutputContainer,
   resumeBroadcast,
   setOnAir,
   setStreamNotice,
 }: UseBroadcastAutoResumeOptions) {
-  const startedRef = useRef(false);
+  const resumingRef = useRef(false);
+  const lastNoticeAtRef = useRef(0);
 
   useEffect(() => {
-    if (!wantsResume || sessionLoading || broadcastStatus === 'live' || startedRef.current) {
-      return;
-    }
+    if (!wantsResume || sessionLoading) return;
 
-    startedRef.current = true;
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    setStreamNotice({
-      type: 'info',
-      message: 'Reconnecting broadcast — waiting for program video…',
-    });
+    const schedule = (delay = RETRY_INTERVAL_MS) => {
+      if (cancelled) return;
+      timer = setTimeout(() => void tick(), delay);
+    };
 
-    const run = async () => {
-      const deadline = Date.now() + RESUME_TIMEOUT_MS;
+    const maybeNotice = (notice: StreamNotice) => {
+      const now = Date.now();
+      if (now - lastNoticeAtRef.current < 8_000) return;
+      lastNoticeAtRef.current = now;
+      setStreamNotice(notice);
+    };
 
-      while (!cancelled && Date.now() < deadline) {
-        if (!isSignalingConnected) {
-          await sleep(RETRY_INTERVAL_MS);
-          continue;
-        }
+    const tick = async () => {
+      if (cancelled || !wantsResume) return;
 
-        const hasPgmSource =
-          Boolean(pgmDevice && isRealDevice(pgmDevice)) &&
-          (pgmDevice!.status === 'live' || pgmDevice!.status === 'connecting');
-        const hasVideo = hasPgmVideoSignal(getPgmOutputContainer());
+      if (broadcastStatus === 'live' || broadcastStatus === 'connecting') {
+        schedule();
+        return;
+      }
 
-        if (!hasPgmSource || !hasVideo) {
-          await sleep(RETRY_INTERVAL_MS);
-          continue;
-        }
+      if (!isSignalingConnected) {
+        maybeNotice({
+          type: 'info',
+          message: 'ON AIR — waiting for mixer signaling before resuming broadcast…',
+        });
+        schedule();
+        return;
+      }
 
+      if (!isPgmReadyForBroadcast(getPgmOutputContainer())) {
+        maybeNotice({
+          type: 'info',
+          message: 'ON AIR — waiting for program video before resuming broadcast…',
+        });
+        schedule();
+        return;
+      }
+
+      if (resumingRef.current) {
+        schedule();
+        return;
+      }
+
+      resumingRef.current = true;
+      maybeNotice({ type: 'info', message: 'Reconnecting live broadcast…' });
+
+      try {
         const result = await resumeBroadcast();
         if (cancelled) return;
 
         if (result.ok) {
           setOnAir(true);
-          setStreamNotice({
-            type: 'success',
-            message: `Broadcast resumed: ${result.message}`,
-          });
-          return;
-        }
-
-        if (result.fatal) {
+          setStreamNotice({ type: 'success', message: result.message });
+        } else if (result.fatal) {
           setOnAir(false);
           setStreamNotice({ type: 'error', message: result.message });
-          return;
+        } else {
+          maybeNotice({ type: 'info', message: result.message || 'Retrying broadcast…' });
         }
-
-        await sleep(RETRY_INTERVAL_MS);
-      }
-
-      if (!cancelled) {
-        setOnAir(false);
-        setStreamNotice({
-          type: 'error',
-          message:
-            'Could not resume broadcast — PGM video did not return in time. Press STREAM when ready.',
-        });
+      } finally {
+        resumingRef.current = false;
+        schedule();
       }
     };
 
-    void run();
+    schedule(broadcastStatus === 'reconnecting' || broadcastStatus === 'error' ? 400 : RETRY_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
   }, [
     wantsResume,
     sessionLoading,
     isSignalingConnected,
     broadcastStatus,
-    pgmDevice,
     getPgmOutputContainer,
     resumeBroadcast,
     setOnAir,
     setStreamNotice,
   ]);
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -9,7 +9,20 @@ export function usePrismVideoSource(cameraSourceId: string) {
   const [active, setActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const localStreamRef = useRef<MediaStream | null>(null);
+  // Remembers the operator's chosen USB devices so changing one input does
+  // not silently reset the other to the system default.
+  const localDeviceIdsRef = useRef<{ video: string | null; audio: string | null }>({
+    video: null,
+    audio: null,
+  });
+  // Render-visible mirror of the ref above so device <select>s stay in sync
+  // after re-enumeration.
+  const [activeDeviceIds, setActiveDeviceIds] = useState<{ video: string | null; audio: string | null }>({
+    video: null,
+    audio: null,
+  });
 
   const cloudcast = useCloudCastOptional();
   const isMobile = cameraSourceId !== 'local';
@@ -29,7 +42,11 @@ export function usePrismVideoSource(cameraSourceId: string) {
   const refreshDevices = useCallback(async () => {
     try {
       const all = await navigator.mediaDevices.enumerateDevices();
+      // USB capture cards (Elgato, Blackmagic, HDMI-to-USB), webcams and
+      // built-in cameras all enumerate as videoinput; USB audio interfaces
+      // and headset mics enumerate as audioinput.
       setDevices(all.filter((d) => d.kind === 'videoinput'));
+      setAudioDevices(all.filter((d) => d.kind === 'audioinput'));
     } catch {
       /* ignore */
     }
@@ -41,18 +58,24 @@ export function usePrismVideoSource(cameraSourceId: string) {
   }, []);
 
   const startLocal = useCallback(
-    async (deviceId?: string | null) => {
+    async (deviceId?: string | null, audioDeviceId?: string | null) => {
       stopLocal();
       setError(null);
+      const videoId = deviceId !== undefined && deviceId !== null ? deviceId : localDeviceIdsRef.current.video;
+      const audioId = audioDeviceId !== undefined && audioDeviceId !== null ? audioDeviceId : localDeviceIdsRef.current.audio;
+      localDeviceIdsRef.current = { video: videoId, audio: audioId };
+      setActiveDeviceIds({ video: videoId, audio: audioId });
       try {
         const media = await navigator.mediaDevices.getUserMedia({
           video: {
-            deviceId: deviceId ? { exact: deviceId } : undefined,
+            deviceId: videoId ? { exact: videoId } : undefined,
             width: { ideal: 1920 },
             height: { ideal: 1080 },
             frameRate: { ideal: 30 },
           },
           audio: {
+            // USB audio interfaces / capture-card audio / headset mics.
+            deviceId: audioId ? { exact: audioId } : undefined,
             echoCancellation: true,
             noiseSuppression: true,
           },
@@ -79,9 +102,9 @@ export function usePrismVideoSource(cameraSourceId: string) {
   }, [stopLocal]);
 
   const start = useCallback(
-    async (localDeviceId?: string | null) => {
+    async (localDeviceId?: string | null, localAudioDeviceId?: string | null) => {
       if (cameraSourceId === 'local') {
-        await startLocal(localDeviceId);
+        await startLocal(localDeviceId, localAudioDeviceId);
         return;
       }
       setError(null);
@@ -99,6 +122,7 @@ export function usePrismVideoSource(cameraSourceId: string) {
     if (stream && (useMesh ? isMeshStreamActive(stream) : true)) {
       video.srcObject = stream;
       void video.play().catch(() => undefined);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing error state to the external stream
       setError(null);
     } else if (mobileDevice) {
       setError('Waiting for mobile camera feed… Pair CloudCast Mobile with your access code.');
@@ -106,8 +130,20 @@ export function usePrismVideoSource(cameraSourceId: string) {
   }, [isMobile, active, useMesh, meshStream, whep.stream, mobileDevice]);
 
   useEffect(() => {
-    void refreshDevices();
-    return () => stopLocal();
+    // Initial device enumeration — async, so updates land in callbacks.
+    let alive = true;
+    navigator.mediaDevices
+      .enumerateDevices()
+      .then((all) => {
+        if (!alive) return;
+        setDevices(all.filter((d) => d.kind === 'videoinput'));
+        setAudioDevices(all.filter((d) => d.kind === 'audioinput'));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+      stopLocal();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -115,6 +151,7 @@ export function usePrismVideoSource(cameraSourceId: string) {
     if (cameraSourceId === 'local') return;
     stopLocal();
     if (videoRef.current) videoRef.current.srcObject = null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mirrors the external source switch
     setActive(false);
   }, [cameraSourceId, stopLocal]);
 
@@ -127,6 +164,9 @@ export function usePrismVideoSource(cameraSourceId: string) {
     active,
     error,
     devices,
+    audioDevices,
+    /** Currently active USB device ids — drives the capture <select>s. */
+    deviceIds: activeDeviceIds,
     start,
     stop,
     refreshDevices,

@@ -2,9 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Check, Gem, LayoutGrid, Loader2, Music, SlidersHorizontal, Video } from 'lucide-react';
 import { getSupabase } from '../lib/supabase';
-import { redeemCoupon } from '../lib/couponService';
 import { useAuth } from '../context/AuthContext';
-import type { PlanTier, ProductPlanTier, SubscriptionPlan, UniversalPlanTier } from '../types/plans';
+import type { PlanTier, ProductPlanTier, SubscriptionPlan } from '../types/plans';
 import { formatPrice, isProductPlanTier, isUniversalPlanTier, PRODUCT_PLAN_LABELS } from '../types/plans';
 import {
   connectionModeLabel,
@@ -30,13 +29,7 @@ import {
 } from '../config/products';
 import type { CloudCastProductId } from '../types/products';
 import { parseProductId } from '../config/products';
-import { isUniversalPlan, resolveProductPlan } from '../lib/productEntitlements';
-import {
-  fetchStripeBillingEnabled,
-  startStripeCheckout,
-  type StripeCheckoutPlan,
-  type StripeCheckoutProduct,
-} from '../lib/stripeService';
+import { resolveProductPlan } from '../lib/productEntitlements';
 import { cn } from '../lib/utils';
 
 const HIGHLIGHT: ProductPlanTier = 'pro';
@@ -117,10 +110,6 @@ export function PricingPage() {
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState<string | null>(null);
   const [couponCode, setCouponCode] = useState('');
-  const [redeeming, setRedeeming] = useState(false);
-  const [couponMessage, setCouponMessage] = useState<string | null>(null);
-  const [couponError, setCouponError] = useState<string | null>(null);
-  const [stripeEnabled, setStripeEnabled] = useState(false);
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const { user, profile, updateProductPlan, refreshProfile } = useAuth();
@@ -132,10 +121,6 @@ export function PricingPage() {
     else if (fromUrl === 'instant_replay' || fromUrl === 'regal_display') setTab('video_mixer');
     else if (fromUrl) setTab(fromUrl);
   }, [searchParams]);
-
-  useEffect(() => {
-    fetchStripeBillingEnabled().then(setStripeEnabled);
-  }, []);
 
   useEffect(() => {
     const checkout = searchParams.get('checkout');
@@ -182,7 +167,7 @@ export function PricingPage() {
         name: PRODUCT_PLAN_LABELS[tier],
         price_monthly_cents: fromDb?.price_monthly_cents ?? PRODUCT_TIER_PRICES[tier],
         max_total_channels: fromDb?.max_total_channels,
-        connection_mode: fromDb?.connection_mode ?? (tier === 'free' ? 'mesh' : 'regal'),
+        connection_mode: fromDb?.connection_mode ?? 'mesh',
         features: fromDb?.features ?? [],
       };
     });
@@ -191,27 +176,6 @@ export function PricingPage() {
   const selectTab = (next: PricingTabUi) => {
     setTab(next);
     setSearchParams({ product: next }, { replace: true });
-  };
-
-  const handleRedeemCoupon = async () => {
-    if (!user) {
-      navigate('/login', { state: { from: '/pricing' } });
-      return;
-    }
-    if (!couponCode.trim()) return;
-    setRedeeming(true);
-    setCouponError(null);
-    setCouponMessage(null);
-    try {
-      const result = await redeemCoupon(couponCode.trim());
-      setCouponMessage(result.message);
-      setCouponCode('');
-      if (result.kind === 'plan_upgrade') await refreshProfile();
-    } catch (err) {
-      setCouponError(err instanceof Error ? err.message : 'Could not redeem coupon.');
-    } finally {
-      setRedeeming(false);
-    }
   };
 
   const handleSelectProductPlan = async (planId: ProductPlanTier) => {
@@ -225,39 +189,14 @@ export function PricingPage() {
     setUpgrading(planId);
 
     try {
-      if (planId === 'free' || !stripeEnabled) {
-        await updateProductPlan(tab, planId);
-        navigate('/hub');
+      if (planId !== 'free') {
+        setCheckoutError('Paid plans are coming soon. Free tier remains available.');
         return;
       }
-
-      await startStripeCheckout(tab as StripeCheckoutProduct, planId as StripeCheckoutPlan);
+      await updateProductPlan(tab, planId);
+      navigate('/hub');
     } catch (err) {
-      setCheckoutError(err instanceof Error ? err.message : 'Checkout failed.');
-    } finally {
-      setUpgrading(null);
-    }
-  };
-
-  const handleSelectUniversal = async (tierId: UniversalPlanTier) => {
-    if (!user) {
-      navigate('/login', { state: { from: '/pricing?product=universal' } });
-      return;
-    }
-
-    setCheckoutError(null);
-    setUpgrading(tierId);
-
-    try {
-      if (!stripeEnabled) {
-        await updateProductPlan('universal', tierId);
-        navigate('/hub');
-        return;
-      }
-
-      await startStripeCheckout('universal', tierId);
-    } catch (err) {
-      setCheckoutError(err instanceof Error ? err.message : 'Checkout failed.');
+      setCheckoutError(err instanceof Error ? err.message : 'Could not update plan.');
     } finally {
       setUpgrading(null);
     }
@@ -265,7 +204,6 @@ export function PricingPage() {
 
   const currentProductPlan =
     tab !== 'universal' && profile ? resolveProductPlan(profile, tab) : null;
-  const isUniversalCurrent = profile ? isUniversalPlan(profile.plan_id) || profile.entitlements?.universal : false;
   const currentUniversalTier = isUniversalPlanTier(profile?.plan_id) ? profile.plan_id : profile?.entitlements?.universal_tier;
   const productMeta = tab !== 'universal' ? CLOUDCAST_PRODUCTS.find((p) => p.id === tab)! : null;
 
@@ -276,6 +214,9 @@ export function PricingPage() {
         <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Pricing by product</h1>
         <p className="mt-3 text-sm text-mixer-muted">
           Subscribe to Video Mixer (includes CloudCast Replay), Audio Mixer, Symphony, Regal Prism, or unlock everything with CloudCast Universal — three bundle tiers from {formatPrice(UNIVERSAL_PLAN_FROM_CENTS)}.
+        </p>
+        <p className="mx-auto mt-3 max-w-2xl rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-medium text-amber-200">
+          Paid upgrades are coming soon while the payment gateway is finalized. Free plans stay available now.
         </p>
 
         <div className="mx-auto mt-8 flex flex-wrap justify-center gap-2">
@@ -302,25 +243,25 @@ export function PricingPage() {
           })}
         </div>
 
-        <div className="mx-auto mt-6 flex max-w-md flex-wrap items-center justify-center gap-2">
+        <div className="mx-auto mt-6 flex max-w-md flex-wrap items-center justify-center gap-2 opacity-60">
           <input
             type="text"
             value={couponCode}
             onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
             placeholder="Coupon code"
-            className="min-w-[160px] flex-1 rounded border border-white/10 bg-black px-3 py-2 text-sm font-mono uppercase outline-none focus:border-mixer-red/40"
+            disabled
+            className="min-w-[160px] flex-1 rounded border border-white/10 bg-black px-3 py-2 text-sm font-mono uppercase outline-none disabled:cursor-not-allowed"
           />
           <button
             type="button"
-            disabled={redeeming || !couponCode.trim()}
-            onClick={() => { void handleRedeemCoupon(); }}
-            className="rounded border border-white/20 px-4 py-2 text-xs font-bold tracking-wider hover:border-white/40 disabled:opacity-50"
+            disabled
+            className="rounded border border-white/20 px-4 py-2 text-xs font-bold tracking-wider disabled:opacity-50"
+            title="Plan upgrade coupons are paused until billing launches"
           >
-            {redeeming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'APPLY'}
+            COMING SOON
           </button>
         </div>
-        {couponMessage && <p className="mt-2 text-sm text-mixer-green">{couponMessage}</p>}
-        {couponError && <p className="mt-2 text-sm text-mixer-red">{couponError}</p>}
+        <p className="mt-2 text-xs text-mixer-muted">Plan upgrade coupons will return with paid billing.</p>
         {checkoutNotice && <p className="mt-2 text-sm text-mixer-green">{checkoutNotice}</p>}
         {checkoutError && <p className="mt-2 text-sm text-mixer-red">{checkoutError}</p>}
       </div>
@@ -394,28 +335,15 @@ export function PricingPage() {
 
                   <button
                     type="button"
-                    disabled={(isUniversalCurrent && isCurrent) || upgrading !== null}
-                    onClick={() => { void handleSelectUniversal(tier.id); }}
+                    disabled
                     className={cn(
-                      'mt-8 w-full rounded py-3 text-xs font-bold tracking-wider transition-colors disabled:opacity-50',
+                      'mt-8 w-full cursor-not-allowed rounded py-3 text-xs font-bold tracking-wider opacity-70',
                       highlighted
-                        ? 'bg-amber-500 text-black hover:bg-amber-400'
-                        : tier.id === 'universal'
-                          ? 'border border-amber-400/40 text-amber-200 hover:border-amber-400/60 hover:bg-amber-500/10'
-                          : 'border border-white/20 hover:border-white/40',
+                        ? 'bg-amber-500/40 text-black'
+                        : 'border border-white/20 text-mixer-muted',
                     )}
                   >
-                    {upgrading === tier.id ? (
-                      <Loader2 className="mx-auto h-4 w-4 animate-spin" />
-                    ) : isCurrent ? (
-                      'CURRENT PLAN'
-                    ) : isUniversalCurrent ? (
-                      `SWITCH TO ${tier.shortName.toUpperCase()}`
-                    ) : stripeEnabled ? (
-                      `SUBSCRIBE — ${tier.shortName.toUpperCase()}`
-                    ) : (
-                      `CHOOSE ${tier.shortName.toUpperCase()}`
-                    )}
+                    {isCurrent ? 'CURRENT PLAN' : 'COMING SOON'}
                   </button>
                 </div>
               );
@@ -513,27 +441,27 @@ export function PricingPage() {
 
                   <button
                     type="button"
-                    disabled={isCurrent || upgrading !== null}
+                    disabled={isCurrent || upgrading !== null || plan.id !== 'free'}
                     onClick={() => {
-                      if (isProductPlanTier(plan.id)) void handleSelectProductPlan(plan.id);
+                      if (isProductPlanTier(plan.id) && plan.id === 'free') void handleSelectProductPlan(plan.id);
                     }}
                     className={cn(
                       'mt-8 w-full rounded py-3 text-xs font-bold tracking-wider transition-colors disabled:opacity-50',
-                      highlighted
-                        ? 'bg-mixer-red text-white hover:bg-mixer-red-dim'
-                        : 'border border-white/20 hover:border-white/40',
+                      plan.id !== 'free'
+                        ? 'cursor-not-allowed border border-white/15 text-mixer-muted'
+                        : highlighted
+                          ? 'bg-mixer-red text-white hover:bg-mixer-red-dim'
+                          : 'border border-white/20 hover:border-white/40',
                     )}
                   >
                     {upgrading === plan.id ? (
                       <Loader2 className="mx-auto h-4 w-4 animate-spin" />
                     ) : isCurrent ? (
                       'CURRENT PLAN'
-                    ) : priceCents === 0 ? (
+                    ) : plan.id === 'free' ? (
                       'GET STARTED FREE'
-                    ) : stripeEnabled ? (
-                      `SUBSCRIBE — ${plan.name.toUpperCase()}`
                     ) : (
-                      `CHOOSE ${plan.name.toUpperCase()}`
+                      'COMING SOON'
                     )}
                   </button>
                 </div>
@@ -544,9 +472,8 @@ export function PricingPage() {
       )}
 
       <p className="mx-auto mt-10 max-w-xl text-center text-xs text-mixer-muted">
-        {stripeEnabled
-          ? 'Paid plans checkout securely with Stripe. Free tier available instantly. Manage subscriptions from your profile.'
-          : 'Stripe billing is being configured — free tier works instantly; paid plans use test checkout until Stripe is live.'}{' '}
+        Paid plans are coming soon. Free tier is available instantly.
+        {' '}
         <Link to="/products" className="text-mixer-red underline">Browse products</Link>
         {' · '}
         <Link to="/login" className="text-mixer-red underline">Sign in</Link>

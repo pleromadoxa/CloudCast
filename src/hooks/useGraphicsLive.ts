@@ -1,24 +1,36 @@
 import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import type { DashboardControls } from '../types/controls';
 import type { LayerStackId } from '../types/graphicsStack';
-import type { LowerThirdTemplateId, SavedLowerThirdPreset, TransitionGraphicType } from '../types/overlays';
+import type { LowerThirdTemplateId, MediaLibraryItem, OverlayPosition, SavedLowerThirdPreset, TransitionGraphicType } from '../types/overlays';
 import {
+  DEFAULT_AD_ZONE,
   DEFAULT_BREAKING,
+  DEFAULT_COUNTDOWN,
   DEFAULT_CRAWLER,
   DEFAULT_LIVE_BUTTON,
   DEFAULT_PROGRAM_LOGO,
+  DEFAULT_SCOREBOARD,
+  DEFAULT_SPONSOR_BUG,
+  DEFAULT_WEATHER,
+  resolveMediaPlayUrl,
 } from '../types/overlays';
+import { inferImageOverlayDefaults } from '../lib/mediaImagePlacement';
 import { removeStackId } from '../lib/graphicsStackOrder';
 import { getLowerThirdSampleText, resolveLowerThirdCustomization } from '../lib/lowerThirdTemplates';
 import {
   cloneLayerSettings,
   hasLivePgmGraphics,
   normalizeLayerSettings,
+  pickAdZoneFields,
   pickBreakingFields,
+  pickCountdownFields,
   pickCrawlerFields,
   pickLiveButtonFields,
   pickLowerThirdFields,
   pickLogoFields,
+  pickScoreboardFields,
+  pickSponsorBugFields,
+  pickWeatherFields,
   syncLivePgmGraphics,
 } from '../lib/layerSettings';
 import { saveOverlayLayers } from '../lib/overlayStorage';
@@ -28,6 +40,8 @@ type SetControls = Dispatch<SetStateAction<DashboardControls>>;
 function persistLayers(layers: DashboardControls['layers']) {
   saveOverlayLayers({
     imageOverlays: layers.imageOverlays,
+    videoOverlays: layers.videoOverlays,
+    mediaLibrary: layers.mediaLibrary,
     lowerThirdTemplate: layers.lowerThirdTemplate,
     lowerThirdCustomization: layers.lowerThirdCustomization,
     lowerThirdPresetId: layers.lowerThirdPresetId,
@@ -39,6 +53,16 @@ function persistLayers(layers: DashboardControls['layers']) {
     breakingNews: layers.breakingNews,
     showLiveButton: layers.showLiveButton,
     liveButton: layers.liveButton,
+    weather: layers.weather,
+    showWeather: layers.showWeather,
+    adZone: layers.adZone,
+    showAdZone: layers.showAdZone,
+    scoreboard: layers.scoreboard,
+    showScoreboard: layers.showScoreboard,
+    countdown: layers.countdown,
+    showCountdown: layers.showCountdown,
+    sponsorBug: layers.sponsorBug,
+    showSponsorBug: layers.showSponsorBug,
     graphicsStackOrder: layers.graphicsStackOrder,
   });
 }
@@ -209,6 +233,66 @@ export function useGraphicsLive(setControls: SetControls) {
     [setControls],
   );
 
+  const toggleWeatherLive = useCallback(
+    (live: boolean) => {
+      setControls((prev) => ({
+        ...prev,
+        pgmLayers: live
+          ? syncLivePgmGraphics(prev.layers, cloneLayerSettings({ ...prev.pgmLayers, ...pickWeatherFields(prev.layers) }))
+          : { ...prev.pgmLayers, showWeather: false },
+      }));
+    },
+    [setControls],
+  );
+
+  const toggleAdZoneLive = useCallback(
+    (live: boolean) => {
+      setControls((prev) => ({
+        ...prev,
+        pgmLayers: live
+          ? syncLivePgmGraphics(prev.layers, cloneLayerSettings({ ...prev.pgmLayers, ...pickAdZoneFields(prev.layers) }))
+          : { ...prev.pgmLayers, showAdZone: false },
+      }));
+    },
+    [setControls],
+  );
+
+  const toggleScoreboardLive = useCallback(
+    (live: boolean) => {
+      setControls((prev) => ({
+        ...prev,
+        pgmLayers: live
+          ? syncLivePgmGraphics(prev.layers, cloneLayerSettings({ ...prev.pgmLayers, ...pickScoreboardFields(prev.layers) }))
+          : { ...prev.pgmLayers, showScoreboard: false },
+      }));
+    },
+    [setControls],
+  );
+
+  const toggleCountdownLive = useCallback(
+    (live: boolean) => {
+      setControls((prev) => ({
+        ...prev,
+        pgmLayers: live
+          ? syncLivePgmGraphics(prev.layers, cloneLayerSettings({ ...prev.pgmLayers, ...pickCountdownFields(prev.layers) }))
+          : { ...prev.pgmLayers, showCountdown: false },
+      }));
+    },
+    [setControls],
+  );
+
+  const toggleSponsorBugLive = useCallback(
+    (live: boolean) => {
+      setControls((prev) => ({
+        ...prev,
+        pgmLayers: live
+          ? syncLivePgmGraphics(prev.layers, cloneLayerSettings({ ...prev.pgmLayers, ...pickSponsorBugFields(prev.layers) }))
+          : { ...prev.pgmLayers, showSponsorBug: false },
+      }));
+    },
+    [setControls],
+  );
+
   const toggleImageLive = useCallback(
     (id: string, live: boolean) => {
       setControls((prev) => {
@@ -227,12 +311,320 @@ export function useGraphicsLive(setControls: SetControls) {
                   .map((o) => ({ ...o, visible: true })),
               }),
             )
-          : normalizeLayerSettings({ ...prev.pgmLayers, imageOverlays: [] });
+          : normalizeLayerSettings({
+              ...prev.pgmLayers,
+              imageOverlays: prev.pgmLayers.imageOverlays.filter((o) => o.id !== id),
+            });
         return {
           ...prev,
           layers,
           pgmLayers,
         };
+      });
+    },
+    [setControls],
+  );
+
+  const toggleVideoLive = useCallback(
+    (id: string, live: boolean) => {
+      setControls((prev) => {
+        const videoOverlays = prev.layers.videoOverlays.map((o) =>
+          o.id === id ? { ...o, liveOnPgm: live, visible: live ? true : o.visible } : o,
+        );
+        const layers = normalizeLayerSettings({ ...prev.layers, videoOverlays });
+        persistLayers(layers);
+        const pgmLayers = live
+          ? syncLivePgmGraphics(
+              layers,
+              normalizeLayerSettings({
+                ...prev.pgmLayers,
+                videoOverlays: layers.videoOverlays
+                  .filter((o) => o.liveOnPgm)
+                  .map((o) => ({ ...o, visible: true })),
+              }),
+            )
+          : normalizeLayerSettings({
+              ...prev.pgmLayers,
+              videoOverlays: prev.pgmLayers.videoOverlays.filter((o) => o.id !== id),
+            });
+        return {
+          ...prev,
+          layers,
+          pgmLayers,
+        };
+      });
+    },
+    [setControls],
+  );
+
+  const takeMediaLive = useCallback(
+    (id: string, kind: 'image' | 'video') => {
+      setControls((prev) => {
+        const alreadyLive =
+          kind === 'image'
+            ? prev.pgmLayers.imageOverlays.some((o) => o.id === id && o.liveOnPgm)
+            : prev.pgmLayers.videoOverlays.some((o) => o.id === id && o.liveOnPgm);
+
+        if (alreadyLive) {
+          const layers = normalizeLayerSettings({
+            ...prev.layers,
+            imageOverlays: prev.layers.imageOverlays.map((o) => ({ ...o, liveOnPgm: false })),
+            videoOverlays: prev.layers.videoOverlays.map((o) => ({ ...o, liveOnPgm: false })),
+          });
+          persistLayers(layers);
+          return {
+            ...prev,
+            layers,
+            pgmLayers: normalizeLayerSettings({
+              ...prev.pgmLayers,
+              imageOverlays: [],
+              videoOverlays: [],
+            }),
+          };
+        }
+
+        const imageOverlays = prev.layers.imageOverlays.map((o) => ({
+          ...o,
+          liveOnPgm: kind === 'image' && o.id === id,
+          visible: kind === 'image' && o.id === id ? true : o.visible,
+        }));
+        const videoOverlays = prev.layers.videoOverlays.map((o) => ({
+          ...o,
+          liveOnPgm: kind === 'video' && o.id === id,
+          visible: kind === 'video' && o.id === id ? true : o.visible,
+        }));
+
+        const layers = normalizeLayerSettings({ ...prev.layers, imageOverlays, videoOverlays });
+        persistLayers(layers);
+
+        const liveImage =
+          kind === 'image' ? layers.imageOverlays.find((o) => o.id === id) ?? null : null;
+        const liveVideo =
+          kind === 'video' ? layers.videoOverlays.find((o) => o.id === id) ?? null : null;
+
+        const pgmLayers = normalizeLayerSettings({
+          ...prev.pgmLayers,
+          imageOverlays: liveImage ? [{ ...liveImage, visible: true, liveOnPgm: true }] : [],
+          videoOverlays: liveVideo ? [{ ...liveVideo, visible: true, liveOnPgm: true }] : [],
+        });
+
+        return { ...prev, layers, pgmLayers };
+      });
+    },
+    [setControls],
+  );
+
+  const stageMediaPreview = useCallback(
+    (item: MediaLibraryItem) => {
+      setControls((prev) => {
+        const playUrl = resolveMediaPlayUrl(item);
+        const stackId = (item.kind === 'video' ? `video:${item.id}` : `image:${item.id}`) as LayerStackId;
+
+        const nextOrder = [...prev.layers.graphicsStackOrder];
+        if (!nextOrder.includes(stackId)) {
+          const logoIdx = nextOrder.indexOf('logo');
+          if (logoIdx >= 0) nextOrder.splice(logoIdx, 0, stackId);
+          else nextOrder.push(stackId);
+        }
+
+        let imageOverlays = [...prev.layers.imageOverlays];
+        let videoOverlays = [...prev.layers.videoOverlays];
+
+        if (item.kind === 'image') {
+          const existing = imageOverlays.find((o) => o.id === item.id);
+          const placement = inferImageOverlayDefaults(item.naturalWidth, item.naturalHeight);
+          const overlay = existing
+            ? { ...existing, dataUrl: playUrl, visible: true, liveOnPgm: false }
+            : {
+                id: item.id,
+                name: item.name,
+                dataUrl: playUrl,
+                naturalWidth: item.naturalWidth,
+                naturalHeight: item.naturalHeight,
+                ...placement,
+                opacity: 100,
+                visible: true,
+                liveOnPgm: false,
+              };
+          imageOverlays = [
+            ...imageOverlays.filter((o) => o.id !== item.id),
+            overlay,
+          ];
+        } else {
+          const existing = videoOverlays.find((o) => o.id === item.id);
+          const overlay = existing
+            ? { ...existing, dataUrl: playUrl, visible: true, liveOnPgm: false }
+            : {
+                id: item.id,
+                name: item.name,
+                dataUrl: playUrl,
+                naturalWidth: item.naturalWidth,
+                naturalHeight: item.naturalHeight,
+                scale: 100,
+                opacity: 100,
+                position: 'center' as OverlayPosition,
+                visible: true,
+                liveOnPgm: false,
+                fillScreen: true,
+                loop: true,
+                muted: false,
+              };
+          videoOverlays = [
+            ...videoOverlays.filter((o) => o.id !== item.id),
+            overlay,
+          ];
+        }
+
+        const layers = normalizeLayerSettings({
+          ...prev.layers,
+          imageOverlays,
+          videoOverlays,
+          graphicsStackOrder: nextOrder,
+        });
+        persistLayers(layers);
+        return { ...prev, layers };
+      });
+    },
+    [setControls],
+  );
+
+  const stageAndTakeMediaLive = useCallback(
+    (item: MediaLibraryItem) => {
+      setControls((prev) => {
+        const playUrl = resolveMediaPlayUrl(item);
+        const stackId = (item.kind === 'video' ? `video:${item.id}` : `image:${item.id}`) as LayerStackId;
+        const alreadyLive =
+          item.kind === 'image'
+            ? prev.pgmLayers.imageOverlays.some((o) => o.id === item.id && o.liveOnPgm)
+            : prev.pgmLayers.videoOverlays.some((o) => o.id === item.id && o.liveOnPgm);
+
+        if (alreadyLive) {
+          const layers = normalizeLayerSettings({
+            ...prev.layers,
+            imageOverlays: prev.layers.imageOverlays.map((o) => ({ ...o, liveOnPgm: false })),
+            videoOverlays: prev.layers.videoOverlays.map((o) => ({ ...o, liveOnPgm: false })),
+          });
+          persistLayers(layers);
+          return {
+            ...prev,
+            layers,
+            pgmLayers: normalizeLayerSettings({
+              ...prev.pgmLayers,
+              imageOverlays: [],
+              videoOverlays: [],
+            }),
+          };
+        }
+
+        const nextOrder = [...prev.layers.graphicsStackOrder];
+        if (!nextOrder.includes(stackId)) {
+          const logoIdx = nextOrder.indexOf('logo');
+          if (logoIdx >= 0) nextOrder.splice(logoIdx, 0, stackId);
+          else nextOrder.push(stackId);
+        }
+
+        let imageOverlays = [...prev.layers.imageOverlays];
+        let videoOverlays = [...prev.layers.videoOverlays];
+
+        if (item.kind === 'image') {
+          const existing = imageOverlays.find((o) => o.id === item.id);
+          const placement = inferImageOverlayDefaults(item.naturalWidth, item.naturalHeight);
+          const overlay = existing
+            ? { ...existing, dataUrl: playUrl, visible: true, liveOnPgm: true }
+            : {
+                id: item.id,
+                name: item.name,
+                dataUrl: playUrl,
+                naturalWidth: item.naturalWidth,
+                naturalHeight: item.naturalHeight,
+                ...placement,
+                opacity: 100,
+                visible: true,
+                liveOnPgm: true,
+              };
+          imageOverlays = [
+            ...imageOverlays.filter((o) => o.id !== item.id).map((o) => ({ ...o, liveOnPgm: false })),
+            overlay,
+          ];
+          videoOverlays = videoOverlays.map((o) => ({ ...o, liveOnPgm: false }));
+        } else {
+          const existing = videoOverlays.find((o) => o.id === item.id);
+          const overlay = existing
+            ? { ...existing, dataUrl: playUrl, visible: true, liveOnPgm: true }
+            : {
+                id: item.id,
+                name: item.name,
+                dataUrl: playUrl,
+                naturalWidth: item.naturalWidth,
+                naturalHeight: item.naturalHeight,
+                scale: 100,
+                opacity: 100,
+                position: 'center' as OverlayPosition,
+                visible: true,
+                liveOnPgm: true,
+                fillScreen: true,
+                loop: true,
+                muted: false,
+              };
+          videoOverlays = [
+            ...videoOverlays.filter((o) => o.id !== item.id).map((o) => ({ ...o, liveOnPgm: false })),
+            overlay,
+          ];
+          imageOverlays = imageOverlays.map((o) => ({ ...o, liveOnPgm: false }));
+        }
+
+        const layers = normalizeLayerSettings({
+          ...prev.layers,
+          imageOverlays,
+          videoOverlays,
+          graphicsStackOrder: nextOrder,
+        });
+        persistLayers(layers);
+
+        const liveImage = item.kind === 'image' ? layers.imageOverlays.find((o) => o.id === item.id) : null;
+        const liveVideo = item.kind === 'video' ? layers.videoOverlays.find((o) => o.id === item.id) : null;
+
+        const pgmLayers = normalizeLayerSettings({
+          ...prev.pgmLayers,
+          imageOverlays: liveImage ? [{ ...liveImage, visible: true, liveOnPgm: true }] : [],
+          videoOverlays: liveVideo ? [{ ...liveVideo, visible: true, liveOnPgm: true }] : [],
+        });
+
+        return { ...prev, layers, pgmLayers };
+      });
+    },
+    [setControls],
+  );
+
+  const patchPgmLayers = useCallback(
+    (partial: Partial<DashboardControls['pgmLayers']>) => {
+      setControls((prev) => {
+        const pgmLayers = normalizeLayerSettings({ ...prev.pgmLayers, ...partial });
+        let layers = prev.layers;
+
+        if (partial.imageOverlays) {
+          const patchMap = new Map(partial.imageOverlays.map((o) => [o.id, o]));
+          layers = normalizeLayerSettings({
+            ...layers,
+            imageOverlays: layers.imageOverlays.map((o) => {
+              const patch = patchMap.get(o.id);
+              return patch ? { ...o, ...patch } : o;
+            }),
+          });
+        }
+        if (partial.videoOverlays) {
+          const patchMap = new Map(partial.videoOverlays.map((o) => [o.id, o]));
+          layers = normalizeLayerSettings({
+            ...layers,
+            videoOverlays: layers.videoOverlays.map((o) => {
+              const patch = patchMap.get(o.id);
+              return patch ? { ...o, ...patch } : o;
+            }),
+          });
+        }
+
+        persistLayers(layers);
+        return { ...prev, layers, pgmLayers };
       });
     },
     [setControls],
@@ -248,6 +640,9 @@ export function useGraphicsLive(setControls: SetControls) {
         if (id.startsWith('image:')) {
           const imgId = id.slice(6);
           partial.imageOverlays = layers.imageOverlays.filter((o) => o.id !== imgId);
+        } else if (id.startsWith('video:')) {
+          const vidId = id.slice(6);
+          partial.videoOverlays = layers.videoOverlays.filter((o) => o.id !== vidId);
         } else if (id === 'breaking') {
           partial = { ...partial, showBreakingNews: false, breakingNews: { ...DEFAULT_BREAKING } };
         } else if (id === 'lower-third') {
@@ -264,6 +659,16 @@ export function useGraphicsLive(setControls: SetControls) {
           partial = { ...partial, showCrawler: false, crawler: { ...DEFAULT_CRAWLER } };
         } else if (id === 'live-button') {
           partial = { ...partial, showLiveButton: false, liveButton: { ...DEFAULT_LIVE_BUTTON } };
+        } else if (id === 'weather') {
+          partial = { ...partial, showWeather: false, weather: { ...DEFAULT_WEATHER } };
+        } else if (id === 'ad-zone') {
+          partial = { ...partial, showAdZone: false, adZone: { ...DEFAULT_AD_ZONE } };
+        } else if (id === 'scoreboard') {
+          partial = { ...partial, showScoreboard: false, scoreboard: { ...DEFAULT_SCOREBOARD } };
+        } else if (id === 'countdown') {
+          partial = { ...partial, showCountdown: false, countdown: { ...DEFAULT_COUNTDOWN } };
+        } else if (id === 'sponsor-bug') {
+          partial = { ...partial, showSponsorBug: false, sponsorBug: { ...DEFAULT_SPONSOR_BUG } };
         } else {
           return prev;
         }
@@ -278,6 +683,12 @@ export function useGraphicsLive(setControls: SetControls) {
             ...pgmLayers,
             imageOverlays: pgmLayers.imageOverlays.filter((o) => o.id !== imgId),
           });
+        } else if (id.startsWith('video:')) {
+          const vidId = id.slice(6);
+          pgmLayers = normalizeLayerSettings({
+            ...pgmLayers,
+            videoOverlays: pgmLayers.videoOverlays.filter((o) => o.id !== vidId),
+          });
         } else if (id === 'breaking') {
           pgmLayers = { ...pgmLayers, showBreakingNews: false };
         } else if (id === 'lower-third') {
@@ -288,6 +699,16 @@ export function useGraphicsLive(setControls: SetControls) {
           pgmLayers = { ...pgmLayers, showCrawler: false };
         } else if (id === 'live-button') {
           pgmLayers = { ...pgmLayers, showLiveButton: false };
+        } else if (id === 'weather') {
+          pgmLayers = { ...pgmLayers, showWeather: false };
+        } else if (id === 'ad-zone') {
+          pgmLayers = { ...pgmLayers, showAdZone: false };
+        } else if (id === 'scoreboard') {
+          pgmLayers = { ...pgmLayers, showScoreboard: false };
+        } else if (id === 'countdown') {
+          pgmLayers = { ...pgmLayers, showCountdown: false };
+        } else if (id === 'sponsor-bug') {
+          pgmLayers = { ...pgmLayers, showSponsorBug: false };
         }
 
         return { ...prev, layers: nextLayers, pgmLayers };
@@ -340,7 +761,17 @@ export function useGraphicsLive(setControls: SetControls) {
     toggleCrawlerLive,
     toggleBreakingLive,
     toggleLiveButtonLive,
+    toggleWeatherLive,
+    toggleAdZoneLive,
+    toggleScoreboardLive,
+    toggleCountdownLive,
+    toggleSponsorBugLive,
     toggleImageLive,
+    toggleVideoLive,
+    takeMediaLive,
+    stageMediaPreview,
+    stageAndTakeMediaLive,
+    patchPgmLayers,
     clearAllPgmGraphics,
     removeStackLayer,
     fireTransition,
@@ -355,7 +786,13 @@ function createClearedPgm(pgm: DashboardControls['pgmLayers']): DashboardControl
     showCrawler: false,
     showBreakingNews: false,
     showLiveButton: false,
+    showWeather: false,
+    showAdZone: false,
+    showScoreboard: false,
+    showCountdown: false,
+    showSponsorBug: false,
     imageOverlays: [],
+    videoOverlays: [],
     transitionGraphic: { ...pgm.transitionGraphic, firing: false },
   });
 }

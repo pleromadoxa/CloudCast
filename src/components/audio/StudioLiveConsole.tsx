@@ -47,6 +47,7 @@ interface StudioLiveConsoleProps {
   onToggleMonitorMute: () => void;
   onToggleConsoleEnabled: () => void;
   onTogglePeakHold: () => void;
+  onSetConsoleViewMode?: (mode: import('../../hooks/useAudioConsoleState').ConsoleViewMode) => void;
   onSetFatParam: (deviceId: string, key: keyof import('../../hooks/useAudioConsoleState').FatChannelParams, value: number | boolean) => void;
   onToggleHpfBypass: (deviceId: string) => void;
   onPatchNoiseCancel: (deviceId: string, patch: Partial<NoiseCancelSettings>) => void;
@@ -128,6 +129,7 @@ export function StudioLiveConsole({
   onToggleMonitorMute,
   onToggleConsoleEnabled,
   onTogglePeakHold,
+  onSetConsoleViewMode,
   onSetFatParam,
   onToggleHpfBypass,
   onPatchNoiseCancel,
@@ -161,13 +163,40 @@ export function StudioLiveConsole({
   const selectedId = selected?.deviceId ?? '';
   const fat = getFatChannelParams(state, selectedId);
   const noiseCancel = getNoiseCancelSettings(state, selectedId);
+  const compact = state.consoleViewMode === 'compact';
 
   return (
     <div
-      className="studiolive-console studiolive-console--premium"
+      className={cn(
+        'studiolive-console studiolive-console--premium',
+        compact && 'studiolive-console--compact',
+      )}
       onPointerDown={() => { void unlockDashboardAudio(); }}
     >
       <div className="studiolive-console__ambient" aria-hidden />
+
+      <div className="studiolive-view-toggle flex items-center gap-2 px-2 pt-2">
+        <span className="text-[9px] font-bold uppercase tracking-wider text-mixer-muted">View</span>
+        {([
+          { id: 'compact' as const, label: 'Compact' },
+          { id: 'advanced' as const, label: 'Advanced' },
+        ]).map((mode) => (
+          <button
+            key={mode.id}
+            type="button"
+            disabled={!onSetConsoleViewMode || readOnly}
+            onClick={() => onSetConsoleViewMode?.(mode.id)}
+            className={cn(
+              'rounded border px-2 py-1 text-[9px] font-bold tracking-wider transition-colors',
+              state.consoleViewMode === mode.id
+                ? 'border-mixer-red/50 bg-mixer-red/20 text-white'
+                : 'border-white/10 text-mixer-muted hover:border-white/25 hover:text-white',
+            )}
+          >
+            {mode.label}
+          </button>
+        ))}
+      </div>
 
       <AudioDevicesStrip
         devices={liveDevices}
@@ -176,17 +205,19 @@ export function StudioLiveConsole({
         onSelectChannel={onSelectChannel}
       />
 
-      <div className="studiolive-input-strip">
-        <span className="studiolive-input-strip__label">Inputs</span>
-        <span><Smartphone className="inline h-3 w-3" /> CloudCast Mobile</span>
-        <span><Usb className="inline h-3 w-3" /> USB microphones (this computer)</span>
-        <span><Mic className="inline h-3 w-3" /> Line / capture alternatives</span>
-        <span className="studiolive-input-strip__hint">
-          Keys: 1–9 select · M mute · Shift+M master · S solo · H monitor · A–D recall · Shift+A–D store
-        </span>
-      </div>
+      {!compact && (
+        <div className="studiolive-input-strip">
+          <span className="studiolive-input-strip__label">Inputs</span>
+          <span><Smartphone className="inline h-3 w-3" /> CloudCast Mobile</span>
+          <span><Usb className="inline h-3 w-3" /> USB microphones (this computer)</span>
+          <span><Mic className="inline h-3 w-3" /> Line / capture alternatives</span>
+          <span className="studiolive-input-strip__hint">
+            Keys: 1–9 select · M mute · Shift+M master · S solo · H monitor · A–D recall · Shift+A–D store
+          </span>
+        </div>
+      )}
 
-      {hostUsb && (
+      {!compact && hostUsb && (
         <HostUsbAudioPanel
           localDevices={hostUsb.localDevices}
           selectableDevices={hostUsb.selectableDevices}
@@ -227,85 +258,89 @@ export function StudioLiveConsole({
         <span className="studiolive-scenes__label">Scenes</span>
       </div>
 
-      <div className="studiolive-top">
-        <div className="studiolive-fat-wrap studiolive-panel-glow">
-        <FatChannelPanel
-          channelIndex={state.selectedChannel}
-          device={selected ?? null}
-          live={Boolean(selectedLive)}
-          locked={selectedLocked}
-          label={selected ? channelDisplayLabel(selected, state.channelLabels) : '—'}
-          statusLabel={channelStatusText(selected, selectedLocked)}
-          muted={Boolean(selectedId && state.inputMuted[selectedId])}
-          solo={state.soloId === selectedId}
-          hpfBypass={fat.hpfBypass}
-          noiseFloor={getLearnedNoiseFloor(state, selectedId)}
-          learningNoise={learningNoiseFor === selectedId}
-          getAudioSourceForDevice={getAudioSourceForDevice}
-          linkedUsbAudio={linkedUsbAudio}
-          fat={fat}
-          noiseCancel={noiseCancel}
-          onSetFatParam={(key, value) => {
-            if (selectedId) onSetFatParam(selectedId, key, value);
-          }}
-          onToggleMute={() => selectedId && onToggleMute(selectedId)}
-          onToggleSolo={() => selectedId && onToggleSolo(selectedId)}
-          onToggleHpfBypass={() => selectedId && onToggleHpfBypass(selectedId)}
-          onPatchNoiseCancel={(patch) => selectedId && onPatchNoiseCancel(selectedId, patch)}
-          onLearnNoiseFloor={() => selectedId && onLearnNoiseFloor(selectedId)}
-          fatChannelLocked={fatChannelLocked}
-        />
-        {state.activeBank === 'mix' && selectedLive && (
-          <div className="studiolive-mix-sends studiolive-mix-sends--fat">
-            {([1, 2, 3, 4] as const).map((bus) => (
-              <label key={bus} className="studiolive-mix-send">
-                <span>M{bus}</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={state.mixSends[selectedId]?.[bus] ?? 0}
-                  onChange={(e) => onSetMixSend(selectedId, bus, Number(e.target.value))}
-                  className="studiolive-fader-input"
-                />
-              </label>
-            ))}
-          </div>
-        )}
-        </div>
-
-        <section className="studiolive-display studiolive-panel-glow">
-          <p className="studiolive-section-label">Digital Console</p>
-          <DigitalConsoleScreen
-            bank={state.activeBank}
-            channel={selected ?? null}
+      <div className={cn('studiolive-top', compact && 'studiolive-top--compact')}>
+        {!compact && (
+          <div className="studiolive-fat-wrap studiolive-panel-glow">
+          <FatChannelPanel
             channelIndex={state.selectedChannel}
-            state={state}
-            activeChannels={activeChannels}
+            device={selected ?? null}
+            live={Boolean(selectedLive)}
             locked={selectedLocked}
-            devices={channels.map((c) => c.device)}
+            label={selected ? channelDisplayLabel(selected, state.channelLabels) : '—'}
+            statusLabel={channelStatusText(selected, selectedLocked)}
+            muted={Boolean(selectedId && state.inputMuted[selectedId])}
+            solo={state.soloId === selectedId}
+            hpfBypass={fat.hpfBypass}
+            noiseFloor={getLearnedNoiseFloor(state, selectedId)}
+            learningNoise={learningNoiseFor === selectedId}
             getAudioSourceForDevice={getAudioSourceForDevice}
             linkedUsbAudio={linkedUsbAudio}
-            onSelectChannel={onSelectChannel}
-            onToggleFx={onToggleFx}
-            onSetFxMix={onSetFxMix}
+            fat={fat}
+            noiseCancel={noiseCancel}
+            onSetFatParam={(key, value) => {
+              if (selectedId) onSetFatParam(selectedId, key, value);
+            }}
+            onToggleMute={() => selectedId && onToggleMute(selectedId)}
+            onToggleSolo={() => selectedId && onToggleSolo(selectedId)}
+            onToggleHpfBypass={() => selectedId && onToggleHpfBypass(selectedId)}
+            onPatchNoiseCancel={(patch) => selectedId && onPatchNoiseCancel(selectedId, patch)}
+            onLearnNoiseFloor={() => selectedId && onLearnNoiseFloor(selectedId)}
+            fatChannelLocked={fatChannelLocked}
           />
-          <div className="studiolive-display-banks">
-            {CONSOLE_BANKS.map((bank) => (
-              <button
-                key={bank.id}
-                type="button"
-                onClick={() => onSetBank(bank.id)}
-                className={cn(
-                  'studiolive-bank-btn',
-                  state.activeBank === bank.id && 'studiolive-bank-btn--active',
-                )}
-              >
-                {bank.label}
-              </button>
-            ))}
+          {state.activeBank === 'mix' && selectedLive && (
+            <div className="studiolive-mix-sends studiolive-mix-sends--fat">
+              {([1, 2, 3, 4] as const).map((bus) => (
+                <label key={bus} className="studiolive-mix-send">
+                  <span>M{bus}</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={state.mixSends[selectedId]?.[bus] ?? 0}
+                    onChange={(e) => onSetMixSend(selectedId, bus, Number(e.target.value))}
+                    className="studiolive-fader-input"
+                  />
+                </label>
+              ))}
+            </div>
+          )}
           </div>
-        </section>
+        )}
+
+        {!compact && (
+          <section className="studiolive-display studiolive-panel-glow">
+            <p className="studiolive-section-label">Digital Console</p>
+            <DigitalConsoleScreen
+              bank={state.activeBank}
+              channel={selected ?? null}
+              channelIndex={state.selectedChannel}
+              state={state}
+              activeChannels={activeChannels}
+              locked={selectedLocked}
+              devices={channels.map((c) => c.device)}
+              getAudioSourceForDevice={getAudioSourceForDevice}
+              linkedUsbAudio={linkedUsbAudio}
+              onSelectChannel={onSelectChannel}
+              onToggleFx={onToggleFx}
+              onSetFxMix={onSetFxMix}
+            />
+            <div className="studiolive-display-banks">
+              {CONSOLE_BANKS.map((bank) => (
+                <button
+                  key={bank.id}
+                  type="button"
+                  onClick={() => onSetBank(bank.id)}
+                  className={cn(
+                    'studiolive-bank-btn',
+                    state.activeBank === bank.id && 'studiolive-bank-btn--active',
+                  )}
+                >
+                  {bank.label}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="studiolive-master studiolive-panel-glow">
           <MasterOutputPanel
@@ -325,7 +360,7 @@ export function StudioLiveConsole({
         </section>
       </div>
 
-      {state.activeBank === 'routing' && (
+      {!compact && state.activeBank === 'routing' && (
         <AudioSourcePanel
           device={selected ?? null}
           getAudioSourceForDevice={getAudioSourceForDevice}

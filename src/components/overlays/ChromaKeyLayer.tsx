@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { KeySettings } from '../../types/mixer';
 import { renderChromaBackground, resolveChromaBackgroundId } from '../../lib/chromaBackgrounds';
 import { normalizeKeySettings } from '../../lib/keySettings';
+import { cn } from '../../lib/utils';
 
 interface ChromaKeyLayerProps {
   mainVideo: HTMLVideoElement | null;
@@ -20,12 +21,13 @@ export function ChromaKeyLayer({ mainVideo, keyVideo, keySettings: rawKeySetting
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keySettings = normalizeKeySettings(rawKeySettings);
   const usePreset = keySettings.fillSource === 'preset';
+  const useTransparent = keySettings.fillSource === 'transparent';
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !mainVideo) return;
 
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true });
     if (!ctx) return;
 
     const [kr, kg, kb] = hexToRgb(keySettings.color);
@@ -43,7 +45,9 @@ export function ChromaKeyLayer({ mainVideo, keyVideo, keySettings: rawKeySetting
       if (off.width !== w) off.width = w;
       if (off.height !== h) off.height = h;
 
-      if (usePreset) {
+      if (useTransparent) {
+        ctx.clearRect(0, 0, w, h);
+      } else if (usePreset) {
         renderChromaBackground(ctx, w, h, bgId, timeMs);
       } else if (keyVideo && keyVideo.readyState >= 2) {
         ctx.drawImage(keyVideo, 0, 0, w, h);
@@ -90,9 +94,14 @@ export function ChromaKeyLayer({ mainVideo, keyVideo, keySettings: rawKeySetting
     keySettings.fillSource,
     keySettings.backgroundId,
     usePreset,
+    useTransparent,
   ]);
 
-  const bgLabel = usePreset ? resolveChromaBackgroundId(keySettings.backgroundId) : 'AUX CAM';
+  const bgLabel = useTransparent
+    ? 'CAM FILL'
+    : usePreset
+      ? resolveChromaBackgroundId(keySettings.backgroundId)
+      : 'AUX CAM';
 
   const keyLabel =
     keySettings.keyType === 'luma'
@@ -101,7 +110,13 @@ export function ChromaKeyLayer({ mainVideo, keyVideo, keySettings: rawKeySetting
 
   return (
     <>
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-cover" />
+      <canvas
+        ref={canvasRef}
+        className={cn(
+          'absolute inset-0 h-full w-full object-cover',
+          useTransparent && 'z-10',
+        )}
+      />
       <div className="pointer-events-none absolute bottom-2 left-2 z-20 rounded bg-black/70 px-2 py-0.5 text-[9px] text-mixer-green">
         KEY: {keyLabel} · {bgLabel}
       </div>

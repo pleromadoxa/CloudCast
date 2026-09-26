@@ -15,6 +15,8 @@ export type PersistedProductionState = Pick<
   | 'openPanels'
   | 'defaultQuality'
   | 'viewMode'
+  | 'mixerViewMode'
+  | 'simpleProductionView'
   | 'globalOverlay'
   | 'display'
   | 'pip'
@@ -65,6 +67,8 @@ export function pickPersistedProduction(
     openPanels: controls.openPanels,
     defaultQuality: controls.defaultQuality,
     viewMode: controls.viewMode,
+    mixerViewMode: controls.mixerViewMode,
+    simpleProductionView: controls.simpleProductionView,
     globalOverlay: controls.globalOverlay,
     display: controls.display,
     pip: controls.pip,

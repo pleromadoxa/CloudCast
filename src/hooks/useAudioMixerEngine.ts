@@ -116,17 +116,23 @@ export function useAudioMixerEngine({
   onNoiseFloorLearned?: (deviceId: string, floor: number) => void;
   resolveStream?: (deviceId: string) => MediaStream | null;
 }) {
-  const { getMeshStream, meshStreams } = useCloudCast();
+  const { getMeshStream, meshStreamVersions } = useCloudCast();
   const { registerPgmPlaybackStream, setPgmGain } = usePgmAudio();
 
   const meshStreamRevision = useMemo(() => {
     let revision = 0;
-    for (const stream of meshStreams.values()) {
-      revision += stream.getAudioTracks().length;
-      revision += stream.getAudioTracks().filter((t) => t.readyState === 'live').length;
+    for (const device of devices) {
+      if (!device.deviceId.startsWith('slot-')) {
+        revision += meshStreamVersions.get(device.deviceId) ?? 0;
+      }
+      const stream = getMeshStream(device.deviceId);
+      if (stream) {
+        revision += stream.getAudioTracks().length;
+        revision += stream.getAudioTracks().filter((t) => t.readyState === 'live').length;
+      }
     }
     return revision;
-  }, [meshStreams]);
+  }, [devices, meshStreamVersions, getMeshStream]);
 
   const [whepStreamRevision, setWhepStreamRevision] = useState(0);
   useEffect(() => {
@@ -581,7 +587,7 @@ export function useAudioMixerEngine({
       if (chain) teardownChain(chain);
       channelAnalysersRef.current.delete(id);
     });
-  }, [devices, meshStreams, meshStreamRevision, whepStreamRevision, ensureMaster, teardownChain, updateGains, wireChannel]);
+  }, [devices, meshStreamRevision, whepStreamRevision, ensureMaster, teardownChain, updateGains, wireChannel]);
 
   useEffect(() => {
     updateGains();
