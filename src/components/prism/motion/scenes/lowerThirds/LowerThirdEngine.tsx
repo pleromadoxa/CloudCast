@@ -87,8 +87,21 @@ function textLayout(visual: LowerThirdVisual): { inset: number; nameY: number; s
   }
 }
 
-export function makeLowerThirdScene(visual: LowerThirdVisual): (props: MotionSceneProps) => ReactElement {
-  return function LowerThirdScene({ headline, subline, accent, brand, overrides }: MotionSceneProps) {
+export type LowerThirdSceneProps = MotionSceneProps & { visual: LowerThirdVisual };
+
+/**
+ * One lower-third scene driven by a runtime visual preset. The preset is a
+ * prop (not a closure) so custom templates can retune it live without
+ * remounting the scene; the bank binds presets at module scope instead.
+ */
+export function LowerThirdScene({
+  visual,
+  headline,
+  subline,
+  accent,
+  brand,
+  overrides,
+}: LowerThirdSceneProps): ReactElement {
     const clock = useMotionClock();
     const groupRef = useRef<THREE.Group>(null);
     const floatPhase = useMemo(() => mulberry32(5150)() * Math.PI * 2, []);
@@ -282,5 +295,9 @@ export function makeLowerThirdScene(visual: LowerThirdVisual): (props: MotionSce
         )}
       </>
     );
-  };
+}
+
+/** Binds a preset for the built-in template bank (created at module scope). */
+export function makeLowerThirdScene(visual: LowerThirdVisual): (props: MotionSceneProps) => ReactElement {
+  return (props: MotionSceneProps) => <LowerThirdScene visual={visual} {...props} />;
 }

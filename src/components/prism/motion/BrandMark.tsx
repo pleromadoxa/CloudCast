@@ -1,16 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { PrismBrandKit } from '../../../lib/prism/brandKit';
 import { shiftAccent } from '../../../lib/prism/motionGraphics';
 import { PrismMark, type PrismMarkProps } from './PrismMark';
 import { MetalText, useMotionClock } from './kit';
+import { useLogoTexture, logoPlaneSize } from './logoTexture';
 import { backOut, clamp01, easeOutCubic, easeOutExpo, getRadialGlowTexture, seg } from './motionMath';
-
-/** Brand kit with the mark suppressed — used when the operator turns the logo off. */
-export function hiddenBrandKit(brand?: Partial<PrismBrandKit> | null): Partial<PrismBrandKit> {
-  return { ...brand, logoDataUrl: null, wordmark: '', hideProceduralMark: true };
-}
 
 /**
  * The replaceable brand mark — renders the operator's uploaded logo (PNG /
@@ -18,11 +14,6 @@ export function hiddenBrandKit(brand?: Partial<PrismBrandKit> | null): Partial<P
  * bevel frame, backlit edge glow and the same entrance timing as the
  * procedural `PrismMark`, which it falls back to when no logo is set.
  */
-
-/** Contain-fit box for the logo at scale 1 — matches the prism footprint. */
-const LOGO_MAX_W = 2.6;
-const LOGO_MAX_H = 1.7;
-
 export interface BrandMarkProps {
   accent: string;
   /** Brand kit (or any subset) — `logoDataUrl` swaps in the uploaded logo. */
@@ -41,65 +32,6 @@ export interface BrandMarkProps {
   depth?: number;
   /** Render the brand wordmark line under the mark. */
   showWordmark?: boolean;
-}
-
-export interface LoadedLogoTexture {
-  texture: THREE.Texture;
-  aspect: number;
-}
-
-/** Loads a logo source into an sRGB texture plus its natural aspect ratio. */
-export async function loadLogoTexture(dataUrl: string): Promise<LoadedLogoTexture> {
-  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Could not decode the brand logo.'));
-    img.src = dataUrl;
-  });
-  const texture = new THREE.Texture(image);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-  const w = image.naturalWidth || image.width;
-  const h = image.naturalHeight || image.height;
-  return { texture, aspect: w > 0 && h > 0 ? w / h : 1 };
-}
-
-/** Reactive logo texture — disposed whenever the source changes or unmounts. */
-function useLogoTexture(dataUrl: string | null | undefined): LoadedLogoTexture | null {
-  const [loaded, setLoaded] = useState<LoadedLogoTexture | null>(null);
-  useEffect(() => {
-    if (!dataUrl) {
-      setLoaded(null);
-      return;
-    }
-    let cancelled = false;
-    let owned: THREE.Texture | null = null;
-    void loadLogoTexture(dataUrl)
-      .then((next) => {
-        if (cancelled) {
-          next.texture.dispose();
-          return;
-        }
-        owned = next.texture;
-        setLoaded(next);
-      })
-      .catch(() => {
-        if (!cancelled) setLoaded(null);
-      });
-    return () => {
-      cancelled = true;
-      owned?.dispose();
-    };
-  }, [dataUrl]);
-  return loaded;
-}
-
-/** Contain-fit the logo inside the footprint box for its aspect ratio. */
-function logoPlaneSize(aspect: number): [number, number] {
-  const a = Math.max(0.05, aspect);
-  const w = a >= LOGO_MAX_W / LOGO_MAX_H ? LOGO_MAX_W : LOGO_MAX_H * a;
-  return [w, w / a];
 }
 
 export function BrandMark({

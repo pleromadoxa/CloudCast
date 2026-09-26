@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- scene factory and its engine share one preset-driven module */
 import { useMemo, type ReactElement } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -34,10 +35,25 @@ import { Ornament } from './ornaments';
  *   build → punch (flash/rings) → title → sub-line → rule → hold → loop fade
  */
 
-export function makeMotionScene(
-  visual: MotionTemplateVisual,
-  duration: number,
-): (props: MotionSceneProps) => ReactElement {
+export type MotionTemplateSceneProps = MotionSceneProps & {
+  visual: MotionTemplateVisual;
+  duration: number;
+};
+
+/**
+ * One full-frame motion scene driven by a runtime preset + duration. Both are
+ * props (not closures) so custom templates can retune them live without
+ * remounting the scene; the bank binds presets at module scope instead.
+ */
+export function MotionTemplateScene({
+  visual,
+  duration,
+  headline,
+  subline,
+  accent,
+  brand,
+  overrides,
+}: MotionTemplateSceneProps): ReactElement {
   // Beats derived from the template length so every pace feels identical.
   const punchT = duration * 0.17;
   const titleWin: [number, number] = [punchT, punchT + duration * 0.11];
@@ -53,8 +69,7 @@ export function makeMotionScene(
   const subY = titleY - 0.48;
   const ruleY = subY - 0.32;
 
-  return function MotionTemplateScene({ headline, subline, accent, brand, overrides }: MotionSceneProps) {
-    const clock = useMotionClock();
+  const clock = useMotionClock();
     const lookAt = useMemo(() => new THREE.Vector3(0, 0, 0), []);
     const desired = useMemo(() => new THREE.Vector3(0, 0.3, 7.4), []);
 
@@ -222,5 +237,9 @@ export function makeMotionScene(
         />
       </>
     );
-  };
+}
+
+/** Binds preset + duration for the built-in template bank (module scope). */
+export function makeMotionScene(visual: MotionTemplateVisual, duration: number): (props: MotionSceneProps) => ReactElement {
+  return (props: MotionSceneProps) => <MotionTemplateScene visual={visual} duration={duration} {...props} />;
 }

@@ -18,7 +18,8 @@ import {
   useMotionClock,
   type MotionSceneProps,
 } from '../kit';
-import { BrandMark, hiddenBrandKit } from '../BrandMark';
+import { hiddenBrandKit } from '../../../../lib/prism/brandKit';
+import { BrandMark } from '../BrandMark';
 import { clamp01, easeInOutCubic, easeOutCubic, easeOutExpo, seg } from '../motionMath';
 
 /**

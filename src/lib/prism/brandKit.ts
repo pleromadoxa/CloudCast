@@ -135,6 +135,11 @@ export function mergeBrandKit(base: PrismBrandKit, patch: Partial<PrismBrandKit>
   return normalizeBrandKit({ ...base, ...(patch ?? {}) });
 }
 
+/** Brand kit with the mark suppressed — used when the operator turns the logo off. */
+export function hiddenBrandKit(brand?: Partial<PrismBrandKit> | null): Partial<PrismBrandKit> {
+  return { ...brand, logoDataUrl: null, wordmark: '', hideProceduralMark: true };
+}
+
 export function loadBrandKit(storage: BrandKitStorage | null = defaultStorage()): PrismBrandKit {
   if (!storage) return { ...DEFAULT_BRAND_KIT };
   try {

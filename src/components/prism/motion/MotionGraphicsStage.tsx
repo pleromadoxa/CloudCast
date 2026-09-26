@@ -34,8 +34,8 @@ import { ChromeLowerThird } from './scenes/ChromeLowerThird';
 import { OrbitReveal } from './scenes/OrbitReveal';
 import { WorldReport } from './scenes/WorldReport';
 import { GalaxyDrift } from './scenes/GalaxyDrift';
-import { makeLowerThirdScene } from './scenes/lowerThirds/LowerThirdEngine';
-import { makeMotionScene } from './scenes/motionTemplates/MotionTemplateEngine';
+import { makeLowerThirdScene, LowerThirdScene } from './scenes/lowerThirds/LowerThirdEngine';
+import { makeMotionScene, MotionTemplateScene } from './scenes/motionTemplates/MotionTemplateEngine';
 import {
   LOWER_THIRD_TEMPLATES,
   LOWER_THIRD_VISUALS,
@@ -63,6 +63,54 @@ const SCENES: Record<string, (props: MotionSceneProps) => ReactElement> = {
     MOTION_TEMPLATE_BANK.map((tpl) => [tpl.id, makeMotionScene(MOTION_VISUALS[tpl.id], tpl.duration)]),
   ),
 };
+
+type MotionSceneComponent = (props: MotionSceneProps) => ReactElement;
+
+type SceneSelection =
+  | { kind: 'lower'; visual: LowerThirdVisual }
+  | { kind: 'motion'; visual: MotionTemplateVisual; duration: number }
+  | { kind: 'fixed'; component: MotionSceneComponent };
+
+/**
+ * Pure preset resolution — returns plain data only, so nothing is created
+ * during render. Custom templates map onto the prop-driven engine scenes
+ * (`LowerThirdScene` / `MotionTemplateScene`) and stay editable live without
+ * remounting; built-ins resolve to their bank-bound scene component.
+ */
+function selectScene(
+  templateId: string,
+  customBaseId: string | null,
+  customDuration: number,
+  customVisual: (Partial<LowerThirdVisual> & Partial<MotionTemplateVisual>) | null,
+): SceneSelection {
+  if (customBaseId && customVisual) {
+    const ltBase = LOWER_THIRD_VISUALS[customBaseId];
+    if (ltBase) return { kind: 'lower', visual: { ...ltBase, ...(customVisual as Partial<LowerThirdVisual>) } };
+    const mtBase = MOTION_VISUALS[customBaseId];
+    if (mtBase) {
+      return {
+        kind: 'motion',
+        visual: { ...mtBase, ...(customVisual as Partial<MotionTemplateVisual>) },
+        duration: customDuration,
+      };
+    }
+    return { kind: 'fixed', component: SCENES[customBaseId] ?? SCENES[templateId] ?? SovereignOutro };
+  }
+  return { kind: 'fixed', component: SCENES[templateId] ?? SovereignOutro };
+}
+
+/** Stable wrapper — every scene component type here lives at module scope. */
+function ResolvedScene({
+  selection,
+  ...sceneProps
+}: { selection: SceneSelection } & MotionSceneProps): ReactElement {
+  if (selection.kind === 'lower') return <LowerThirdScene visual={selection.visual} {...sceneProps} />;
+  if (selection.kind === 'motion') {
+    return <MotionTemplateScene visual={selection.visual} duration={selection.duration} {...sceneProps} />;
+  }
+  const Fixed = selection.component;
+  return <Fixed {...sceneProps} />;
+}
 
 /** Advances the shared timeline: speed, looping and the finished hold. */
 function ClockDriver({
@@ -155,30 +203,16 @@ export function MotionGraphicsStage({
   onBackdropApi,
 }: MotionGraphicsStageProps) {
   const template = getMotionTemplate(motion.templateId);
-  // Custom templates carry their own visual preset tweaks — rebuild the scene
-  // closure over the merged preset so saved cuts render exactly as edited.
+  // Custom templates carry their own visual preset tweaks — the scene is built
+  // over the merged preset (cached per preset signature) so saved cuts render
+  // exactly as edited while the element type stays stable across renders.
   const custom = getCustomMotionTemplate(template.id);
   const customBaseId = custom?.baseId ?? null;
   const customDuration = custom?.definition.duration ?? 0;
   const customVisual = custom ? (custom.visual as Partial<LowerThirdVisual> & Partial<MotionTemplateVisual>) : null;
-  // Gate scene rebuilds on the serialised preset — draft objects churn on
-  // every keystroke but the scene must only remount when visuals change.
-  const customVisualKey = customVisual ? JSON.stringify(customVisual) : '';
-  const scene = useMemo<(props: MotionSceneProps) => ReactElement>(() => {
-    if (customBaseId && customVisual) {
-      const ltBase = LOWER_THIRD_VISUALS[customBaseId];
-      if (ltBase) {
-        return makeLowerThirdScene({ ...ltBase, ...(customVisual as Partial<LowerThirdVisual>) });
-      }
-      const mtBase = MOTION_VISUALS[customBaseId];
-      if (mtBase) {
-        return makeMotionScene({ ...mtBase, ...(customVisual as Partial<MotionTemplateVisual>) }, customDuration);
-      }
-      return SCENES[customBaseId] ?? SCENES[template.id] ?? SovereignOutro;
-    }
-    return SCENES[template.id] ?? SovereignOutro;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- customVisual identity churns per edit; customVisualKey gates rebuilds
-  }, [customBaseId, customDuration, customVisualKey, template.id]);
+  // Preset resolution is pure data — the engine scenes take the merged preset
+  // as a prop, so edits flow through without remounting the scene.
+  const selection = selectScene(template.id, customBaseId, customDuration, customVisual);
   const accent = normalizeAccent(motion.accent, template.accent);
   // Brand kit: the scene's own override wins, else the operator's saved kit.
   const brand: PrismBrandKit = motion.brand ?? loadBrandKit();
@@ -245,7 +279,6 @@ export function MotionGraphicsStage({
     if (glRef.current) glRef.current.toneMappingExposure = motion.exposure;
   }, [motion.exposure]);
 
-  const Scene = scene;
   const { containerRef, barsRef } = useLetterbox(motion.letterbox);
   const handleBackdropCanvas = useCallback((canvas: HTMLCanvasElement | null) => {
     onBackdropRef.current?.(canvas);
@@ -300,7 +333,8 @@ export function MotionGraphicsStage({
               loop={motion.loop}
               paused={paused}
             />
-            <Scene
+            <ResolvedScene
+              selection={selection}
               headline={motion.headline || template.headline}
               subline={motion.subline || template.subline}
               accent={accent}
