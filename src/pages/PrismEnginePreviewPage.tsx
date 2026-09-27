@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { DEFAULT_BABYLON_SETTINGS, DEFAULT_UNREAL_SETTINGS } from '../lib/stageEngines/settings';
 
@@ -50,27 +50,15 @@ function EngineHud({ engine, backend }: { engine: PreviewEngine; backend: string
 }
 
 /**
- * Visual harness for the Regal Prism render engines.
- *
- * Mounts the Babylon.js studio stage or the Unreal pixel-streaming stage
- * without an authenticated studio session so engine start-up, lighting, PBR
- * materials and tone mapping can be reviewed in any build at
- * `/prism/engine-preview?engine=babylon&scene=cyclorama`.
+ * One engine at a time. Keyed by engine so a switch remounts the stage and
+ * the status readout starts from a fresh "starting…" without clobbering the
+ * ready callback of the incoming stage.
  */
-export function PrismEnginePreviewPage() {
-  const [params] = useSearchParams();
-  const requested = params.get('engine');
-  const engine: PreviewEngine = requested === 'unreal' ? 'unreal' : 'babylon';
-  const sceneId = params.get('scene') ?? 'cyclorama';
+function StagePanel({ engine, sceneId }: { engine: PreviewEngine; sceneId: string }) {
   const [backend, setBackend] = useState<string>('starting…');
 
-  // Reset the readout whenever the operator switches engines.
-  useEffect(() => {
-    setBackend('starting…');
-  }, [engine]);
-
   return (
-    <div className="relative h-[100dvh] w-full bg-black">
+    <>
       <EngineHud engine={engine} backend={backend} />
       <Suspense
         fallback={
@@ -97,6 +85,27 @@ export function PrismEnginePreviewPage() {
           />
         )}
       </Suspense>
+    </>
+  );
+}
+
+/**
+ * Visual harness for the Regal Prism render engines.
+ *
+ * Mounts the Babylon.js studio stage or the Unreal pixel-streaming stage
+ * without an authenticated studio session so engine start-up, lighting, PBR
+ * materials and tone mapping can be reviewed in any build at
+ * `/prism/engine-preview?engine=babylon&scene=cyclorama`.
+ */
+export function PrismEnginePreviewPage() {
+  const [params] = useSearchParams();
+  const requested = params.get('engine');
+  const engine: PreviewEngine = requested === 'unreal' ? 'unreal' : 'babylon';
+  const sceneId = params.get('scene') ?? 'cyclorama';
+
+  return (
+    <div className="relative h-[100dvh] w-full bg-black">
+      <StagePanel key={`${engine}:${sceneId}`} engine={engine} sceneId={sceneId} />
     </div>
   );
 }

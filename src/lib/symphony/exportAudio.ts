@@ -257,12 +257,12 @@ function ditherSample(sample: number, lsb: number): number {
 
 function writePcm(
   view: DataView, buffer: AudioBuffer, bitDepth: 16 | 24,
-  littleEndian: boolean, dither: boolean,
+  littleEndian: boolean, dither: boolean, startOffset: number,
 ): void {
   const channels = buffer.numberOfChannels;
   const max = bitDepth === 16 ? 0x7fff : 0x7fffff;
   const lsb = 1 / (max + 1);
-  let offset = 0;
+  let offset = startOffset;
   for (let i = 0; i < buffer.length; i++) {
     for (let ch = 0; ch < channels; ch++) {
       let sample = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
@@ -314,7 +314,7 @@ export function encodeWav(buffer: AudioBuffer, bitDepth: 16 | 24 = 16, dither = 
   view.setUint16(34, bitDepth, true);
   writeStr(view, 36, 'data');
   view.setUint32(40, dataLength, true);
-  writePcm(view, buffer, bitDepth, true, dither && bitDepth === 16);
+  writePcm(view, buffer, bitDepth, true, dither && bitDepth === 16, 44);
 
   return new Blob([arrayBuffer], { type: 'audio/wav' });
 }
@@ -364,7 +364,7 @@ export function encodeAiff(buffer: AudioBuffer, bitDepth: 16 | 24 = 16, dither =
   view.setUint32(42, ssndSize, false);
   view.setUint32(46, 0, false); // offset
   view.setUint32(50, 0, false); // block size
-  writePcm(view, buffer, bitDepth, false, dither && bitDepth === 16);
+  writePcm(view, buffer, bitDepth, false, dither && bitDepth === 16, 54);
 
   return new Blob([arrayBuffer], { type: 'audio/aiff' });
 }

@@ -22,7 +22,12 @@ import '@babylonjs/core/Engines/WebGPU/Extensions/engine.renderTarget';
 import '@babylonjs/core/Engines/WebGPU/Extensions/engine.renderTargetCube';
 import '@babylonjs/core/Engines/WebGPU/Extensions/engine.renderTargetTexture';
 import '@babylonjs/core/Engines/WebGPU/Extensions/engine.videoTexture';
-// Scene-component registrations — same opt-in pattern as the engine patches.
+// Scene-component registrations — same opt-in pattern as the engine patches:
+// shadow maps, post-process pipelines (Default + SSAO2), the pre-pass renderer
+// and depth-of-field's depth renderer each register through a side-effect.
 import '@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent';
+import '@babylonjs/core/PostProcesses/RenderPipeline/postProcessRenderPipelineManagerSceneComponent';
+import '@babylonjs/core/Rendering/depthRendererSceneComponent';
+import '@babylonjs/core/Rendering/prePassRendererSceneComponent';
 
 export {};

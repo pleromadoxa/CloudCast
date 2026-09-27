@@ -107,7 +107,7 @@ export function useSymphonyPlayback(
     }
 
     if (countIn) {
-      await engine.playCountIn(project.tempo, 4);
+      await engine.playCountIn(project.tempo, project.countInBars ?? 4);
     }
 
     if (recording) {

@@ -1,6 +1,6 @@
 import { Circle, Pause, Play, Repeat, Square, Timer } from 'lucide-react';
 import { SymphonyButton } from './SymphonyButton';
-import { LcdSegment } from './symphonyUi';
+import { cn } from '../../lib/utils';
 
 const KEYS = ['C maj', 'G maj', 'D maj', 'A maj', 'E maj', 'F maj', 'B maj', 'A min', 'E min', 'D min'];
 
@@ -58,18 +58,37 @@ export function TransportBar({
         <SymphonyButton variant="transport" active={metronome} accent="amber" onClick={onToggleMetronome} title="Metronome">
           <span className="text-[10px] font-bold">M</span>
         </SymphonyButton>
-        <SymphonyButton variant="transport" active={countIn} accent="sky" onClick={onToggleCountIn} title="Count-in (4 beats)">
+        <SymphonyButton variant="transport" active={countIn} accent="sky" onClick={onToggleCountIn} title="Count-in">
           <Timer className="h-3.5 w-3.5" />
         </SymphonyButton>
       </div>
 
-      <div className="sym-lcd-display flex flex-wrap items-stretch gap-0">
-        <LcdSegment label="BAR">{String(position.bar).padStart(3, '0')}</LcdSegment>
-        <LcdSegment label="BEAT">{position.beat}</LcdSegment>
-        <LcdSegment label="TICK">{String(position.tick).padStart(3, '0')}</LcdSegment>
-        <div className="sym-lcd-separator" />
-        <div className="sym-lcd-segment sym-lcd-segment--input">
-          <span className="sym-lcd-segment__label">TEMPO</span>
+      <div className="sym-transport-lcd">
+        <div className="sym-transport-lcd__cell">
+          <span className="sym-transport-lcd__label">Status</span>
+          <div className="sym-transport-lcd__dots">
+            <span className={cn('sym-transport-led', (playing || paused) && 'sym-transport-led--on')} title="Play" />
+            <span className={cn('sym-transport-led', recording && 'sym-transport-led--rec')} title="Record" />
+            <span className={cn('sym-transport-led', looping && 'sym-transport-led--on')} title="Loop" />
+            <span className={cn('sym-transport-led', metronome && 'sym-transport-led--on')} title="Metronome" />
+          </div>
+        </div>
+
+        <div className="sym-transport-lcd__cell">
+          <span className="sym-transport-lcd__label">Bar</span>
+          <span className="sym-transport-lcd__value">{String(position.bar).padStart(3, '0')}</span>
+        </div>
+        <div className="sym-transport-lcd__cell">
+          <span className="sym-transport-lcd__label">Beat</span>
+          <span className="sym-transport-lcd__value">{position.beat}</span>
+        </div>
+        <div className="sym-transport-lcd__cell">
+          <span className="sym-transport-lcd__label">Tick</span>
+          <span className="sym-transport-lcd__value">{String(position.tick).padStart(3, '0')}</span>
+        </div>
+
+        <div className="sym-transport-lcd__cell">
+          <span className="sym-transport-lcd__label">Tempo</span>
           <input
             type="number"
             min={40}
@@ -77,13 +96,22 @@ export function TransportBar({
             step={0.1}
             value={tempo}
             onChange={(e) => onTempoChange(Number(e.target.value))}
-            className="sym-lcd-input"
+            className="sym-transport-lcd__value sym-transport-lcd__value--sm w-[62px] border-none bg-transparent outline-none"
           />
         </div>
-        <LcdSegment label="SIG">{timeSignature[0]}/{timeSignature[1]}</LcdSegment>
-        <div className="sym-lcd-segment sym-lcd-segment--select">
-          <span className="sym-lcd-segment__label">KEY</span>
-          <select value={musicalKey} onChange={(e) => onKeyChange(e.target.value)} className="sym-lcd-select">
+        <div className="sym-transport-lcd__cell">
+          <span className="sym-transport-lcd__label">Sig</span>
+          <span className="sym-transport-lcd__value sym-transport-lcd__value--sm">
+            {timeSignature[0]}/{timeSignature[1]}
+          </span>
+        </div>
+        <div className="sym-transport-lcd__cell">
+          <span className="sym-transport-lcd__label">Key</span>
+          <select
+            value={musicalKey}
+            onChange={(e) => onKeyChange(e.target.value)}
+            className="sym-transport-lcd__value sym-transport-lcd__value--sm border-none bg-transparent outline-none"
+          >
             {KEYS.map((k) => <option key={k} value={k} className="bg-black">{k}</option>)}
           </select>
         </div>
@@ -98,14 +126,10 @@ export function TransportBar({
           placeholder="Untitled Project"
         />
         <div className="sym-cloud-badge">
-          <span className={cnLed(playing || paused || recording)} />
+          <span className={playing || paused || recording ? 'sym-meter-led sym-meter-led--active' : 'sym-meter-led'} />
           <span className="sym-cloud-badge__text">REGAL CLOUD</span>
         </div>
       </div>
     </header>
   );
-}
-
-function cnLed(active: boolean) {
-  return active ? 'sym-meter-led sym-meter-led--active' : 'sym-meter-led';
 }

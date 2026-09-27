@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Cloud, Copy, Download, FolderOpen, Keyboard, LayoutGrid, LogOut, Music2, Piano,
   Redo2, Save, SlidersHorizontal, Undo2, Upload, Video,
 } from 'lucide-react';
+import '../../styles/symphonyPro.css';
 import { useAuth } from '../../context/AuthContext';
 import { CloudCastLogo } from '../brand/CloudCastLogo';
 import { CLOUDCAST_NAV_LOGO } from '../../lib/branding';
@@ -15,23 +16,37 @@ import { TransportBar } from './TransportBar';
 import { LoopBrowser, InstrumentLibraryPanel } from './LoopBrowser';
 import { TrackHeaders, TimelineView, PianoRollPanel, MidiKeyboardPanel } from './TimelineView';
 import { LOOP_LIBRARY } from '../../lib/symphony/loops';
-import type { CloudProjectMeta } from '../../types/symphony';
+import type { CloudProjectMeta, SymphonyPrefs } from '../../types/symphony';
 import {
   deleteCloudProject, exportProjectJson, importProjectJson, listCloudProjects,
   loadProjectFromRegalCloud, saveProjectToRegalCloud,
 } from '../../lib/symphonyProjectService';
-import { downloadBlob, renderProjectToWav } from '../../lib/symphony/exportMixdown';
 import { exportProjectMidi } from '../../lib/symphony/exportMidi';
 import { getInstrument } from '../../lib/symphony/instruments';
+import { loadSymphonyPrefs, saveSymphonyPrefs } from '../../lib/symphony/symphonyPrefs';
 import { SymphonyButton } from './SymphonyButton';
 import { TRACK_COLOR_MAP } from './symphonyUi';
 import { cn } from '../../lib/utils';
 
 import { EffectsPanel, CyclePanel } from './EffectsPanel';
+import { MixerConsole } from './MixerConsole';
+import { SymphonySettingsPanel } from './SymphonySettingsPanel';
+import { FxRackPanel } from './FxRackPanel';
+import { ExportDialog } from './ExportDialog';
 import { BAR_WIDTH, ZOOM_LEVELS } from '../../lib/symphony/dragTypes';
 import { stretchPatternToTempo } from '../../lib/symphony/noteUtils';
 
-type BottomPanel = 'loops' | 'instruments' | 'effects' | 'cloud';
+type BottomPanel = 'loops' | 'instruments' | 'effects' | 'cloud' | 'mixer' | 'fxrack' | 'settings';
+
+const DOCK_TAB_LABELS: Record<BottomPanel, string> = {
+  mixer: '▤ Mixer',
+  loops: '◆ Loops',
+  instruments: '♫ Instruments',
+  fxrack: '✦ FX Rack',
+  effects: '✧ Effects & Tools',
+  settings: '⚙ Settings',
+  cloud: '☁ Regal Cloud',
+};
 
 export function SymphonyLayout() {
   const { profile, signOut } = useAuth();
@@ -49,8 +64,27 @@ export function SymphonyLayout() {
   const [cloudProjects, setCloudProjects] = useState<CloudProjectMeta[]>([]);
   const [cloudStatus, setCloudStatus] = useState<string | null>(null);
   const [cloudLoading, setCloudLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [prefs, setPrefs] = useState<SymphonyPrefs>(() => loadSymphonyPrefs());
   const [zoomIndex, setZoomIndex] = useState(2);
+
+  const handlePrefsChange = useCallback((patch: Partial<SymphonyPrefs>) => {
+    setPrefs((prev) => {
+      const next = { ...prev, ...patch };
+      saveSymphonyPrefs(next);
+      return next;
+    });
+  }, []);
+
+  const engineInfo = useMemo(() => {
+    const ctx = playback.engineRef.current?.context;
+    return {
+      sampleRate: ctx?.sampleRate,
+      baseLatencyMs: ctx?.baseLatency != null ? ctx.baseLatency * 1000 : undefined,
+      outputLatencyMs: ctx?.outputLatency != null ? ctx.outputLatency * 1000 : undefined,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playback.engineRef, playback.playing, playback.paused]);
 
   const barWidth = BAR_WIDTH * ZOOM_LEVELS[zoomIndex];
   const zoomLevel = ZOOM_LEVELS[zoomIndex];
@@ -97,18 +131,9 @@ export function SymphonyLayout() {
     }
   };
 
-  const handleMixdown = async () => {
-    setExporting(true);
-    try {
-      playback.handleStop();
-      const blob = await renderProjectToWav(sym.project);
-      downloadBlob(blob, `${sym.project.name}.wav`);
-      setCloudStatus('Mixdown exported as WAV');
-    } catch {
-      setCloudStatus('Mixdown export failed');
-    } finally {
-      setExporting(false);
-    }
+  const handleMixdown = () => {
+    playback.handleStop();
+    setShowExport(true);
   };
 
   const handleNoteOn = useCallback((pitch: number) => {
@@ -146,7 +171,10 @@ export function SymphonyLayout() {
   }, [playback, sym]);
 
   return (
-    <div className="symphony-shell relative flex h-full min-h-0 flex-col overflow-hidden">
+    <div
+      className="symphony-shell sym-pro relative flex h-full min-h-0 flex-col overflow-hidden"
+      style={{ '--grain-opacity': String((prefs.metalGrain / 100) * 0.14) } as React.CSSProperties}
+    >
       <div className="sym-ambient" aria-hidden />
       <div className="sym-top-bar flex shrink-0 items-center justify-between gap-2 px-3 py-2">
         <div className="flex min-w-0 items-center gap-3">
@@ -174,8 +202,8 @@ export function SymphonyLayout() {
           <SymphonyButton variant="default" accent="violet" onClick={() => { void handleSaveToCloud(); }} disabled={cloudLoading}>
             <Cloud className="h-3 w-3" /> REGAL CLOUD
           </SymphonyButton>
-          <SymphonyButton variant="default" accent="neutral" onClick={() => { void handleMixdown(); }} disabled={exporting} className="hidden sm:inline-flex">
-            <Download className="h-3 w-3" /> MIXDOWN
+          <SymphonyButton variant="default" accent="neutral" onClick={handleMixdown} className="hidden sm:inline-flex">
+            <Download className="h-3 w-3" /> EXPORT…
           </SymphonyButton>
           <SymphonyButton variant="default" accent="neutral" onClick={() => exportProjectMidi(sym.project)} className="hidden sm:inline-flex">
             <Music2 className="h-3 w-3" /> MIDI
@@ -377,7 +405,14 @@ export function SymphonyLayout() {
       <MidiKeyboardPanel visible={showMidiKeyboard} onNoteOn={handleNoteOn} onNoteOff={handleNoteOff} />
 
       {bottomPanel !== 'loops' && (
-        <div className="sym-bottom-panel shrink-0 lg:h-44">
+        <div
+          className={cn(
+            'sym-bottom-panel shrink-0',
+            bottomPanel === 'mixer' && 'h-[330px]',
+            (bottomPanel === 'settings' || bottomPanel === 'fxrack') && 'h-[360px]',
+            (bottomPanel === 'effects' || bottomPanel === 'instruments' || bottomPanel === 'cloud') && 'lg:h-44',
+          )}
+        >
           {bottomPanel === 'effects' && (
             <EffectsPanel
               selectedTrack={selectedTrack}
@@ -399,6 +434,37 @@ export function SymphonyLayout() {
               onCategoryChange={setInstrumentCategory}
               selectedInstrumentId={sym.selectedTrackId ? sym.project.tracks.find((t) => t.id === sym.selectedTrackId)?.instrumentId ?? null : null}
               onSelectInstrument={(id) => { if (sym.selectedTrackId) sym.assignInstrument(sym.selectedTrackId, id); }}
+            />
+          )}
+          {bottomPanel === 'mixer' && (
+            <MixerConsole
+              project={sym.project}
+              tracks={sym.visibleTracks}
+              selectedTrackId={sym.selectedTrackId}
+              meterLevels={playback.meterLevels}
+              meterPeaks={playback.meterPeaks}
+              masterMeter={playback.masterMeter}
+              limiterReductionDb={playback.limiterReductionDb}
+              playing={playback.playing}
+              onSelectTrack={sym.setSelectedTrackId}
+              onTrackChange={sym.updateTrack}
+              onProjectChange={sym.updateProject}
+            />
+          )}
+          {bottomPanel === 'fxrack' && (
+            <FxRackPanel
+              track={selectedTrack}
+              onTrackChange={sym.updateTrack}
+              onClearAutomation={sym.clearTrackAutomation}
+            />
+          )}
+          {bottomPanel === 'settings' && (
+            <SymphonySettingsPanel
+              project={sym.project}
+              prefs={prefs}
+              onProjectChange={sym.updateProject}
+              onPrefsChange={handlePrefsChange}
+              engineInfo={engineInfo}
             />
           )}
           {bottomPanel === 'cloud' && (
@@ -440,8 +506,8 @@ export function SymphonyLayout() {
       )}
 
       <footer className="sym-dock flex shrink-0 items-center justify-between px-3 py-2">
-        <div className="flex gap-1">
-          {(['loops', 'instruments', 'effects', 'cloud'] as BottomPanel[]).map((panel) => (
+        <div className="flex flex-wrap gap-1">
+          {(['mixer', 'loops', 'instruments', 'fxrack', 'effects', 'settings', 'cloud'] as BottomPanel[]).map((panel) => (
             <SymphonyButton
               key={panel}
               variant="toggle"
@@ -450,7 +516,7 @@ export function SymphonyLayout() {
               onClick={() => setBottomPanel(panel)}
               className="sym-dock__tab"
             >
-              {panel === 'loops' ? '◆ Loops' : panel === 'instruments' ? '♫ Instruments' : panel === 'effects' ? '✦ Effects' : '☁ Regal Cloud'}
+              {DOCK_TAB_LABELS[panel]}
             </SymphonyButton>
           ))}
         </div>
@@ -463,6 +529,15 @@ export function SymphonyLayout() {
           </SymphonyButton>
         </div>
       </footer>
+
+      {showExport && (
+        <ExportDialog
+          project={sym.project}
+          initialSettings={{ ...prefs.exportDefaults, fileName: sym.project.name }}
+          onClose={() => setShowExport(false)}
+          onExported={(fileName) => setCloudStatus(`Exported ${fileName}`)}
+        />
+      )}
     </div>
   );
 }
