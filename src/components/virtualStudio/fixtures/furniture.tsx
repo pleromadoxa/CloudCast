@@ -19,6 +19,7 @@ import {
   carpetPbrOptions,
   lacqueredWoodMaterial,
   leatherMaterial,
+  pbrSolid,
   upholsteryMaterial,
 } from '../../../lib/prism/pbrMaterials';
 
@@ -58,7 +59,16 @@ export const AnchorDesk = memo(function AnchorDesk({
     () =>
       body === '#18181b'
         ? m.dark
-        : new THREE.MeshStandardMaterial({ color: body, roughness: 0.42, metalness: 0.12 }),
+        : // Lacquered body — full map set (micro relief, per-texel roughness/
+          // metallic) plus a thin glossy topcoat, like real painted MDF.
+          pbrSolid(body, {
+            roughness: 0.42,
+            metalness: 0.12,
+            physical: true,
+            clearcoat: 0.5,
+            clearcoatRoughness: 0.26,
+            envMapIntensity: 1.25,
+          }),
     [body, m.dark],
   );
   return (
@@ -177,7 +187,7 @@ export const StudioSofa = memo(function StudioSofa({
     const c = new THREE.Color(color).lerp(new THREE.Color('#e7e2da'), 0.32);
     return upholsteryMaterial(`#${c.getHexString()}`, { kind: 'fabric_linen', seed: 2, sheen: 0.5 });
   }, [color]);
-  const seam = useMemo(() => new THREE.MeshStandardMaterial({ color: new THREE.Color(color).multiplyScalar(0.55), roughness: 0.95 }), [color]);
+  const seam = useMemo(() => pbrSolid(new THREE.Color(color).multiplyScalar(0.55), { roughness: 0.95, metalness: 0 }), [color]);
   return (
     <group position={position} rotation={rotation} scale={scale}>
       {/* base + shadow gap under the seat cushions (seat top = SEAT_HEIGHT.sofa) */}
@@ -281,7 +291,7 @@ export const StudioArmchair = memo(function StudioArmchair({
     const c = new THREE.Color(color).multiplyScalar(0.72);
     return upholsteryMaterial(`#${c.getHexString()}`, { sheen: 0.8 });
   }, [color]);
-  const seam = useMemo(() => new THREE.MeshStandardMaterial({ color: new THREE.Color(color).multiplyScalar(0.52), roughness: 0.95 }), [color]);
+  const seam = useMemo(() => pbrSolid(new THREE.Color(color).multiplyScalar(0.52), { roughness: 0.95, metalness: 0 }), [color]);
   return (
     <group position={position} rotation={rotation} scale={scale}>
       {/* outer shell (slightly darker, reads as the chair's structure) */}
@@ -346,7 +356,18 @@ export const StudioChair = memo(function StudioChair({
 }: PlaceProps) {
   const m = useStudioMaterials();
   const seatMat = useMemo(() => upholsteryMaterial('#252b36', { sheen: 0.7, sheenColor: '#4a5566' }), []);
-  const shellMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#111827', roughness: 0.55, metalness: 0.12 }), []);
+  const shellMat = useMemo(
+    () =>
+      pbrSolid('#111827', {
+        roughness: 0.55,
+        metalness: 0.12,
+        physical: true,
+        clearcoat: 0.3,
+        clearcoatRoughness: 0.4,
+        envMapIntensity: 1.2,
+      }),
+    [],
+  );
   const legs = useMemo(() => Array.from({ length: 5 }, (_, i) => (i / 5) * Math.PI * 2), []);
   return (
     <group position={position} rotation={rotation} scale={scale}>
@@ -432,10 +453,11 @@ export const TubChair = memo(function TubChair({
     return upholsteryMaterial(`#${c.getHexString()}`, { sheen: 0.85 });
   }, [color]);
   const seam = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: new THREE.Color(color).multiplyScalar(0.5), roughness: 0.95 }),
+    () => pbrSolid(new THREE.Color(color).multiplyScalar(0.5), { roughness: 0.95, metalness: 0 }),
     [color],
   );
-  const legMat = useMemo(() => new THREE.MeshStandardMaterial({ color: legColor, roughness: 0.5, metalness: 0.02 }), [legColor]);
+  // Solid wood legs — real oak grain under a satin topcoat instead of flat paint.
+  const legMat = useMemo(() => lacqueredWoodMaterial('wood_oak', 6, { gloss: 0.3, color: legColor }), [legColor]);
 
   // the shell wraps ~245°, opening toward +z
   const gap = 1.95;
@@ -535,7 +557,17 @@ export const LeatherDiningChair = memo(function LeatherDiningChair({
     const c = new THREE.Color(leather).multiplyScalar(0.74);
     return leatherMaterial(`#${c.getHexString()}`, 12);
   }, [leather]);
-  const seam = useMemo(() => new THREE.MeshStandardMaterial({ color: new THREE.Color(leather).multiplyScalar(0.5), roughness: 0.85 }), [leather]);
+  const seam = useMemo(
+    () =>
+      pbrSolid(new THREE.Color(leather).multiplyScalar(0.5), {
+        roughness: 0.85,
+        metalness: 0,
+        physical: true,
+        clearcoat: 0.2,
+        clearcoatRoughness: 0.5,
+      }),
+    [leather],
+  );
   const oak = useMemo(() => lacqueredWoodMaterial('wood_oak', 3, { gloss: 0.35, color: wood }), [wood]);
 
   const gap = 2.35;
@@ -664,7 +696,16 @@ export const DiningTable = memo(function DiningTable({
   const m = useStudioMaterials();
   const top = useMemo(() => lacqueredWoodMaterial(wood === 'oak' ? 'wood_oak' : 'wood_walnut', 5, { gloss: 0.55 }), [wood]);
   const apron = useMemo(() => lacqueredWoodMaterial(wood === 'oak' ? 'wood_oak' : 'wood_walnut', 8, { gloss: 0.3, color: '#7a5c3e' }), [wood]);
-  const breadboard = useMemo(() => new THREE.MeshStandardMaterial({ color: wood === 'oak' ? '#c8a677' : '#6b4a2e', roughness: 0.55 }), [wood]);
+  // Breadboard end: same species, tone-shifted — grain runs cross-grain like a
+  // real pinned breadboard joint.
+  const breadboard = useMemo(
+    () =>
+      lacqueredWoodMaterial(wood === 'oak' ? 'wood_oak' : 'wood_walnut', 9, {
+        gloss: 0.45,
+        color: wood === 'oak' ? '#c8a677' : '#6b4a2e',
+      }),
+    [wood],
+  );
   return (
     <group position={position} rotation={rotation} scale={scale}>
       {/* 30 mm slab top: eased edges + shadow reveal beneath */}
@@ -724,7 +765,19 @@ export const SideTable = memo(function SideTable({
 }: PlaceProps & { radius?: number; height?: number; top?: 'marble' | 'walnut'; metal?: string }) {
   const m = useStudioMaterials();
   const wood = useMemo(() => lacqueredWoodMaterial('wood_walnut', 4, { gloss: 0.6 }), []);
-  const brass = useMemo(() => new THREE.MeshStandardMaterial({ color: metal, metalness: 1, roughness: 0.28, envMapIntensity: 1.4 }), [metal]);
+  // Polished brass — micro surface + anisotropy so the highlight drags along
+  // the turned stock instead of sitting as a round dot.
+  const brass = useMemo(
+    () =>
+      pbrSolid(metal, {
+        metalness: 1,
+        roughness: 0.28,
+        envMapIntensity: 1.4,
+        anisotropy: 0.4,
+        anisotropyRotation: Math.PI / 2,
+      }),
+    [metal],
+  );
   return (
     <group position={position} rotation={rotation} scale={scale}>
       {/* eased round top over a thin reveal */}

@@ -57,7 +57,10 @@ export const STUDIO_QUALITY_PRESETS: Record<StudioQualityTier, StudioQualityPres
     shadowMapSize: 1024,
     envResolution: 128,
     bloom: true,
-    depthOfField: false,
+    // DOF is on from balanced — it costs one extra fullscreen pass and the
+    // shot-driven focus (deep on wides, shallow on close-ups) is what sells
+    // the sets as photographed rather than rendered. AO stays off here.
+    depthOfField: true,
     vignette: true,
     antialias: 'smaa',
     msaaSamples: 0,
@@ -71,11 +74,15 @@ export const STUDIO_QUALITY_PRESETS: Record<StudioQualityTier, StudioQualityPres
     shadowMapSize: 2048,
     envResolution: 256,
     bloom: true,
-    depthOfField: false,
+    // Cinematic DOF runs from balanced up: the focus racks with the shot
+    // (wide = deep focus, close-up = shallow) and is part of the photographic
+    // language of every set, not an ultra-only luxury.
+    depthOfField: true,
     vignette: true,
     antialias: 'msaa',
     msaaSamples: 4,
-    ao: false,
+    // AO grounds furniture and set dressing against the floor.
+    ao: true,
   },
   ultra: {
     tier: 'ultra',

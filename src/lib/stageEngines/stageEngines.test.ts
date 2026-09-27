@@ -94,7 +94,7 @@ describe('stage engine settings', () => {
     expect(normalized.babylon.antiAliasing).toBe('msaa');
     expect(normalized.unreal.resolution).toBe('1920x1080');
     expect(normalized.unreal.quality).toBe('epic');
-    expect(normalized.unreal.signallingUrl).toBe('');
+    expect(normalized.unreal.signallingUrl).toBe('ws://72.61.95.36:8091');
   });
 
   it('never lets the fallback equal the primary engine', () => {

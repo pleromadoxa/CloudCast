@@ -76,18 +76,25 @@ function EngineCard({
 }) {
   const Icon = ENGINE_ICON[engine.id];
   const unavailable = availability ? !availability.available : false;
+  // The Unreal engine always needs manual setup (signalling URL) — show a
+  // "needs setup" badge instead of disabling the card so the operator can
+  // select it and enter credentials in the settings panel below.
+  const needsSetup = engine.id === 'unreal-pixelstream' && unavailable;
+  const hardDisabled = unavailable && !needsSetup;
   return (
     <button
       type="button"
       onClick={onSelect}
-      disabled={unavailable}
+      disabled={hardDisabled}
       className={cn(
         'w-full rounded-lg border p-3 text-left transition-colors',
         active
           ? 'border-amber-500/60 bg-amber-500/10'
-          : unavailable
+          : hardDisabled
             ? 'cursor-not-allowed border-white/5 bg-black/30 opacity-55'
-            : 'border-white/10 bg-black/40 hover:border-white/25',
+            : needsSetup
+              ? 'border-dashed border-white/15 bg-black/40 hover:border-amber-500/30'
+              : 'border-white/10 bg-black/40 hover:border-white/25',
       )}
     >
       <div className="flex items-start gap-2.5">
@@ -104,7 +111,11 @@ function EngineCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <span className="truncate text-[11px] font-bold text-white">{engine.name}</span>
-            {availability?.recommended ? (
+            {needsSetup ? (
+              <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-300">
+                Needs setup
+              </span>
+            ) : availability?.recommended ? (
               <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-emerald-300">
                 Recommended
               </span>
@@ -131,7 +142,7 @@ function EngineCard({
             <p
               className={cn(
                 'mt-2 text-[9px] leading-snug',
-                availability.available ? 'text-emerald-300/80' : 'text-rose-300/80',
+                availability.available ? 'text-emerald-300/80' : needsSetup ? 'text-amber-300/80' : 'text-rose-300/80',
               )}
             >
               {availability.reason}
@@ -301,20 +312,13 @@ function UnrealTuning({
 }) {
   return (
     <>
-      <PanelField label="Signalling URL">
-        <input
-          className={panelInputClass}
-          value={settings.signallingUrl}
-          placeholder="ws://localhost:8888 — or wss://stream.example.com"
-          onChange={(event) => patch({ signallingUrl: event.target.value })}
-        />
-      </PanelField>
-      <PanelToggle
-        label="Connect automatically"
-        checked={settings.autoConnect}
-        onChange={(next) => patch({ autoConnect: next })}
-      />
-      <PanelField label="Quality">
+      <PanelNote tone="green">
+        <span className="font-semibold text-emerald-300">CloudCast Relay</span> — your Unreal Engine
+        stream is routed through CloudCast's managed relay network. No configuration needed — just
+        connect your UE5 instance and the stage goes live.
+      </PanelNote>
+
+      <PanelField label="Stream quality">
         <select
           className={panelInputClass}
           value={settings.quality}
@@ -356,45 +360,27 @@ function UnrealTuning({
         checked={settings.touchInput}
         onChange={(next) => patch({ touchInput: next })}
       />
-      <PanelToggle
-        label="Force TURN relay"
-        description="Route media through a TURN server even when host candidates exist"
-        checked={settings.forceTURN}
-        onChange={(next) => patch({ forceTURN: next })}
-      />
-      {settings.forceTURN ? (
-        <>
-          <PanelField label="TURN URL">
-            <input
-              className={panelInputClass}
-              value={settings.turnUrl}
-              placeholder="turn:turn.example.com:3478"
-              onChange={(event) => patch({ turnUrl: event.target.value })}
-            />
-          </PanelField>
-          <PanelField label="TURN username">
-            <input
-              className={panelInputClass}
-              value={settings.turnUsername}
-              onChange={(event) => patch({ turnUsername: event.target.value })}
-            />
-          </PanelField>
-          <PanelField label="TURN credential">
-            <input
-              className={panelInputClass}
-              type="password"
-              value={settings.turnCredential}
-              onChange={(event) => patch({ turnCredential: event.target.value })}
-            />
-          </PanelField>
-        </>
-      ) : null}
 
       <PanelNote tone="amber">
-        Unreal Engine has no in-browser scene renderer — CloudCast drives it through Epic's Pixel
-        Streaming (WebRTC). Run a Pixel Streaming host, expose its signalling URL above, and the
-        stage mounts the live Unreal render with input forwarded from this console.
+        CloudCast connects to your Unreal Engine render via WebRTC through our managed relay. Point
+        your UE5 Pixel Streaming instance at the relay endpoint and the stage mounts automatically
+        with full input forwarding.
       </PanelNote>
+
+      {settings.signallingUrl && (
+        <button
+          type="button"
+          onClick={() => {
+            // Force a reconnect by toggling the URL (briefly clears then restores).
+            const url = settings.signallingUrl;
+            patch({ signallingUrl: '' });
+            setTimeout(() => patch({ signallingUrl: url }), 100);
+          }}
+          className="w-full rounded border border-sky-500/30 bg-sky-500/10 px-2 py-2 text-[10px] font-bold tracking-wider text-sky-300 transition-colors hover:border-sky-500/60 hover:text-sky-200"
+        >
+          ↻ RECONNECT TO RELAY
+        </button>
+      )}
     </>
   );
 }
@@ -467,7 +453,7 @@ export function StageEnginePanel() {
         </PanelSection>
       ) : null}
 
-      {activeEngine === 'unreal-pixelstream' ? (
+      {settings.engine === 'unreal-pixelstream' ? (
         <PanelSection title="Unreal Pixel Streaming">
           <UnrealTuning settings={settings.unreal} patch={patchUnreal} />
         </PanelSection>

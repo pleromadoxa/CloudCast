@@ -17,7 +17,16 @@ export type StudioSceneCategory =
   | 'business'
   | 'exterior'
   | 'concert'
-  | 'blank';
+  | 'blank'
+  | 'luxury'
+  | 'podcast'
+  | 'fitness'
+  | 'realestate'
+  | 'auction'
+  | 'cinematic'
+  | 'outdoor'
+  | 'academic'
+  | 'music';
 
 export type StudioTier = 'free' | 'pro' | 'pro_master';
 
@@ -281,6 +290,23 @@ export interface StudioRundownStep {
   duration: number;
 }
 
+/**
+ * Where the on-stage talent plate gets its picture: the live capture feed
+ * (USB webcam, HDMI capture card or paired Prism Eye), a video file played
+ * full-frame as the plate, or nothing at all.
+ */
+export type StudioTalentSourceKind = 'camera' | 'video' | 'off';
+
+export interface StudioTalentSource {
+  kind: StudioTalentSourceKind;
+  /** Video file url (workspace or session blob) for `video` sources. */
+  url?: string;
+  label?: string;
+  /** Workspace media refs so expired urls can be re-resolved on open. */
+  mediaId?: string;
+  storagePath?: string;
+}
+
 /** Persisted operator state for the photoreal render engine. */
 export interface PhotorealStudioState {
   /** Registry scene id currently loaded on stage. */
@@ -306,6 +332,8 @@ export interface PhotorealStudioState {
   elements?: StudioPlacedElement[];
   /** Operator override for the talent plate placement (position/angle/size). */
   talentPlacement?: StudioTalentPlacement;
+  /** What feeds the talent plate — live capture, a video file, or off. */
+  talentSource?: StudioTalentSource;
   /** Camera/production transition style & travel time. */
   transition?: StudioTransitionSettings;
   /** AutoCam rundown — a looping sequence of held camera shots. */

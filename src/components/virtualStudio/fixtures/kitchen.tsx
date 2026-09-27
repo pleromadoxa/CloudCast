@@ -3,6 +3,7 @@ import { RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import { useStudioMaterials } from './materials';
 import { PbrSurface } from './PbrSurface';
+import { pbrSolid } from '../../../lib/prism/pbrMaterials';
 
 /**
  * Designer navy kitchen set modelled on premium cooking-show interiors:
@@ -44,7 +45,19 @@ function ShakerFace({
   color: THREE.Color;
   horizontalPull?: boolean;
 }) {
-  const panelMat = useMemo(() => new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.92), roughness: 0.42, metalness: 0.06 }), [color]);
+  // Lacquered shaker panel — micro relief + thin gloss topcoat, tone-set below the frame.
+  const panelMat = useMemo(
+    () =>
+      pbrSolid(color.clone().multiplyScalar(0.92), {
+        roughness: 0.42,
+        metalness: 0.06,
+        physical: true,
+        clearcoat: 0.4,
+        clearcoatRoughness: 0.3,
+        envMapIntensity: 1.2,
+      }),
+    [color],
+  );
   return (
     <group>
       <mesh position={[0, 0, 0.012]}>
@@ -139,8 +152,9 @@ export const KitchenIsland = memo(function KitchenIsland({
   baseColor = '#c9bda9',
 }: PlaceProps & { width?: number; depth?: number; height?: number; baseColor?: string }) {
   const m = useStudioMaterials();
+  // Plaster finish — tooth from the micro normal, no metallic sheen.
   const plaster = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.82, metalness: 0.02 }),
+    () => pbrSolid(baseColor, { roughness: 0.82, metalness: 0.02, normalScale: 1.15, envMapIntensity: 0.9 }),
     [baseColor],
   );
   return (
@@ -259,8 +273,16 @@ export const KitchenBarStool = memo(function KitchenBarStool({
   scale = 1,
   seatHeight = 0.72,
 }: PlaceProps & { seatHeight?: number }) {
+  // Powder-coated black frame — brushed micro grain smeared along the tube stock.
   const frameMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#141414', metalness: 0.75, roughness: 0.38 }),
+    () =>
+      pbrSolid('#141414', {
+        metalness: 0.75,
+        roughness: 0.38,
+        anisotropy: 0.35,
+        anisotropyRotation: Math.PI / 2,
+        envMapIntensity: 1.3,
+      }),
     [],
   );
   return (

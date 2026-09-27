@@ -29,7 +29,34 @@ export type LowerThirdTemplateId =
   | 'minimal-white'
   | 'glass-frost'
   | 'retro-crt'
-  | 'cinema-dark';
+  | 'cinema-dark'
+  /* ── 26 new templates (50 total) ── */
+  | 'breaking-flash'
+  | 'election-night'
+  | 'world-map'
+  | 'parliament'
+  | 'investigative'
+  | 'morning-show'
+  | 'news-ticker'
+  | 'press-conference'
+  | 'basketball-court'
+  | 'football-stadium'
+  | 'tennis-court'
+  | 'boxing-ring'
+  | 'f1-pitlane'
+  | 'cricket-pitch'
+  | 'annual-report'
+  | 'tech-keynote'
+  | 'merger-announce'
+  | 'quarterly-earnings'
+  | 'boardroom'
+  | 'kick-live'
+  | 'discord-stage'
+  | 'marathon-stream'
+  | 'collab-split'
+  | 'nature-doc'
+  | 'true-crime'
+  | 'art-showcase';
 
 export type LowerThirdCategory = 'news' | 'sports' | 'corporate' | 'live' | 'creative';
 
@@ -45,7 +72,34 @@ export type LowerThirdLayout =
   | 'angled-ribbon'
   | 'neon-glow'
   | 'split-duo'
-  | 'outline-box';
+  | 'outline-box'
+  /* ── New layouts (26 added) ── */
+  | 'gradient-bar'
+  | 'frosted-pill'
+  | 'diagonal-cut'
+  | 'bottom-accent'
+  | 'tag-badge'
+  | 'split-name'
+  | 'layered-stack'
+  | 'corner-bracket'
+  | 'underline-slide'
+  | 'circle-avatar'
+  | 'wave-ribbon'
+  | 'hex-accent'
+  | 'shadow-plate'
+  | 'top-accent-bar'
+  | 'left-thick-bar'
+  | 'gradient-border'
+  | 'glass-card'
+  | 'split-header'
+  | 'minimal-line'
+  | 'bold-stripe'
+  | 'retro-box'
+  | 'cinematic-bar'
+  | 'wide-banner'
+  | 'text-only'
+  | 'dual-accent'
+  | 'pill-outline';
 
 export type LowerThirdFontSize = 'sm' | 'md' | 'lg';
 
@@ -777,3 +831,68 @@ export function resolveSponsorBugSettings(
     yPercent: merged.yPercent,
   };
 }
+
+// ==========================================================================
+// Transition Effects Registry — 30 broadcast-quality transition effects
+// ==========================================================================
+
+export type TransitionEffectCategory =
+  | 'wipe'
+  | 'dissolve'
+  | 'geometric'
+  | 'motion'
+  | 'glitch'
+  | 'light'
+  | '3d';
+
+export interface TransitionEffectDefinition {
+  id: string;
+  name: string;
+  description: string;
+  category: TransitionEffectCategory;
+  /** Duration in seconds (0.3–2.5). */
+  defaultDuration: number;
+  /** Primary colour for the effect element. */
+  accentColor: string;
+  /** CSS class or inline style hints for the renderer. */
+  cssHint: string;
+  /** Whether this effect supports a logo bug during the transition. */
+  supportsLogo: boolean;
+}
+
+export type TransitionEffectId = string;
+
+// ==========================================================================
+// 3D Logo Animation Registry — 20 animated logo reveals with replacement
+// ==========================================================================
+
+export type LogoAnimationCategory =
+  | 'reveal'
+  | 'spin'
+  | 'morph'
+  | 'particle'
+  | 'light'
+  | '3d-transform'
+  | 'glitch'
+  | 'typography';
+
+export interface LogoAnimationDefinition {
+  id: string;
+  name: string;
+  description: string;
+  category: LogoAnimationCategory;
+  /** Duration in seconds (0.5–4). */
+  defaultDuration: number;
+  /** Whether the animation includes a logo placeholder the operator can replace. */
+  hasLogoSlot: boolean;
+  /** Replacement logo field name (e.g. 'mainLogo', 'bugLogo'). */
+  logoSlotLabel?: string;
+  /** Default accent colour used by the animation. */
+  accentColor: string;
+  /** Entrance direction — used by the renderer to orient the motion. */
+  entranceFrom: 'left' | 'right' | 'top' | 'bottom' | 'center' | 'depth';
+  /** Whether the animation leaves a persistent logo bug after completion. */
+  leavesBug: boolean;
+}
+
+export type LogoAnimationId = string;

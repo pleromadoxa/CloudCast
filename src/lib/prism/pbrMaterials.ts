@@ -150,9 +150,12 @@ export function pbrFromTexture(
     ...(roughnessMap ? { roughnessMap, roughness: 1 } : { roughness: baseRoughness }),
     emissive: opts.emissive ?? '#000000',
     emissiveIntensity: opts.emissiveIntensity ?? 0,
-    transparent: opts.transparent,
-    opacity: opts.opacity,
-    side: opts.side,
+    // Only forward optional params that are actually set — THREE.Material
+    // warns on every `undefined` key it receives (this spammed thousands of
+    // console warnings before the guards were added).
+    ...(opts.transparent !== undefined ? { transparent: opts.transparent } : {}),
+    ...(opts.opacity !== undefined ? { opacity: opts.opacity } : {}),
+    ...(opts.side !== undefined ? { side: opts.side } : {}),
     envMapIntensity: opts.envMapIntensity ?? 1,
     ...(opts.toneMapped !== undefined ? { toneMapped: opts.toneMapped } : {}),
     ...(opts.flatShading !== undefined ? { flatShading: opts.flatShading } : {}),
@@ -261,9 +264,12 @@ export function pbrSolid(
     ...(metalnessMap ? { metalnessMap, metalness: 1 } : { metalness: baseMetalness }),
     emissive: opts.emissive ?? '#000000',
     emissiveIntensity: opts.emissiveIntensity ?? 0,
-    transparent: opts.transparent,
-    opacity: opts.opacity,
-    side: opts.side,
+    // Only forward optional params that are actually set — THREE.Material
+    // warns on every `undefined` key it receives (this spammed thousands of
+    // console warnings before the guards were added).
+    ...(opts.transparent !== undefined ? { transparent: opts.transparent } : {}),
+    ...(opts.opacity !== undefined ? { opacity: opts.opacity } : {}),
+    ...(opts.side !== undefined ? { side: opts.side } : {}),
     envMapIntensity: opts.envMapIntensity ?? 1,
     ...(opts.toneMapped !== undefined ? { toneMapped: opts.toneMapped } : {}),
     ...(opts.flatShading !== undefined ? { flatShading: opts.flatShading } : {}),

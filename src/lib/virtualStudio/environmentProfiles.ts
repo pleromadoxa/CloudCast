@@ -31,6 +31,16 @@ const ENVIRONMENTS = {
   /** Outdoor music stage at dusk — concert sets. Pulled well down: the scan
       carries full daylight, which would wash a dark stage set to milk. */
   stage: { file: '/hdri/park_music_stage_1k.hdr', intensity: 0.15 },
+  /** Luxurious golden interior — chandeliers, marble, ornate decor. */
+  luxury: { file: '/hdri/studio_small_08_1k.hdr', intensity: 0.85 },
+  /** Intimate, moody space — podcast booths, film noir. */
+  intimate: { file: '/hdri/brown_photostudio_02_1k.hdr', intensity: 0.72 },
+  /** Bright, energetic daylight — fitness, outdoor. */
+  bright: { file: '/hdri/stadium_01_1k.hdr', intensity: 0.9 },
+  /** Academic / scholarly — warm library lighting. */
+  academic: { file: '/hdri/brown_photostudio_02_1k.hdr', intensity: 0.8 },
+  /** Concert venue — dark stage with dramatic spots. */
+  venue: { file: '/hdri/park_music_stage_1k.hdr', intensity: 0.12 },
 } satisfies Record<string, StudioEnvironmentProfile>;
 
 export type StudioEnvironmentKey = keyof typeof ENVIRONMENTS;
@@ -47,6 +57,15 @@ const CATEGORY_ENVIRONMENT: Record<StudioSceneCategory, StudioEnvironmentKey> = 
   sports: 'arena',
   exterior: 'arena',
   concert: 'stage',
+  luxury: 'luxury',
+  music: 'stage',
+  podcast: 'intimate',
+  fitness: 'bright',
+  realestate: 'studio',
+  auction: 'luxury',
+  cinematic: 'intimate',
+  outdoor: 'bright',
+  academic: 'academic',
 };
 
 /** Resolve the HDRI that lights a scene category. */

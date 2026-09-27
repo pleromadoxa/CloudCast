@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   STUDIO_SCENES,
+  ALL_STUDIO_SCENES,
   getStudioScene,
   getStudioSceneSlot,
   scenesForCategory,
@@ -101,9 +102,9 @@ describe('virtualStudio scene registry', () => {
 
   it('filters scenes by plan tier', () => {
     expect(studioScenesForPlan('free').every((s) => s.tier === 'free')).toBe(true);
-    expect(studioScenesForPlan('free').length).toBeLessThan(STUDIO_SCENES.length);
-    expect(studioScenesForPlan('pro_master')).toHaveLength(STUDIO_SCENES.length);
-    expect(studioScenesForPlan('universal')).toHaveLength(STUDIO_SCENES.length);
+    expect(studioScenesForPlan('free').length).toBeLessThan(ALL_STUDIO_SCENES.length);
+    expect(studioScenesForPlan('pro_master')).toHaveLength(ALL_STUDIO_SCENES.length);
+    expect(studioScenesForPlan('universal')).toHaveLength(ALL_STUDIO_SCENES.length);
     expect(studioScenesForPlan('pro', 2)).toHaveLength(2);
   });
 
@@ -114,6 +115,7 @@ describe('virtualStudio scene registry', () => {
       'classic_blue_news',
       'crimson_ring_studio',
       'violet_hud_news',
+      'news_premium',
     ]);
     expect(scenesForCategory('blank').map((s) => s.id)).toEqual(['cyclorama']);
     expect(scenesForCategory('weather').map((s) => s.id)).toEqual(['weather_center']);

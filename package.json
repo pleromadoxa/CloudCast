@@ -36,7 +36,8 @@
     "secrets:stripe": "node tools/sync-stripe-secrets.mjs",
     "deploy:stripe": "node tools/sync-stripe-secrets.mjs && supabase functions deploy stripe-checkout && supabase functions deploy stripe-webhook",
     "setup:cloudflare": "node tools/setup-cloudflare.mjs",
-    "setup:dns": "node tools/setup-dns.mjs"
+    "setup:dns": "node tools/setup-dns.mjs",
+    "deploy:pixelstreaming": "bash tools/deploy-pixelstreaming-vps.sh"
   },
   "dependencies": {
     "@babylonjs/core": "^8.56.2",

@@ -42,8 +42,8 @@ export const DEFAULT_BABYLON_SETTINGS: BabylonStageSettings = {
 };
 
 export const DEFAULT_UNREAL_SETTINGS: UnrealStreamSettings = {
-  signallingUrl: '',
-  autoConnect: false,
+  signallingUrl: 'ws://72.61.95.36:8091',
+  autoConnect: true,
   forceTURN: false,
   turnUrl: '',
   turnUsername: '',

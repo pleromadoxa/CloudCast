@@ -26,11 +26,18 @@ import type {
   StudioCameraPreset,
   StudioEffectOverrides,
   StudioProductionMode,
+  StudioSceneCategory,
   StudioSceneDefinition,
   StudioTransitionSettings,
   StudioTransitionStyle,
 } from '../../lib/virtualStudio/types';
-import { clampBloomIntensity, clampExposure, clampTemperature } from '../../lib/virtualStudio/productionDesk';
+import {
+  clampBloomIntensity,
+  clampExposure,
+  clampTemperature,
+  depthOfFieldForShot,
+  rigGradeFor,
+} from '../../lib/virtualStudio/productionDesk';
 import { kelvinToHex, temperatureToKelvin } from '../../lib/renderEngine/colorTemperature';
 import { buildGradeLut } from '../../lib/renderEngine/gradeLut';
 import { useRenderEngineSettings } from '../../context/RenderEngineContext';
@@ -363,6 +370,7 @@ function StudioLighting({
   contactShadows,
   gi,
   volumetrics,
+  category,
 }: {
   environment: StudioEnvironmentProfile;
   intensity: number;
@@ -377,8 +385,14 @@ function StudioLighting({
   gi: GlobalIlluminationSpec;
   /** Volumetric spec — `null` disables visible shafts entirely. */
   volumetrics: VolumetricSpec | null;
+  /** Scene category — picks the genre's key/fill/rim/bounce balance. */
+  category: StudioSceneCategory;
 }) {
   ensureAreaLightTables();
+  // Genre grading: a news desk runs a contrasty three-point balance, a stage
+  // runs a dark ambient with punchy key/rim, a living room is soft and
+  // bounce-heavy — same physical rig, graded per set family.
+  const grade = rigGradeFor(category);
   // Cool-to-warm balance across the rig — the operator's colour temperature.
   // Physically based: the fader resolves to a correlated colour temperature on
   // the Planckian locus and every fixture emits the black-body chromaticity for
@@ -408,10 +422,11 @@ function StudioLighting({
   return (
     <>
       {/* self-hosted CC0 scan — the global-illumination base: correct
-          speculars, reflections and mood, scaled by the profile's IBL level */}
+          speculars, reflections and mood, scaled by the profile's IBL level
+          and the category's ambient balance */}
       <Environment
         files={environment.file}
-        environmentIntensity={environment.intensity * intensity * gi.environmentIntensity}
+        environmentIntensity={environment.intensity * intensity * gi.environmentIntensity * grade.environment}
       />
 
       {/* key light: the one directional, shadow camera fitted to the set.
@@ -421,7 +436,7 @@ function StudioLighting({
           blurSamples gives the PCF kernel a real penumbra gradient. */}
       <directionalLight
         position={[4.5, 7, 5]}
-        intensity={2.1 * intensity}
+        intensity={2.1 * intensity * grade.key}
         color={keyColor}
         castShadow={shadows}
         shadow-mapSize-width={shadowMapSize}
@@ -444,29 +459,29 @@ function StudioLighting({
         position={[0, 6.2, 0.5]}
         width={12}
         height={9}
-        intensity={0.55 * intensity * fillBoost}
+        intensity={0.55 * intensity * fillBoost * grade.fill}
         color={fillColor}
         rotation={[Math.PI / 2, 0, 0]}
       />
       {/* hemisphere sky/ground term — the global-illumination bounce that tints
           the floor warm and the sky cool, the way an actual room does. Its
-          strength is the profile's `bounceIntensity`. */}
-      <hemisphereLight args={[fillColor, '#2a2118', gi.bounceIntensity * intensity]} />
+          strength is the profile's `bounceIntensity`, graded per genre. */}
+      <hemisphereLight args={[fillColor, '#2a2118', gi.bounceIntensity * intensity * grade.bounce]} />
       {/* camera-left softbox fill — area light, no shadow map cost */}
       <rectAreaLight
         position={[-5.4, 3.2, 2.2]}
         width={4.6}
         height={3.2}
-        intensity={2.4 * intensity * fillBoost}
+        intensity={2.4 * intensity * fillBoost * grade.fill}
         color={fillColor}
         onUpdate={(light) => light.lookAt(0, 1.1, 0)}
       />
-      {/* camera-right kicker */}
+      {/* camera-right kicker — the rim edge, graded with the key's separation */}
       <rectAreaLight
         position={[5.4, 3.2, 0.8]}
         width={4}
         height={3.2}
-        intensity={1.8 * intensity * kickerBoost}
+        intensity={1.8 * intensity * kickerBoost * grade.rim}
         color={kickerColor}
         onUpdate={(light) => light.lookAt(0, 1.2, 0)}
       />
@@ -478,7 +493,7 @@ function StudioLighting({
         position={[0, 7.5, -3]}
         angle={0.7}
         penumbra={0.8}
-        intensity={18 * intensity}
+        intensity={18 * intensity * grade.rim}
         distance={22}
         decay={2}
         color={rimColor}
@@ -528,6 +543,9 @@ function StudioPostProcessing({
   vignette,
   vignetteStrength,
   depthOfField,
+  focusTarget,
+  focusRange,
+  bokehScale,
   ao,
   msaaSamples,
   smaa,
@@ -543,6 +561,12 @@ function StudioPostProcessing({
   vignette: boolean;
   vignetteStrength: number;
   depthOfField: boolean;
+  /** World point the lens racks onto — normally the scene's framing anchor. */
+  focusTarget: THREE.Vector3;
+  /** Width (±m) of the sharp slice around the focal plane. */
+  focusRange: number;
+  /** Bokeh strength — grows as the shot tightens. */
+  bokehScale: number;
   ao: boolean;
   msaaSamples: number;
   smaa: boolean;
@@ -584,18 +608,23 @@ function StudioPostProcessing({
       )}
       {depthOfField && (
         <DepthOfField
-          /* World-space focus locked to the stage: the set and talent stay
-             crisp and only the far background melts (a soft telephoto look).
+          /* Shot-driven cinematic focus.
 
-             `focusRange` is the width of the sharp zone in world units. It must
-             be wide enough to cover the whole set (near floor to the back wall,
-             ~10–12u) — a narrow range racks focus onto a single slice and turns
-             every virtual set soft. The old `focalLength`/`worldFocusRange` pair
-             fought each other (both map to `focusRange`), collapsing it to a
-             razor-thin plane; use the modern `focusDistance` + `focusRange`. */
-          focusDistance={6.2}
-          focusRange={12}
-          bokehScale={1.1}
+             `target` engages the effect's autofocus: focus distance becomes the
+             camera→target distance every frame, so the lens stays racked on the
+             framing anchor through dollies, jib arcs and shot recalls instead
+             of drifting off the set.
+
+             `focusRange` is the width of the sharp slice (± world metres) and
+             `bokehScale` the circle-of-confusion strength — both are driven by
+             the shot tightness computed in `StudioStage`:
+               · wide establishing shot → deep focus (whole set readable,
+                 only the far background melts),
+               · close-up → shallow slice on the talent with strong bokeh so
+                 the set falls away behind them like a fast broadcast lens. */
+          target={focusTarget}
+          focusRange={focusRange}
+          bokehScale={bokehScale}
         />
       )}
       {/* Filmic display transform picked by the render engine (AgX by
@@ -727,6 +756,19 @@ export function StudioStage({
   const bloomIntensity =
     (fx.bloomIntensity != null ? clampBloomIntensity(fx.bloomIntensity) : 0.55) * engineSettings.bloomIntensity;
 
+  // Shot-driven depth of field — recomputed only when the framing (goal pose)
+  // actually changes; the rig eases the camera toward it every frame while the
+  // effect's autofocus keeps the focal plane locked to this target.
+  const dofTarget = camera.target;
+  const dof = useMemo(() => {
+    const shot = depthOfFieldForShot(camera.zoom, camera.fov, dofTarget);
+    return {
+      target: new THREE.Vector3(shot.focusTarget[0], shot.focusTarget[1], shot.focusTarget[2]),
+      focusRange: shot.focusRange,
+      bokehScale: shot.bokehScale,
+    };
+  }, [camera.zoom, camera.fov, dofTarget]);
+
   const handleCameraChange = useCallback(
     (patch: Partial<StudioCameraPreset>) => onCameraChange?.(patch),
     [onCameraChange],
@@ -776,6 +818,7 @@ export function StudioStage({
               contactShadows={!isAr}
               gi={profile.globalIllumination}
               volumetrics={isAr ? null : profile.volumetrics}
+              category={scene.category}
             />
             <StudioCameraRig {...rigCamera} transition={transition} />
             {interactive && onCameraChange && (
@@ -802,6 +845,9 @@ export function StudioStage({
             /* AR keeps the live plate crisp — DOF would rack focus past it and
                AO would halo graphics against a depth-less feed. */
             depthOfField={(fx.depthOfField ?? preset.depthOfField) && engineSettings.depthOfField && !isAr}
+            focusTarget={dof.target}
+            focusRange={dof.focusRange}
+            bokehScale={dof.bokehScale}
             ao={(fx.ao ?? preset.ao) && engineSettings.gtao && !isAr}
             msaaSamples={
               engineSettings.antiAliasing === 'msaa'

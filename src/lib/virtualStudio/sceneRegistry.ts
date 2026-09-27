@@ -450,7 +450,293 @@ export const STUDIO_SCENES: StudioSceneDefinition[] = [
   },
 ];
 
-const SCENE_INDEX = new Map(STUDIO_SCENES.map((scene) => [scene.id, scene]));
+/* ================================================================
+   PHOTOREALISTIC SETS — Premium high-fidelity environments
+   ================================================================ */
+
+/** ── News Premium — floating holographic desk, triple LED wall, LED floor ── */
+const newsPremium: StudioSceneDefinition = {
+  id: 'news_premium',
+  name: 'News Studio Premium',
+  description:
+    'Flagship holographic news studio: floating glass desk, triple LED wall with holographic data visualisations, LED floor strips and cyan accent lighting.',
+  category: 'news',
+  tier: 'pro_master',
+  accent: '#06b6d4',
+  exposureBias: -0.18,
+  camera: { yaw: 0, pitch: 0.14, zoom: 0.95 },
+  talent: talentAt([0, 0.9, 0.8], 2.4, 'seated'),
+  backdropSlotId: 'backdrop',
+  screens: [
+    slot('triple_wall', 'Triple LED Wall', 'video-wall', true, news('CLOUDCAST PREMIUM', 'CC PREMIUM', '#06b6d4')),
+    slot('holo_data', 'Holographic Data', 'monitor', false, slate('LIVE DATA', 'Analytics')),
+    slot('desk_screen', 'Desk Touchscreen', 'monitor', false, logo('CP', '#06b6d4')),
+    slot('floor_led', 'Floor LED Strip', 'ribbon', false, ticker('BREAKING', 'Premium broadcast quality', '#06b6d4')),
+    slot('backdrop', 'Window View', 'window', false, view('skyline')),
+  ],
+  tags: ['news', 'premium', 'holographic', 'flagship', 'led', 'cyan'],
+};
+
+/** ── Church Sanctuary — full interior with pews, altar, stained glass ── */
+const churchSanctuary: StudioSceneDefinition = {
+  id: 'church_sanctuary',
+  name: 'Church Sanctuary',
+  description:
+    'Warm worship sanctuary with wooden pews, marble altar steps, stained-glass backdrop window, pendant pendant lighting with volumetric rays and a raised pulpit.',
+  category: 'worship',
+  tier: 'pro_master',
+  accent: '#f59e0b',
+  exposureBias: -0.04,
+  camera: { yaw: 0, pitch: 0.16, zoom: 0.92 },
+  talent: talentAt([0, 1.06, -0.6]),
+  backdropSlotId: 'stained_glass',
+  screens: [
+    slot('projection_wall', 'Projection Wall', 'video-wall', true, slate('WELCOME', 'Join us in worship today')),
+    slot('lyric_banner', 'Lyric Banner', 'ribbon', false, ticker('AMAZING GRACE', 'How sweet the sound', '#f59e0b')),
+    slot('side_monitor', 'Side Monitor', 'monitor', false, logo('WC', '#f59e0b')),
+    slot('stained_glass', 'Stained Glass Window', 'window', false, view('skyline')),
+  ],
+  tags: ['church', 'worship', 'sanctuary', 'pews', 'altar', 'stained-glass'],
+};
+
+/** ── Music Ministry — band setup, LED floor, projection wall ── */
+const musicMinistry: StudioSceneDefinition = {
+  id: 'music_ministry',
+  name: 'Music Ministry Stage',
+  description:
+    'Dynamic worship band stage with LED floor panels, projection wall for lyrics and visuals, instrument positions, warm violet haze beams and elevated worship leader platform.',
+  category: 'music',
+  tier: 'pro_master',
+  accent: '#8b5cf6',
+  exposureBias: -0.08,
+  camera: { yaw: -0.06, pitch: 0.13, zoom: 0.93 },
+  talent: talentAt([0, 1.12, -0.2]),
+  backdropSlotId: 'backdrop',
+  screens: [
+    slot('main_wall', 'Projection Wall', 'video-wall', true, slate('WORSHIP', 'Lift your voice')),
+    slot('led_floor', 'LED Floor Panels', 'ribbon', false, ticker('SONG LIST', 'Set 2 · Worship Night', '#8b5cf6')),
+    slot('side_screen', 'Side Screen', 'monitor', false, logo('MM', '#8b5cf6')),
+    slot('backdrop', 'Stage Backdrop', 'window', false, view('stage-glow', '#8b5cf6')),
+  ],
+  tags: ['music', 'worship', 'band', 'led-floor', 'ministry', 'violet'],
+};
+
+/** ── Luxury Ballroom — chandeliers, marble, wall frames, gold inlays ── */
+const luxuryBallroom: StudioSceneDefinition = {
+  id: 'luxury_ballroom',
+  name: 'Luxury Ballroom',
+  description:
+    'Opulent ballroom with crystal chandeliers, gold-inlaid marble floor, ornate wall frames and mirrors, velvet drapes and elegant seating — the prestige environment.',
+  category: 'luxury',
+  tier: 'pro_master',
+  accent: '#d4af37',
+  exposureBias: -0.06,
+  camera: { yaw: 0.06, pitch: 0.12, zoom: 1 },
+  talent: talentAt([0, 0.9, 1.4]),
+  backdropSlotId: 'backdrop',
+  screens: [
+    slot('hero_wall', 'Feature Wall', 'video-wall', true, slate('PRESTIGE', 'Live from the Grand Ballroom')),
+    slot('mirror_screen', 'Mirror Display', 'monitor', false, logo('LB', '#d4af37')),
+    slot('entrance_screen', 'Entrance Screen', 'monitor', false, slate('WELCOME', 'VIP Event')),
+    slot('ticker', 'Gold Ticker', 'ribbon', false, ticker('LIVE', 'Exclusive coverage', '#d4af37')),
+    slot('backdrop', 'Ballroom Backdrop', 'window', false, view('skyline')),
+  ],
+  tags: ['luxury', 'ballroom', 'chandelier', 'marble', 'gold', 'prestige'],
+};
+
+/** ── Concert Hall — performance stage, tiered risers, lighting rig ── */
+const concertHall: StudioSceneDefinition = {
+  id: 'concert_hall',
+  name: 'Concert Hall',
+  description:
+    'Arena-scale concert venue: performance stage with tiered risers, professional lighting truss rig, large LED backdrop, audience seating silhouette and stage monitors.',
+  category: 'concert',
+  tier: 'pro_master',
+  accent: '#ef4444',
+  exposureBias: -0.14,
+  camera: { yaw: -0.08, pitch: 0.14, zoom: 0.88 },
+  talent: talentAt([0, 1.05, 0.6]),
+  backdropSlotId: 'backdrop',
+  screens: [
+    slot('main_wall', 'Main LED Wall', 'video-wall', true, view('stage-glow', '#ef4444')),
+    slot('left_wing', 'Wing Wall L', 'video-wall', false, logo('LIVE', '#ef4444')),
+    slot('right_wing', 'Wing Wall R', 'video-wall', false, logo('LIVE', '#ef4444')),
+    slot('ribbon', 'Stage Ribbon', 'ribbon', false, ticker('NOW PLAYING', 'Set list · World Tour 2026', '#ef4444')),
+    slot('backdrop', 'Arena Backdrop', 'window', false, view('stadium')),
+  ],
+  tags: ['concert', 'arena', 'stage', 'truss', 'performance', 'red'],
+};
+
+/** ── Podcast Studio — intimate desk, acoustic panels, mics ── */
+const podcastStudio: StudioSceneDefinition = {
+  id: 'podcast_studio',
+  name: 'Podcast Studio',
+  description:
+    'Intimate two-host podcast booth: acoustic foam panels, professional boom microphones, LED accent strips, glass partition walls and a compact desk with mugs and tablets.',
+  category: 'podcast',
+  tier: 'pro',
+  accent: '#10b981',
+  exposureBias: -0.03,
+  camera: { yaw: 0.08, pitch: 0.12, zoom: 1.08 },
+  talent: talentAt([0, 0.9, 1.2], 2.2),
+  backdropSlotId: 'backdrop',
+  screens: [
+    slot('main_screen', 'Wall Display', 'video-wall', true, slate('PODCAST', 'New Episode · Live')),
+    slot('desk_tablet', 'Desk Tablet', 'monitor', false, logo('EP', '#10b981')),
+    slot('backdrop', 'Glass Wall View', 'window', false, view('skyline')),
+  ],
+  tags: ['podcast', 'studio', 'intimate', 'acoustic', 'microphones', 'emerald'],
+};
+
+/** ── Fitness Studio — open floor, mirrored wall, equipment ── */
+const fitnessStudio: StudioSceneDefinition = {
+  id: 'fitness_studio',
+  name: 'Fitness Studio',
+  description:
+    'Bright energetic fitness set: open floor with exercise mats, mirrored back wall, equipment rack area, high-key studio lighting and motivational display screens.',
+  category: 'fitness',
+  tier: 'pro',
+  accent: '#f97316',
+  exposureBias: 0.04,
+  camera: { yaw: -0.1, pitch: 0.13, zoom: 1 },
+  talent: talentAt([0, 0.9, 1.0]),
+  backdropSlotId: 'backdrop',
+  screens: [
+    slot('mirror_wall', 'Mirror / Display Wall', 'video-wall', true, slate('FITNESS', 'Live Training Session')),
+    slot('timer_screen', 'Timer Screen', 'monitor', false, ticker('TIMER', '00:00:00', '#f97316')),
+    slot('backdrop', 'Mirrored Backdrop', 'window', false, view('skyline')),
+  ],
+  tags: ['fitness', 'gym', 'workout', 'mirrored', 'energetic', 'orange'],
+};
+
+/** ── Real Estate Showcase — property presentation, clean backdrop ── */
+const realEstate: StudioSceneDefinition = {
+  id: 'real_estate',
+  name: 'Real Estate Showcase',
+  description:
+    'Professional property-listing presentation set: large display wall for property images, modern furniture, clean light backdrop and a branded desk for agents.',
+  category: 'realestate',
+  tier: 'pro',
+  accent: '#3b82f6',
+  exposureBias: -0.04,
+  camera: { yaw: 0.06, pitch: 0.13, zoom: 1 },
+  talent: talentAt([0, 0.9, 1.3], 2.2),
+  backdropSlotId: 'backdrop',
+  screens: [
+    slot('property_wall', 'Property Display Wall', 'video-wall', true, slate('LISTING', 'Premium Properties')),
+    slot('agent_monitor', 'Agent Monitor', 'monitor', false, logo('RE', '#3b82f6')),
+    slot('detail_screen', 'Detail Screen', 'monitor', false, slate('DETAILS', 'Sq. ft. · Bedrooms · Price')),
+    slot('backdrop', 'Skyline View', 'window', false, view('skyline')),
+  ],
+  tags: ['real-estate', 'property', 'listing', 'professional', 'blue'],
+};
+
+/** ── Auction House — podium, display cases, prestigious ── */
+const auctionHouse: StudioSceneDefinition = {
+  id: 'auction_house',
+  name: 'Auction House',
+  description:
+    'Prestigious auction podium with display cases, warm spotlighting, mahogany desk, leather seating and a large lot display wall for live auction broadcasts.',
+  category: 'auction',
+  tier: 'pro_master',
+  accent: '#92400e',
+  exposureBias: -0.06,
+  camera: { yaw: 0, pitch: 0.14, zoom: 0.97 },
+  talent: talentAt([0, 1.0, -0.2]),
+  backdropSlotId: 'backdrop',
+  screens: [
+    slot('lot_wall', 'Lot Display Wall', 'video-wall', true, slate('LOT 42', 'Fine Art · Est. $50,000–$80,000')),
+    slot('bid_screen', 'Bid Display', 'monitor', false, ticker('CURRENT BID', '$67,500', '#92400e')),
+    slot('desk_monitor', 'Desk Monitor', 'monitor', false, logo('AH', '#92400e')),
+    slot('backdrop', 'Auction Backdrop', 'window', false, view('skyline')),
+  ],
+  tags: ['auction', 'podium', 'lot', 'prestige', 'mahogany', 'brown'],
+};
+
+/** ── Film Noir Stage — dramatic chiaroscuro, venetian shadows ── */
+const filmNoir: StudioSceneDefinition = {
+  id: 'film_noir',
+  name: 'Film Noir Stage',
+  description:
+    'Cinematic noir set: dramatic chiaroscuro lighting through venetian-blind shadow patterns, vintage desk with brass lamp, smoky haze and deep contrast — the detective-office environment.',
+  category: 'cinematic',
+  tier: 'pro_master',
+  accent: '#9ca3af',
+  exposureBias: -0.22,
+  camera: { yaw: 0.1, pitch: 0.11, zoom: 1.05 },
+  talent: talentAt([0.5, 0.9, 1.1], 2.2),
+  backdropSlotId: 'backdrop',
+  screens: [
+    slot('window_blinds', 'Window / Blinds', 'window', true, view('skyline')),
+    slot('desk_lamp', 'Desk Lamp Display', 'monitor', false, slate('CASE FILE', 'Investigation')),
+    slot('backdrop', 'Office Backdrop', 'window', false, view('skyline')),
+  ],
+  tags: ['cinematic', 'noir', 'dramatic', 'detective', 'vintage', 'gray'],
+};
+
+/** ── Rooftop Terrace — outdoor urban, string lights, skyline ── */
+const rooftopTerrace: StudioSceneDefinition = {
+  id: 'rooftop_terrace',
+  name: 'Rooftop Terrace',
+  description:
+    'Open-air rooftop terrace with modern patio furniture, string lights, urban skyline backdrop, planters and ambient LED accents — the outdoor evening environment.',
+  category: 'outdoor',
+  tier: 'pro',
+  accent: '#0ea5e9',
+  exposureBias: 0.08,
+  camera: { yaw: -0.06, pitch: 0.15, zoom: 0.92 },
+  talent: talentAt([0, 0.9, 2.0]),
+  backdropSlotId: 'sky',
+  screens: [
+    slot('outdoor_tv', 'Terrace TV', 'television', true, slate('ON LOCATION', 'Rooftop Live')),
+    slot('sky', 'Skyline Backdrop', 'window', false, view('skyline')),
+    slot('accent_light', 'Accent Light Panel', 'banner', false, logo('RT', '#0ea5e9')),
+  ],
+  tags: ['outdoor', 'rooftop', 'urban', 'terrace', 'evening', 'sky-blue'],
+};
+
+/** ── Library Study — bookshelves, leather chairs, oak desk ── */
+const libraryStudy: StudioSceneDefinition = {
+  id: 'library_study',
+  name: 'Library Study',
+  description:
+    'Stately library interior with floor-to-ceiling bookshelves, leather armchairs, oak reading desk with brass accents, warm pendant lamps and scholarly atmosphere.',
+  category: 'academic',
+  tier: 'pro_master',
+  accent: '#78350f',
+  exposureBias: -0.04,
+  camera: { yaw: 0.06, pitch: 0.12, zoom: 1.02 },
+  talent: talentAt([0.4, 0.9, 1.5], 2.2),
+  backdropSlotId: 'backdrop',
+  screens: [
+    slot('presentation_screen', 'Presentation Screen', 'video-wall', true, slate('LECTURE', 'Academic Presentation')),
+    slot('desk_lamp_screen', 'Desk Display', 'monitor', false, logo('LS', '#78350f')),
+    slot('backdrop', 'Bookshelf Backdrop', 'window', false, view('skyline')),
+  ],
+  tags: ['academic', 'library', 'study', 'bookshelves', 'scholarly', 'amber-brown'],
+};
+
+/* ================================================================ */
+
+const PHOTOREAL_SCENES: StudioSceneDefinition[] = [
+  newsPremium,
+  churchSanctuary,
+  musicMinistry,
+  luxuryBallroom,
+  concertHall,
+  podcastStudio,
+  fitnessStudio,
+  realEstate,
+  auctionHouse,
+  filmNoir,
+  rooftopTerrace,
+  libraryStudy,
+];
+
+/** Every available studio scene — the full registry including photorealistic sets. */
+export const ALL_STUDIO_SCENES: StudioSceneDefinition[] = [...STUDIO_SCENES, ...PHOTOREAL_SCENES];
+
+const SCENE_INDEX = new Map(ALL_STUDIO_SCENES.map((scene) => [scene.id, scene]));
 
 export function getStudioScene(id: string): StudioSceneDefinition | undefined {
   return SCENE_INDEX.get(id);
@@ -472,20 +758,21 @@ const TIER_ORDER: Record<StudioTier | 'universal', number> = {
 
 /** Scenes unlocked by a plan id (`free`, `pro`, `pro_master`, `universal`). */
 export function studioScenesForPlan(planId: string, max?: number): StudioSceneDefinition[] {
+  const allScenes = ALL_STUDIO_SCENES;
   const userTier = TIER_ORDER[planId as keyof typeof TIER_ORDER] ?? 0;
-  const unlocked = STUDIO_SCENES.filter((scene) => TIER_ORDER[scene.tier] <= userTier);
+  const unlocked = allScenes.filter((scene) => TIER_ORDER[scene.tier] <= userTier);
   return typeof max === 'number' && max >= 0 ? unlocked.slice(0, max) : unlocked;
 }
 
 export function scenesForCategory(category: string): StudioSceneDefinition[] {
-  return STUDIO_SCENES.filter((scene) => scene.category === category);
+  return ALL_STUDIO_SCENES.filter((scene) => scene.category === category);
 }
 
 /**
  * Structural integrity check for the registry — run by tests so a malformed
  * scene can never ship (duplicate ids break persistence and feed binding).
  */
-export function validateStudioScenes(scenes: StudioSceneDefinition[] = STUDIO_SCENES): string[] {
+export function validateStudioScenes(scenes: StudioSceneDefinition[] = ALL_STUDIO_SCENES): string[] {
   const errors: string[] = [];
   const seen = new Set<string>();
   for (const scene of scenes) {

@@ -22,6 +22,7 @@ import {
   Sun,
   Trash2,
   Upload,
+  Video as VideoIcon,
   Wand2,
   X,
 } from 'lucide-react';
@@ -37,10 +38,11 @@ import type {
   StudioRundownStep,
   StudioScreenSource,
   StudioTalentPlacement,
+  StudioTalentSource,
   StudioTransitionStyle,
 } from '../../lib/virtualStudio/types';
 import { DEFAULT_STUDIO_TRANSITION, seatedTalentPlacement, standingTalentPlacement } from '../../lib/virtualStudio/types';
-import { getStudioScene, STUDIO_SCENES, studioScenesForPlan } from '../../lib/virtualStudio/sceneRegistry';
+import { getStudioScene, ALL_STUDIO_SCENES, studioScenesForPlan } from '../../lib/virtualStudio/sceneRegistry';
 import {
   clampBloomIntensity,
   clampCameraPreset,
@@ -117,6 +119,27 @@ export interface PhotorealStudioPanelProps {
   onSelectMode?: (mode: StudioProductionMode) => void;
   /** Whether the current plan unlocks AR / XR. */
   canUseAr?: boolean;
+  /** Live capture controls driving the TALENT SOURCE desk. */
+  capture?: {
+    active: boolean;
+    error: string | null;
+    devices: { deviceId: string; label: string }[];
+    activeDeviceId: string | null;
+    isMobile: boolean;
+    start: (videoDeviceId?: string | null) => Promise<void>;
+    stop: () => void;
+    refreshDevices: () => Promise<void>;
+  };
+  /** Paired Prism Eye (wireless) sources — the talent feed when selected. */
+  mobileSources?: { deviceId: string; label: string; status: string }[];
+  /** Currently selected camera source id ('local' or a paired device). */
+  cameraSourceId?: string;
+  /** Swap the talent feed to a paired wireless camera. */
+  onSelectMobileSource?: (deviceId: string) => void;
+  /** Chroma-key pipeline state for the live talent plate. */
+  keyerEnabled?: boolean;
+  /** Toggle the GPU chroma keyer without leaving the production desk. */
+  onToggleKeyer?: () => void;
 }
 
 type SourceChoice = 'default' | 'off' | 'camera' | 'image' | 'video' | 'graphic';
@@ -193,6 +216,12 @@ export function PhotorealStudioPanel({
   mode = 'virtual_studio',
   onSelectMode,
   canUseAr = false,
+  capture,
+  mobileSources = [],
+  cameraSourceId = 'local',
+  onSelectMobileSource,
+  keyerEnabled = true,
+  onToggleKeyer,
 }: PhotorealStudioPanelProps) {
   const unlocked = useMemo(() => studioScenesForPlan(planId), [planId]);
   const unlockedIds = useMemo(() => new Set(unlocked.map((s) => s.id)), [unlocked]);
@@ -203,6 +232,8 @@ export function PhotorealStudioPanel({
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [axesUnlocked, setAxesUnlocked] = useState(false);
   const cameraVideo = cameraActive ? getCameraVideo() : null;
+  /** What feeds the talent plate — defaults to the live capture feed. */
+  const talent: StudioTalentSource = photoreal.talentSource ?? { kind: 'camera' };
 
   const elements = photoreal.elements ?? [];
   const catalog = useMemo(() => studioElementsForPlan(planId), [planId]);
@@ -334,6 +365,41 @@ export function PhotorealStudioPanel({
     input.click();
   };
 
+  /** Local file → the talent plate itself (plays full-frame behind the set). */
+  const pickTalentVideo = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'video/*';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      void (async () => {
+        try {
+          setUploadError(null);
+          setUploadNotice('Uploading to workspace…');
+          const { item, savedToWorkspace, storagePath } = await importMediaFileToWorkspace(file);
+          setUploadNotice(
+            savedToWorkspace
+              ? `Saved to workspace · ${item.name}`
+              : `Using local copy · sign in to save “${item.name}” to the workspace`,
+          );
+          patch({
+            talentSource: {
+              kind: 'video',
+              url: item.playUrl,
+              label: item.name,
+              ...(storagePath ? { mediaId: item.id, storagePath } : {}),
+            },
+          });
+        } catch (err) {
+          setUploadNotice(null);
+          setUploadError(err instanceof Error ? err.message : 'Upload failed.');
+        }
+      })();
+    };
+    input.click();
+  };
+
   /** Workspace (Regal Cloud) media library picker. */
   const [libraryKey, setLibraryKey] = useState<string | null>(null);
   const [workspaceMedia, setWorkspaceMedia] = useState<MediaLibraryItem[] | null>(null);
@@ -377,8 +443,21 @@ export function PhotorealStudioPanel({
         const url = await resolveWorkspaceMediaUrl(backdrop.storagePath);
         if (!cancelled && url && url !== backdrop.url) nextBackdrop = { ...backdrop, url };
       }
-      if (!cancelled && (changed || nextBackdrop !== backdrop)) {
-        onPatch({ bindings: changed ? next : photoreal.bindings, backdrop: nextBackdrop });
+      const talent = photoreal.talentSource;
+      let nextTalent = talent;
+      if (talent && talent.storagePath && talent.url) {
+        const url = await resolveWorkspaceMediaUrl(talent.storagePath);
+        if (!cancelled && url && url !== talent.url) nextTalent = { ...talent, url };
+      }
+      if (
+        !cancelled &&
+        (changed || nextBackdrop !== backdrop || nextTalent !== talent)
+      ) {
+        onPatch({
+          bindings: changed ? next : photoreal.bindings,
+          backdrop: nextBackdrop,
+          talentSource: nextTalent,
+        });
       }
     };
     void refresh();
@@ -753,7 +832,7 @@ export function PhotorealStudioPanel({
       <section>
         <p className="mb-1.5 text-[10px] font-bold tracking-wider text-amber-400/90">READY-TO-AIR SCENES</p>
         <div className="space-y-1.5">
-          {STUDIO_SCENES.map((s) => {
+          {ALL_STUDIO_SCENES.map((s) => {
             const locked = !unlockedIds.has(s.id);
             const active = photoreal.sceneId === s.id;
             return (
@@ -784,7 +863,7 @@ export function PhotorealStudioPanel({
           })}
         </div>
         <p className="mt-1.5 text-[9px] text-mixer-muted">
-          {unlocked.length}/{STUDIO_SCENES.length} scenes unlocked on your plan.
+          {unlocked.length}/{ALL_STUDIO_SCENES.length} scenes unlocked on your plan.
         </p>
       </section>
 
@@ -945,6 +1024,98 @@ export function PhotorealStudioPanel({
           </div>
           <p className="text-[8px] leading-snug text-mixer-muted">
             Zoom glides like a jib · switch lenses for telephoto compression or a wide establishing look.
+          </p>
+        </div>
+
+        {/* ---- explicit camera movement: pan / tilt / dolly target ---- */}
+        <div className="mt-2 space-y-1.5 rounded border border-white/10 bg-black/40 p-2">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-bold tracking-wider text-amber-400/90">CAMERA MOVEMENT</p>
+            <button
+              type="button"
+              title="Level the camera back out on the current target"
+              onClick={() => onRecallShot(clampCameraPreset({ ...cameraPose, yaw: 0, pitch: 0.12 }))}
+              className="rounded border border-white/10 px-1.5 py-0.5 text-[8px] font-bold tracking-wider text-mixer-muted hover:border-amber-500/40 hover:text-amber-300"
+            >
+              LEVEL
+            </button>
+          </div>
+          {(() => {
+            const target = cameraPose.target ?? baseCamera.target ?? [0, 1.05, 0];
+            const rows: {
+              label: string;
+              value: number;
+              min: number;
+              max: number;
+              step: number;
+              fmt: (v: number) => string;
+              on: (v: number) => void;
+            }[] = [
+              {
+                label: 'PAN',
+                value: (cameraPose.yaw * 180) / Math.PI,
+                min: -180,
+                max: 180,
+                step: 1,
+                fmt: (v) => `${Math.round(v)}°`,
+                on: (v) => onRecallShot(clampCameraPreset({ ...cameraPose, yaw: (v * Math.PI) / 180 })),
+              },
+              {
+                label: 'TILT',
+                value: (cameraPose.pitch * 180) / Math.PI,
+                min: -70,
+                max: 75,
+                step: 1,
+                fmt: (v) => `${Math.round(v)}°`,
+                on: (v) => onRecallShot(clampCameraPreset({ ...cameraPose, pitch: (v * Math.PI) / 180 })),
+              },
+              {
+                label: 'DOLLY X',
+                value: target[0],
+                min: -9,
+                max: 9,
+                step: 0.1,
+                fmt: (v) => `${v.toFixed(1)}m`,
+                on: (v) => onRecallShot(clampCameraPreset({ ...cameraPose, target: [v, target[1], target[2]] })),
+              },
+              {
+                label: 'HEIGHT',
+                value: target[1],
+                min: 0.15,
+                max: 4.5,
+                step: 0.05,
+                fmt: (v) => `${v.toFixed(2)}m`,
+                on: (v) => onRecallShot(clampCameraPreset({ ...cameraPose, target: [target[0], v, target[2]] })),
+              },
+              {
+                label: 'DOLLY Z',
+                value: target[2],
+                min: -7,
+                max: 8,
+                step: 0.1,
+                fmt: (v) => `${v.toFixed(1)}m`,
+                on: (v) => onRecallShot(clampCameraPreset({ ...cameraPose, target: [target[0], target[1], v] })),
+              },
+            ];
+            return rows.map((row) => (
+              <div key={row.label} className="flex items-center gap-1.5">
+                <span className="w-14 text-[8px] font-bold tracking-wider text-mixer-muted">{row.label}</span>
+                <input
+                  type="range"
+                  min={row.min}
+                  max={row.max}
+                  step={row.step}
+                  value={row.value}
+                  onChange={(e) => row.on(Number(e.target.value))}
+                  className="min-w-0 flex-1 accent-amber-500"
+                />
+                <span className="w-11 text-right text-[8px] text-mixer-muted">{row.fmt(row.value)}</span>
+              </div>
+            ));
+          })()}
+          <p className="text-[8px] leading-snug text-mixer-muted">
+            Pan, tilt and dolly the free camera anywhere in the set — recalled shots and AutoCam stay
+            in sync with these moves.
           </p>
         </div>
         <div className="mt-2 space-y-1.5 rounded border border-white/10 bg-black/40 p-2">
@@ -1136,6 +1307,249 @@ export function PhotorealStudioPanel({
           Style the move between recalled shots, rundown plays and scene switches — from broadcast
           hard cuts to cinematic crane sweeps.
         </p>
+      </section>
+
+      {/* ---- talent source: USB capture / paired camera / video file ---- */}
+      <section className="mt-2 space-y-1.5 rounded border border-white/10 bg-black/40 p-2">
+        <div className="flex items-center justify-between">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold tracking-wider text-amber-400/90">
+            <VideoIcon className="h-3 w-3" /> TALENT SOURCE
+          </p>
+          <span
+            className={cn(
+              'rounded px-1.5 py-0.5 text-[8px] font-bold tracking-wider',
+              talent.kind === 'off'
+                ? 'bg-white/10 text-mixer-muted'
+                : talent.kind === 'video'
+                  ? 'bg-purple-500/20 text-purple-300'
+                  : capture?.active
+                    ? 'bg-emerald-500/20 text-emerald-300'
+                    : 'bg-amber-500/20 text-amber-300',
+            )}
+          >
+            {talent.kind === 'off'
+              ? 'OFF'
+              : talent.kind === 'video'
+                ? 'VIDEO'
+                : capture?.active
+                  ? 'LIVE'
+                  : 'STANDBY'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-1">
+          {(
+            [
+              { kind: 'camera' as const, label: 'USB / CAM', title: 'Key the live capture feed (webcam, HDMI capture card or paired Prism Eye)' },
+              { kind: 'video' as const, label: 'VIDEO', title: 'Play a video file full-frame as the talent plate' },
+              { kind: 'off' as const, label: 'OFF', title: 'No talent plate — clean empty set' },
+            ]
+          ).map((opt) => (
+            <button
+              key={opt.kind}
+              type="button"
+              title={opt.title}
+              onClick={() => patch({ talentSource: { ...talent, kind: opt.kind } })}
+              className={cn(
+                'rounded border px-1 py-1.5 text-[9px] font-bold tracking-wider transition-colors',
+                talent.kind === opt.kind
+                  ? 'border-amber-500/50 bg-amber-500/15 text-amber-300'
+                  : 'border-white/10 bg-black/40 text-mixer-muted hover:border-white/25 hover:text-white',
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {talent.kind === 'camera' && (
+          <div className="space-y-1.5">
+            {capture?.isMobile || cameraSourceId !== 'local' ? (
+              <label className="block">
+                <span className="text-[10px] font-bold tracking-wider text-mixer-muted">
+                  WIRELESS SOURCE · PRISM EYE
+                </span>
+                <select
+                  value={cameraSourceId}
+                  onChange={(e) => onSelectMobileSource?.(e.target.value)}
+                  className="mt-1 w-full rounded border border-white/10 bg-black px-2 py-1.5 text-xs outline-none focus:border-amber-500/40"
+                >
+                  <option value="local">Local webcam / capture card</option>
+                  {mobileSources.map((m) => (
+                    <option key={m.deviceId} value={m.deviceId}>
+                      {m.label || 'Paired device'} · {m.status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <>
+                <label className="block">
+                  <span className="text-[10px] font-bold tracking-wider text-mixer-muted">
+                    USB / HDMI CAPTURE · VIDEO
+                  </span>
+                  <select
+                    value={capture?.activeDeviceId ?? ''}
+                    onChange={(e) => void capture?.start(e.target.value || null)}
+                    disabled={!capture?.devices.length}
+                    className="mt-1 w-full rounded border border-white/10 bg-black px-2 py-1.5 text-xs outline-none focus:border-amber-500/40"
+                  >
+                    {capture?.devices.length === 0 ? (
+                      <option value="">No video devices found</option>
+                    ) : (
+                      <option value="">System default camera</option>
+                    )}
+                    {(capture?.devices ?? []).map((d) => (
+                      <option key={d.deviceId} value={d.deviceId}>
+                        {d.label || 'Camera'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => (capture?.active ? capture.stop() : void capture?.start())}
+                    className={cn(
+                      'flex-1 rounded border py-1.5 text-[9px] font-bold tracking-wider',
+                      capture?.active
+                        ? 'border-mixer-red/50 bg-mixer-red/10 text-mixer-red hover:bg-mixer-red/20'
+                        : 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:border-amber-500/70',
+                    )}
+                  >
+                    {capture?.active ? 'STOP CAPTURE' : 'START CAPTURE'}
+                  </button>
+                  <button
+                    type="button"
+                    title="Re-enumerate USB webcams and HDMI capture cards"
+                    onClick={() => void capture?.refreshDevices()}
+                    className="rounded border border-white/10 px-2 py-1.5 text-[9px] font-bold tracking-wider text-mixer-muted hover:border-white/30 hover:text-white"
+                  >
+                    REFRESH
+                  </button>
+                </div>
+                <p className="text-[8px] leading-snug text-mixer-muted">
+                  USB webcam, HDMI capture card (Elgato, Blackmagic, Cam Link) or pair a phone as a
+                  wireless camera from the Prism Eye panel.
+                </p>
+              </>
+            )}
+            {capture?.error && <p className="text-[9px] text-mixer-red">{capture.error}</p>}
+
+            <div className="flex items-center justify-between gap-2 rounded border border-white/10 bg-black/30 px-2 py-1.5">
+              <span className="text-[10px] font-semibold">Chroma key</span>
+              <span className="flex items-center gap-1.5">
+                {onOpenKeyer && (
+                  <button
+                    type="button"
+                    title="Open the chroma key desk"
+                    onClick={onOpenKeyer}
+                    className="rounded border border-white/10 px-1.5 py-0.5 text-[8px] font-bold tracking-wider text-mixer-muted hover:border-amber-500/40 hover:text-amber-300"
+                  >
+                    DESK
+                  </button>
+                )}
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 accent-amber-500"
+                  checked={keyerEnabled}
+                  onChange={() => onToggleKeyer?.()}
+                />
+              </span>
+            </div>
+          </div>
+        )}
+
+        {talent.kind === 'video' && (
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1">
+              <span className="min-w-0 flex-1 truncate text-[10px] text-mixer-muted">
+                {talent.label ?? talent.url ?? 'No video chosen'}
+              </span>
+              <button
+                type="button"
+                title="Upload a video from this device — saves to the workspace"
+                onClick={pickTalentVideo}
+                className="flex shrink-0 items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-1 text-[9px] font-bold tracking-wider text-amber-300 hover:border-amber-500/60"
+              >
+                <Upload className="h-3 w-3" /> UPLOAD
+              </button>
+              <button
+                type="button"
+                title="Pick a video from the workspace media library"
+                onClick={() => openLibrary('talent')}
+                className={cn(
+                  'flex shrink-0 items-center gap-1 rounded border px-1.5 py-1 text-[9px] font-bold tracking-wider hover:border-amber-500/60',
+                  libraryKey === 'talent'
+                    ? 'border-amber-500/60 bg-amber-500/15 text-amber-200'
+                    : 'border-white/10 text-mixer-muted hover:text-white',
+                )}
+              >
+                <ImageIcon className="h-3 w-3" /> LIBRARY
+              </button>
+            </div>
+            {libraryKey === 'talent' && (
+              <div className="rounded border border-white/10 bg-black/60 p-1.5">
+                {libraryLoading && <p className="text-[9px] text-mixer-muted">Loading workspace media…</p>}
+                {!libraryLoading && (workspaceMedia ?? []).filter((m) => m.kind === 'video').length === 0 && (
+                  <p className="text-[9px] leading-snug text-mixer-muted">
+                    No saved videos yet — UPLOAD stores them in the workspace automatically.
+                  </p>
+                )}
+                <div className="max-h-28 space-y-0.5 overflow-y-auto">
+                  {(workspaceMedia ?? [])
+                    .filter((m) => m.kind === 'video')
+                    .map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          patch({
+                            talentSource: {
+                              kind: 'video',
+                              url: m.playUrl,
+                              label: m.name,
+                              ...(m.storagePath ? { mediaId: m.id, storagePath: m.storagePath } : {}),
+                            },
+                          });
+                          setLibraryKey(null);
+                        }}
+                        className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[9px] hover:bg-white/10"
+                      >
+                        <span className="shrink-0 rounded bg-purple-500/20 px-1 py-0.5 text-[7px] font-bold text-purple-300">
+                          VID
+                        </span>
+                        <span className="truncate">{m.name}</span>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+            <div className="flex items-center gap-1">
+              <input
+                type="url"
+                value={talent.url ?? ''}
+                placeholder="https://…/talent-feed.mp4"
+                onChange={(e) =>
+                  patch({ talentSource: { kind: 'video', url: e.target.value, label: undefined } })
+                }
+                className="min-w-0 flex-1 rounded border border-white/10 bg-black px-1.5 py-1 text-[10px] outline-none focus:border-amber-500/40"
+              />
+              <button
+                type="button"
+                title="Clear the video back to the live capture"
+                onClick={() => patch({ talentSource: { kind: 'camera' } })}
+                className="rounded border border-white/10 p-1 text-mixer-muted hover:text-white"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+            <p className="text-[8px] leading-snug text-mixer-muted">
+              The video plays full-frame as the talent plate (keyer bypassed) — perfect for B-roll
+              guests, remote feeds and rehearsal playback.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* ---- talent placement (keyed USB capture) ---- */}

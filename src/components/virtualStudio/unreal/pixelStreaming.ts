@@ -374,21 +374,69 @@ export class PixelStreamClient {
     peer.addTransceiver('video', { direction: 'recvonly' });
     peer.addTransceiver('audio', { direction: 'recvonly' });
 
+    const activateStream = () => {
+      if (this.state === 'streaming') return;
+      // Prefer the video element's decoded dimensions (most reliable) and
+      // fall back to track settings when the video hasn't decoded yet.
+      const videoTrack = this.video.srcObject instanceof MediaStream
+        ? (this.video.srcObject as MediaStream).getVideoTracks()[0]
+        : undefined;
+      const settings = videoTrack?.getSettings();
+      this.resolution =
+        (this.video.videoWidth > 0 && this.video.videoHeight > 0)
+          ? { width: this.video.videoWidth, height: this.video.videoHeight }
+          : { width: settings?.width ?? 0, height: settings?.height ?? 0 };
+      this.options.onFrame?.(this.resolution);
+      this.setState('streaming', null);
+      // The data channel is live — enforce the fidelity spec now.
+      this.pushFidelity();
+      this.emit();
+    };
+
     peer.ontrack = (event) => {
       const stream = event.streams[0] ?? new MediaStream([event.track]);
       this.video.srcObject = stream;
-      void this.video.play().catch(() => undefined);
+
       const track = event.track;
-      if (track.kind === 'video') {
-        track.addEventListener('unmute', () => {
-          const settings = track.getSettings();
-          this.resolution = { width: settings.width ?? 0, height: settings.height ?? 0 };
-          this.options.onFrame?.(this.resolution);
-          this.setState('streaming', null);
-          // The data channel is live — enforce the fidelity spec now.
-          this.pushFidelity();
-          this.emit();
+
+      // Retry play — browsers may block autoplay even when muted.
+      const tryPlay = () => {
+        void this.video.play().catch(() => {
+          // Autoplay blocked — retry once on user interaction.
+          const retry = () => {
+            window.removeEventListener('pointerdown', retry);
+            void this.video.play().catch(() => undefined);
+          };
+          window.addEventListener('pointerdown', retry, { once: true });
         });
+      };
+      tryPlay();
+
+      if (track.kind === 'video') {
+        // The track may already be unmuted by the time ontrack fires —
+        // WebRTC often delivers tracks in an active state. If we only
+        // listen for `unmute` we miss the initial activation and the
+        // state stays stuck at `negotiating` (black overlay).
+        const onTrackActive = () => {
+          track.removeEventListener('unmute', onTrackActive);
+          activateStream();
+        };
+
+        if (track.readyState === 'live' && !track.muted) {
+          // Track is already producing frames — activate immediately
+          // after a microtask so the video element has time to attach
+          // the stream and start decoding.
+          queueMicrotask(activateStream);
+        } else {
+          track.addEventListener('unmute', onTrackActive);
+        }
+
+        // Belt-and-suspenders: also catch the `playing` event on the
+        // video element as a fallback for environments where the track
+        // mute/unmute events are unreliable (e.g. Safari).
+        this.video.addEventListener('playing', () => {
+          activateStream();
+        }, { once: true });
       }
     };
 

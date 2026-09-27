@@ -13,7 +13,19 @@ export type VirtualSetEnvironment =
   | 'furnished_bedroom'
   | 'talk_show'
   | 'conference_room'
-  | 'residential_exterior';
+  | 'residential_exterior'
+  | 'news_premium'
+  | 'church_sanctuary'
+  | 'music_ministry'
+  | 'luxury_ballroom'
+  | 'concert_hall'
+  | 'podcast_studio'
+  | 'fitness_studio'
+  | 'real_estate'
+  | 'auction_house'
+  | 'film_noir'
+  | 'rooftop_terrace'
+  | 'library_study';
 
 export interface VirtualSetDefinition {
   id: string;
@@ -128,6 +140,102 @@ export const VIRTUAL_SETS: VirtualSetDefinition[] = [
     tier: 'pro_master',
     mode: ['virtual_studio', 'xr_extension'],
     environment: 'xr_stage',
+  },
+  {
+    id: 'news_premium',
+    name: 'News Studio Premium',
+    description: 'Flagship holographic news studio with floating glass desk, triple LED wall and cyan accent lighting',
+    tier: 'pro_master',
+    mode: ['virtual_studio'],
+    environment: 'news_premium',
+  },
+  {
+    id: 'church_sanctuary',
+    name: 'Church Sanctuary',
+    description: 'Warm worship sanctuary with wooden pews, marble altar, stained-glass window and pendant lighting',
+    tier: 'pro_master',
+    mode: ['virtual_studio'],
+    environment: 'church_sanctuary',
+  },
+  {
+    id: 'music_ministry',
+    name: 'Music Ministry Stage',
+    description: 'Dynamic worship band stage with LED floor panels, projection wall and violet haze beams',
+    tier: 'pro_master',
+    mode: ['virtual_studio'],
+    environment: 'music_ministry',
+  },
+  {
+    id: 'luxury_ballroom',
+    name: 'Luxury Ballroom',
+    description: 'Opulent ballroom with crystal chandeliers, gold-inlaid marble, ornate wall frames and velvet drapes',
+    tier: 'pro_master',
+    mode: ['virtual_studio'],
+    environment: 'luxury_ballroom',
+  },
+  {
+    id: 'concert_hall',
+    name: 'Concert Hall',
+    description: 'Arena-scale concert venue with tiered risers, professional lighting truss and large LED backdrop',
+    tier: 'pro_master',
+    mode: ['virtual_studio'],
+    environment: 'concert_hall',
+  },
+  {
+    id: 'podcast_studio',
+    name: 'Podcast Studio',
+    description: 'Intimate two-host podcast booth with acoustic panels, boom mics and LED accent strips',
+    tier: 'pro',
+    mode: ['virtual_studio'],
+    environment: 'podcast_studio',
+  },
+  {
+    id: 'fitness_studio',
+    name: 'Fitness Studio',
+    description: 'Bright energetic fitness set with mirrored wall, open floor and equipment rack',
+    tier: 'pro',
+    mode: ['virtual_studio'],
+    environment: 'fitness_studio',
+  },
+  {
+    id: 'real_estate',
+    name: 'Real Estate Showcase',
+    description: 'Professional property-listing presentation set with display wall and modern furniture',
+    tier: 'pro',
+    mode: ['virtual_studio'],
+    environment: 'real_estate',
+  },
+  {
+    id: 'auction_house',
+    name: 'Auction House',
+    description: 'Prestigious auction podium with display cases, warm spotlighting and mahogany desk',
+    tier: 'pro_master',
+    mode: ['virtual_studio'],
+    environment: 'auction_house',
+  },
+  {
+    id: 'film_noir',
+    name: 'Film Noir Stage',
+    description: 'Cinematic noir set with dramatic chiaroscuro lighting, venetian shadows and smoky haze',
+    tier: 'pro_master',
+    mode: ['virtual_studio'],
+    environment: 'film_noir',
+  },
+  {
+    id: 'rooftop_terrace',
+    name: 'Rooftop Terrace',
+    description: 'Open-air rooftop with patio furniture, string lights, urban skyline backdrop and planters',
+    tier: 'pro',
+    mode: ['virtual_studio'],
+    environment: 'rooftop_terrace',
+  },
+  {
+    id: 'library_study',
+    name: 'Library Study',
+    description: 'Stately library with floor-to-ceiling bookshelves, leather chairs and brass-accented oak desk',
+    tier: 'pro_master',
+    mode: ['virtual_studio'],
+    environment: 'library_study',
   },
 ];
 

@@ -52,6 +52,46 @@ export const LOWER_THIRD_TEMPLATES: LowerThirdTemplate[] = [
   tpl('glass-frost', 'Glass Frost', 'Heavy blur documentary style', 'creative', 'glass-minimal', theme({ accentColor: '#e2e8f0', backgroundColor: 'rgba(148,163,184,0.25)', uppercase: false, opacity: 90 })),
   tpl('retro-crt', 'Retro CRT', 'Vintage TV scanline aesthetic', 'creative', 'outline-box', theme({ accentColor: '#4ade80', backgroundColor: 'rgba(0,0,0,0.7)', textColor: '#86efac', fontSize: 'sm', borderRadius: 'none' })),
   tpl('cinema-dark', 'Cinema Dark', 'Film credit elegant dark bar', 'creative', 'double-rule', theme({ accentColor: '#a8a29e', backgroundColor: 'rgba(12,10,9,0.92)', uppercase: false, fontSize: 'sm' })),
+
+  /* ================================================================
+     26 NEW LOWER THIRD DESIGNS — reaching 50 total
+     ================================================================ */
+
+  // ── News (8 new) ──
+  tpl('breaking-flash', 'Breaking Flash', 'Animated red flash breaking banner', 'news', 'gradient-bar', theme({ accentColor: '#dc2626', backgroundColor: 'rgba(0,0,0,0.92)', uppercase: true, fontSize: 'lg' })),
+  tpl('election-night', 'Election Night', 'Purple-blue election coverage bar', 'news', 'gradient-border', theme({ accentColor: '#7c3aed', backgroundColor: 'rgba(15,23,42,0.95)', textColor: '#c4b5fd', uppercase: true })),
+  tpl('world-map', 'World Map', 'International correspondent glass card', 'news', 'glass-card', theme({ accentColor: '#0ea5e9', backgroundColor: 'rgba(15,23,42,0.7)', textColor: '#e0f2fe', borderRadius: 'md' })),
+  tpl('parliament', 'Parliament', 'Government debate maroon bar', 'news', 'left-thick-bar', theme({ accentColor: '#881337', backgroundColor: 'rgba(30,0,10,0.9)', textColor: '#fce7f3', uppercase: true })),
+  tpl('investigative', 'Investigative', 'Dark investigative journalism minimal', 'news', 'minimal-line', theme({ accentColor: '#d4d4d8', backgroundColor: 'rgba(9,9,11,0.88)', textColor: '#fafafa', uppercase: false, fontSize: 'sm' })),
+  tpl('morning-show', 'Morning Show', 'Bright morning warm gradient pill', 'news', 'frosted-pill', theme({ accentColor: '#f97316', backgroundColor: 'rgba(251,146,60,0.15)', textColor: '#fff7ed', borderRadius: 'full' })),
+  tpl('news-ticker', 'News Ticker', 'Scrolling ticker-style lower third', 'news', 'wide-banner', theme({ accentColor: '#dc2626', backgroundColor: 'rgba(10,10,10,0.95)', textColor: '#ffffff', uppercase: true, fontSize: 'lg' })),
+  tpl('press-conference', 'Press Conference', 'Official podium plate with seal', 'news', 'tag-badge', theme({ accentColor: '#1e40af', backgroundColor: 'rgba(255,255,255,0.1)', textColor: '#dbeafe', borderRadius: 'sm' })),
+
+  // ── Sports (6 new) ──
+  tpl('basketball-court', 'Basketball Court', 'Hardwood court orange accent', 'sports', 'diagonal-cut', theme({ accentColor: '#f97316', backgroundColor: 'rgba(30,10,0,0.92)', textColor: '#fed7aa', uppercase: true })),
+  tpl('football-stadium', 'Football Stadium', 'Gridiron green endzone bar', 'sports', 'bold-stripe', theme({ accentColor: '#15803d', backgroundColor: 'rgba(5,30,10,0.9)', textColor: '#bbf7d0', uppercase: true })),
+  tpl('tennis-court', 'Tennis Court', 'Clay court warm minimal', 'sports', 'underline-slide', theme({ accentColor: '#d97706', backgroundColor: 'rgba(120,53,15,0.12)', textColor: '#fef3c7', borderRadius: 'sm' })),
+  tpl('boxing-ring', 'Boxing Ring', 'Red corner dramatic split', 'sports', 'split-header', theme({ accentColor: '#dc2626', backgroundColor: 'rgba(20,0,0,0.95)', textColor: '#fecaca', uppercase: true, fontSize: 'lg' })),
+  tpl('f1-pitlane', 'F1 Pitlane', 'Racing telemetry strip', 'sports', 'gradient-bar', theme({ accentColor: '#ef4444', backgroundColor: 'rgba(0,0,0,0.95)', textColor: '#fca5a5', uppercase: true })),
+  tpl('cricket-pitch', 'Cricket Pitch', 'Olive green outfield bar', 'sports', 'layered-stack', theme({ accentColor: '#65a30d', backgroundColor: 'rgba(20,30,5,0.9)', textColor: '#d9f99d', uppercase: false })),
+
+  // ── Corporate (5 new) ──
+  tpl('annual-report', 'Annual Report', 'Clean white paper-style card', 'corporate', 'glass-card', theme({ accentColor: '#1e3a8a', backgroundColor: 'rgba(255,255,255,0.08)', textColor: '#f1f5f9', borderRadius: 'md', uppercase: false })),
+  tpl('tech-keynote', 'Tech Keynote', 'Dark gradient with neon accent', 'corporate', 'neon-glow', theme({ accentColor: '#8b5cf6', backgroundColor: 'rgba(15,5,30,0.85)', textColor: '#ddd6fe', borderRadius: 'md' })),
+  tpl('merger-announce', 'Merger Announce', 'Dual-tone corporate split', 'corporate', 'dual-accent', theme({ accentColor: '#0369a1', backgroundColor: 'rgba(15,23,42,0.92)', textColor: '#e0f2fe', uppercase: true })),
+  tpl('quarterly-earnings', 'Quarterly Earnings', 'Green/red market indicator', 'corporate', 'corner-bracket', theme({ accentColor: '#16a34a', backgroundColor: 'rgba(5,30,15,0.88)', textColor: '#bbf7d0', borderRadius: 'sm' })),
+  tpl('boardroom', 'Boardroom', 'Dark executive minimalist', 'corporate', 'shadow-plate', theme({ accentColor: '#a1a1aa', backgroundColor: 'rgba(9,9,11,0.9)', textColor: '#e4e4e7', uppercase: false })),
+
+  // ── Live / Streaming (4 new) ──
+  tpl('kick-live', 'Kick Live', 'Green neon live stream pill', 'live', 'frosted-pill', theme({ accentColor: '#22c55e', backgroundColor: 'rgba(5,46,22,0.8)', textColor: '#bbf7d0', showLiveBadge: true, borderRadius: 'full' })),
+  tpl('discord-stage', 'Discord Stage', 'Indigo community stream bar', 'live', 'gradient-bar', theme({ accentColor: '#5865f2', backgroundColor: 'rgba(30,33,72,0.88)', textColor: '#c7d2fe', showLiveBadge: true })),
+  tpl('marathon-stream', 'Marathon Stream', 'Endurance orange progress bar', 'live', 'top-accent-bar', theme({ accentColor: '#f97316', backgroundColor: 'rgba(30,10,0,0.85)', textColor: '#ffedd5', showLiveBadge: true, borderRadius: 'md' })),
+  tpl('collab-split', 'Collab Split', 'Dual-host split screen label', 'live', 'split-name', theme({ accentColor: '#ec4899', backgroundColor: 'rgba(50,10,30,0.85)', textColor: '#fce7f3', borderRadius: 'sm' })),
+
+  // ── Creative / Documentary (3 new) ──
+  tpl('nature-doc', 'Nature Doc', 'Earth-tone documentary credit', 'creative', 'cinematic-bar', theme({ accentColor: '#65a30d', backgroundColor: 'rgba(10,20,5,0.85)', textColor: '#d9f99d', uppercase: false, fontSize: 'sm' })),
+  tpl('true-crime', 'True Crime', 'Dark crimson mystery plate', 'creative', 'retro-box', theme({ accentColor: '#991b1b', backgroundColor: 'rgba(15,0,0,0.92)', textColor: '#fecaca', uppercase: false, borderRadius: 'none' })),
+  tpl('art-showcase', 'Art Showcase', 'Gallery-white minimal with thin rule', 'creative', 'text-only', theme({ accentColor: '#ffffff', backgroundColor: 'rgba(0,0,0,0.6)', textColor: '#ffffff', uppercase: false, fontSize: 'sm', borderRadius: 'none' })),
 ];
 
 export const LOWER_THIRD_SEGMENTS: { id: LowerThirdCategory; label: string; description: string }[] = [

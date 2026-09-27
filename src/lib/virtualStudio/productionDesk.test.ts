@@ -7,12 +7,14 @@ import {
   clampLighting,
   clampRundown,
   clampTemperature,
+  depthOfFieldForShot,
   emptyShotMemories,
   MAX_RUNDOWN_STEPS,
   MAX_SHOT_MEMORIES,
   MOOD_PRESETS,
   normalizeShotMemories,
   resolveShot,
+  rigGradeFor,
   saveShotMemory,
   SHOT_ORDER,
   temperatureColor,
@@ -126,5 +128,53 @@ describe('autocam rundown', () => {
       duration: 3,
     }));
     expect(clampRundown(steps)).toHaveLength(MAX_RUNDOWN_STEPS);
+  });
+});
+
+describe('shot-driven depth of field', () => {
+  it('keeps wide shots deep and racks focus shallow on close-ups', () => {
+    const wide = depthOfFieldForShot(resolveShot(base, 'wide').zoom, undefined, [0, 1.05, 0]);
+    const close = depthOfFieldForShot(resolveShot(base, 'close').zoom, undefined, [0, 1.05, 0]);
+    // Wide framings keep the whole dressed set readable…
+    expect(wide.focusRange).toBeGreaterThanOrEqual(8);
+    // …while a close-up narrows onto the subject and melts the set behind it.
+    expect(close.focusRange).toBeLessThan(4);
+    expect(close.focusRange).toBeLessThan(wide.focusRange);
+    expect(close.bokehScale).toBeGreaterThan(wide.bokehScale);
+  });
+
+  it('counts a telephoto lens as tightness and clamps extreme poses', () => {
+    const normal = depthOfFieldForShot(1, 38, undefined);
+    const tele = depthOfFieldForShot(1, 22, undefined);
+    expect(tele.focusRange).toBeLessThan(normal.focusRange);
+    expect(tele.bokehScale).toBeGreaterThan(normal.bokehScale);
+    // Missing pan target falls back to the stage's framing anchor.
+    expect(normal.focusTarget).toEqual([0, 1.05, 0]);
+    // Zoom/fov outside the rig ranges clamp instead of exploding the lens.
+    const extreme = depthOfFieldForShot(99, 5, [1, 2, 3]);
+    expect(extreme.focusRange).toBeCloseTo(1.6, 5);
+    expect(extreme.focusTarget).toEqual([1, 2, 3]);
+  });
+});
+
+describe('rig grades', () => {
+  it('grades the rig for each genre', () => {
+    // Broadcast sets: contrasty key and a rim that separates talent from the wall.
+    const news = rigGradeFor('news');
+    expect(news.key).toBeGreaterThan(1);
+    expect(news.rim).toBeGreaterThan(1);
+    // Performance stages: punchy key in a dark room.
+    const concert = rigGradeFor('concert');
+    expect(concert.key).toBeGreaterThan(1.1);
+    expect(concert.bounce).toBeLessThan(1);
+    expect(concert.fill).toBeLessThan(1);
+    // Home/talk: soft, bounce-heavy warmth.
+    expect(rigGradeFor('home').fill).toBeGreaterThan(1);
+    expect(rigGradeFor('home').bounce).toBeGreaterThan(1);
+    // Noir chiaroscuro: ambient almost off, key does the work.
+    const noir = rigGradeFor('cinematic');
+    expect(noir.fill).toBeLessThan(0.75);
+    expect(noir.bounce).toBeLessThan(0.8);
+    expect(noir.key).toBeGreaterThan(noir.fill);
   });
 });

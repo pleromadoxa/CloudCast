@@ -91,21 +91,20 @@ type SidePanel =
 
 type NavItem = { id: SidePanel; label: string; icon: typeof Camera };
 
-/** Rail groups — the console reads top to bottom: build it, shoot it, dress it, ship it. */
+/** Rail groups — workflow order: build the set, shoot it, dress it, ship it. */
 const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
-    label: 'Stage',
+    label: 'Set',
     items: [
       { id: 'photoreal', label: 'Photoreal', icon: Aperture },
-      { id: 'engines', label: 'Engines', icon: Cpu },
       { id: 'sets', label: 'Virtual Sets', icon: Layers },
-      { id: 'keyer', label: 'Chroma Keyer', icon: Sparkles },
       { id: 'models', label: '3D Models', icon: Box },
+      { id: 'engines', label: 'Engines', icon: Cpu },
       { id: 'scenes', label: 'Scenes', icon: FolderOpen },
     ],
   },
   {
-    label: 'Cameras',
+    label: 'Camera',
     items: [
       { id: 'camera', label: 'Camera', icon: Camera },
       { id: 'mobile', label: 'Prism Eye', icon: Smartphone },
@@ -114,15 +113,16 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: 'Graphics',
+    label: 'Composite',
     items: [
+      { id: 'keyer', label: 'Chroma Keyer', icon: Sparkles },
       { id: 'motion', label: '3D Motion', icon: Film },
       { id: 'graphics', label: 'Lower Thirds', icon: Type },
       { id: 'nodes', label: 'Pipeline', icon: GitBranch },
     ],
   },
   {
-    label: 'Output',
+    label: 'Ship',
     items: [{ id: 'output', label: 'Program', icon: MonitorPlay }],
   },
 ];
@@ -131,18 +131,18 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
 const PANEL_META: Record<SidePanel, { icon: typeof Camera; title: string; subtitle: string }> = {
   photoreal: { icon: Aperture, title: 'Photoreal Studio', subtitle: 'Newsroom, arena & lifestyle sets with live screens' },
   engines: { icon: Cpu, title: 'Render Engines', subtitle: 'three.js · Babylon.js · Unreal Pixel Streaming · WGSL' },
-  sets: { icon: Layers, title: 'Virtual Sets', subtitle: 'Classic key pipeline — VS · AR · XR production modes' },
+  sets: { icon: Layers, title: 'Virtual Sets', subtitle: 'VS · AR · XR production modes and set selection' },
   keyer: { icon: Sparkles, title: 'Chroma Keyer', subtitle: 'GPU key, spill suppression and light wrap' },
   models: { icon: Box, title: '3D Studio Library', subtitle: 'Backgrounds, props, furniture and imported GLTFs' },
-  scenes: { icon: FolderOpen, title: 'Cloud Scenes', subtitle: 'Save and recall full production states' },
-  camera: { icon: Camera, title: 'Camera Input', subtitle: 'Webcam, HDMI capture or paired mobile feed' },
-  mobile: { icon: Smartphone, title: 'Regal Prism Eye', subtitle: 'Wireless phone camera and gyro virtual camera' },
-  tracking: { icon: Compass, title: 'Virtual Camera', subtitle: 'Orientation tracking, WebXR and device control' },
-  multicam: { icon: LayoutGrid, title: 'Multi-Camera PiP', subtitle: 'Secondary angles as picture-in-picture overlays' },
-  motion: { icon: Film, title: '3D Motion Graphics', subtitle: 'Cinematic titles, stings and logo outros' },
-  graphics: { icon: Type, title: 'Broadcast Graphics', subtitle: 'Lower thirds and on-screen text' },
-  nodes: { icon: GitBranch, title: 'Compositor Pipeline', subtitle: 'Toggle processing stages like Aximetry compounds' },
-  output: { icon: MonitorPlay, title: 'Program Output', subtitle: 'Mixer feed, RTMP stream, audio and recording' },
+  scenes: { icon: FolderOpen, title: 'Scenes', subtitle: 'Save and recall full production states' },
+  camera: { icon: Camera, title: 'Camera', subtitle: 'Webcam, HDMI capture or paired mobile feed' },
+  mobile: { icon: Smartphone, title: 'Prism Eye', subtitle: 'Wireless phone camera and gyro virtual camera' },
+  tracking: { icon: Compass, title: 'Tracking', subtitle: 'Orientation tracking, WebXR and device control' },
+  multicam: { icon: LayoutGrid, title: 'Multi-Cam', subtitle: 'Secondary angles as picture-in-picture overlays' },
+  motion: { icon: Film, title: '3D Motion', subtitle: 'Cinematic titles, stings and logo outros' },
+  graphics: { icon: Type, title: 'Lower Thirds', subtitle: 'On-screen text and broadcast graphics' },
+  nodes: { icon: GitBranch, title: 'Pipeline', subtitle: 'Toggle processing stages like Aximetry compounds' },
+  output: { icon: MonitorPlay, title: 'Program', subtitle: 'Mixer feed, RTMP stream, audio and recording' },
 };
 
 const NAV_COLLAPSE_KEY = 'regal-prism.nav.compact';
@@ -184,7 +184,8 @@ export function PrismLayout({ hidden = false }: PrismLayoutProps) {
   const keyerEnabled = pipelineNode(studio.nodeGraph, 'keyer').enabled;
   const virtualSetEnabled = pipelineNode(studio.nodeGraph, 'virtual_set').enabled;
 
-  const [panel, setPanel] = useState<SidePanel>('keyer');
+  // A photoreal set on stage opens straight onto its production desk.
+  const [panel, setPanel] = useState<SidePanel>(studio.renderEngine === 'photoreal' ? 'photoreal' : 'keyer');
   /** Collapsed rail = icons only; expanded = grouped, labelled navigation. */
   const [navCompact, setNavCompact] = useState<boolean>(() => {
     try {
@@ -233,6 +234,28 @@ export function PrismLayout({ hidden = false }: PrismLayoutProps) {
   const [recordingClip, setRecordingClip] = useState(false);
   // Shared read of the live camera element for the 3D talent plate (both engines).
   const rawVideo = camera.videoRef.current ?? null;
+
+  /* ---------------------------------------------------------- talent feed */
+  // What feeds the talent plate: the live capture by default, a video file
+  // played full-frame, or nothing. The hidden player below serves the file so
+  // both render engines can texture the plate exactly like a camera.
+  const talentSource = studio.photoreal.talentSource ?? { kind: 'camera' as const };
+  const talentVideoMode = talentSource.kind === 'video' && Boolean(talentSource.url);
+  const talentOff = talentSource.kind === 'off';
+  /** Hidden full-frame player for the video-file talent plate — declarative
+   *  src + key so React (re)mounts a fresh element per source. */
+  const [talentVideoEl, setTalentVideoEl] = useState<HTMLVideoElement | null>(null);
+  /** Resolved talent inputs handed to every stage renderer. */
+  const talentFeed = {
+    keyedCanvas: talentVideoMode || talentOff ? null : keyedCanvas,
+    rawVideo: talentVideoMode ? talentVideoEl : talentOff ? null : rawVideo,
+    keyerEnabled: keyerEnabled && !talentVideoMode,
+    showReflections: studio.showReflections,
+    enabled: !talentOff,
+    placement: studio.photoreal.talentPlacement,
+  };
+  /** The stage needs a picture: live capture running, or a talent video loaded. */
+  const stagePowered = camera.active || talentVideoMode;
 
   useEffect(() => {
     patchState({ showWatermark });
@@ -473,6 +496,8 @@ export function PrismLayout({ hidden = false }: PrismLayoutProps) {
           : {}),
       });
       prismFeed.setKeySettings(sceneToKeySettings(scene));
+      // Loading a photoreal production state jumps to its working desk.
+      if (ext.photoreal?.renderEngine === 'photoreal') setPanel('photoreal');
       if (ext.lowerThird) setLowerThird(ext.lowerThird);
       if (ext.motion) {
         prismFeed.setMotion({
@@ -686,6 +711,31 @@ export function PrismLayout({ hidden = false }: PrismLayoutProps) {
                 mode={studio.mode}
                 canUseAr={canUseAr}
                 onSelectMode={(m) => patchStudio({ mode: m, renderEngine: 'photoreal' })}
+                capture={{
+                  active: camera.active,
+                  error: camera.error,
+                  devices: camera.devices.map((d) => ({ deviceId: d.deviceId, label: d.label })),
+                  activeDeviceId: camera.deviceIds.video,
+                  isMobile: camera.isMobileSource,
+                  start: (deviceId) => camera.start(deviceId),
+                  stop: camera.stop,
+                  refreshDevices: camera.refreshDevices,
+                }}
+                mobileSources={camera.pairedMobileDevices.map((d) => ({
+                  deviceId: d.deviceId,
+                  label: d.label,
+                  status: d.status,
+                }))}
+                cameraSourceId={state.cameraSourceId}
+                onSelectMobileSource={(id) => {
+                  patchState({ cameraSourceId: id });
+                  if (id === 'local') camera.stop();
+                  else void camera.start();
+                }}
+                keyerEnabled={keyerEnabled}
+                onToggleKeyer={() =>
+                  patchStudio({ nodeGraph: setNodeEnabled(studio.nodeGraph, 'keyer', !keyerEnabled) })
+                }
               />
             )}
             {panel === 'engines' && <StageEnginePanel />}
@@ -943,11 +993,22 @@ export function PrismLayout({ hidden = false }: PrismLayoutProps) {
 
         <main className="relative min-w-0 flex-1">
           <video ref={camera.videoRef} className="hidden" playsInline muted autoPlay />
+          {/* Talent plate feed when the operator picks a video file source. */}
+          <video
+            ref={setTalentVideoEl}
+            key={talentSource.kind === 'video' && talentSource.url ? talentSource.url : 'talent-none'}
+            src={talentSource.kind === 'video' && talentSource.url ? talentSource.url : undefined}
+            className="hidden"
+            playsInline
+            muted
+            loop
+            autoPlay
+          />
           <canvas ref={keyCanvasRef} className="hidden" />
           <SecondaryCameraVideos slots={studio.secondarySlots} setVideoRef={secondary.setVideoRef} />
 
           <div className="relative h-full w-full min-h-[360px]">
-            {!camera.active ? (
+            {!stagePowered ? (
               !hidden && (
                 <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
                   <Sparkles className="h-12 w-12 text-amber-500/50" />
@@ -990,20 +1051,20 @@ export function PrismLayout({ hidden = false }: PrismLayoutProps) {
                       interactive={!state.orientationTracking && !state.webxrTracking}
                       settings={stageEngine.settings.babylon}
                       onCanvasReady={attachGlCanvas}
-                      talent={{
-                        keyedCanvas,
-                        rawVideo,
-                        keyerEnabled,
-                        showReflections: studio.showReflections,
-                        placement: studio.photoreal.talentPlacement,
-                      }}
+                      talent={talentFeed}
                     />
-                  ) : stageEngineId === 'unreal-pixelstream' ? (
+                  ) : stageEngineId === 'unreal-pixelstream' || stageEngine.settings.engine === 'unreal-pixelstream' ? (
                     <UnrealPixelStreamStage
                       settings={stageEngine.settings.unreal}
                       visible={virtualSetEnabled}
                       interactive={!state.orientationTracking && !state.webxrTracking}
                       onStageSource={attachGlCanvas}
+                      fidelity="high"
+                      onStats={(s) => {
+                        if (s.state === 'streaming') {
+                          console.info('[Prism] Unreal Pixel Streaming connected', s.resolution);
+                        }
+                      }}
                     />
                   ) : usePhotoreal && photorealDef ? (
                     <VirtualStudioStage
@@ -1041,19 +1102,13 @@ export function PrismLayout({ hidden = false }: PrismLayoutProps) {
                       visible={virtualSetEnabled}
                       interactive={!state.orientationTracking && !state.webxrTracking}
                       onCanvasReady={attachGlCanvas}
-                      talent={{
-                        keyedCanvas,
-                        rawVideo,
-                        keyerEnabled,
-                        showReflections: studio.showReflections,
-                        placement: studio.photoreal.talentPlacement,
-                      }}
+                      talent={talentFeed}
                     />
                   ) : (
                     <VirtualScene
                       virtualSet={virtualSet}
-                      keyedCanvas={keyedCanvas}
-                      rawVideo={rawVideo}
+                      keyedCanvas={talentFeed.keyedCanvas}
+                      rawVideo={talentFeed.rawVideo}
                       mode={studio.mode}
                       cameraYaw={studio.cameraYaw}
                       cameraPitch={studio.cameraPitch}
