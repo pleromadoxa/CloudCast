@@ -23,10 +23,10 @@ export function volumeAtBeat(points: AutomationPoint[] | undefined, beat: number
   return fallback;
 }
 
-export function normalizeAutomationPoint(bar: number, beat: number, value: number): AutomationPoint {
+export function normalizeAutomationPoint(bar: number, beat: number, value: number, min = 0, max = 100): AutomationPoint {
   return {
     bar: Math.max(0, bar),
     beat: Math.max(0, Math.min(3.999, beat)),
-    value: Math.max(0, Math.min(100, value)),
+    value: Math.max(min, Math.min(max, value)),
   };
 }

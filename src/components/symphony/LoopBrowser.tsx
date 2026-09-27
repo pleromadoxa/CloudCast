@@ -5,7 +5,8 @@ import { INSTRUMENT_CATEGORIES, INSTRUMENT_LIBRARY } from '../../lib/symphony/in
 import { DND_INSTRUMENT, DND_LOOP } from '../../lib/symphony/dragTypes';
 import type { LoopItem } from '../../types/symphony';
 import { WaveformMini } from './symphonyUi';
-import { SymphonyButton, symListItemClass } from './SymphonyButton';
+import { SymphonyButton } from './SymphonyButton';
+import { symListItemClass } from './symphonyTheme';
 import { cn } from '../../lib/utils';
 
 interface LoopBrowserProps {

@@ -1,5 +1,5 @@
-import { useCallback } from 'react';
-import { SlidersHorizontal } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { Pencil, SlidersHorizontal } from 'lucide-react';
 import type { SymphonyProject, Track, TrackFx } from '../../types/symphony';
 import { defaultTrackFx, normalizeTrackFx } from '../../types/symphony';
 import { trackLanes } from '../../lib/symphony/automationSchedule';
@@ -7,7 +7,7 @@ import { cn } from '../../lib/utils';
 import { HardwareKnob } from './hardware/HardwareKnob';
 import { HardwareFader } from './hardware/HardwareFader';
 import { StereoVuMeter } from './hardware/PeakVuMeter';
-import { TRACK_COLOR_MAP } from './symphonyUi';
+import { TRACK_COLORS, TRACK_COLOR_MAP } from './symphonyTheme';
 
 export interface MixerConsoleProps {
   project: SymphonyProject;
@@ -21,6 +21,7 @@ export interface MixerConsoleProps {
   onSelectTrack: (id: string) => void;
   onTrackChange: (id: string, patch: Partial<Track>) => void;
   onProjectChange: (patch: Partial<SymphonyProject>) => void;
+  onOpenFxRack?: (trackId: string) => void;
 }
 
 type InsertKind = 'eq' | 'comp' | 'filter' | 'chorus' | 'drive';
@@ -83,11 +84,21 @@ const panDisplay = (v: number): string => (v > 0 ? `R${Math.round(v)}` : v < 0 ?
 export function MixerConsole({
   project, tracks, selectedTrackId, meterLevels, meterPeaks,
   masterMeter, limiterReductionDb, playing,
-  onSelectTrack, onTrackChange, onProjectChange,
+  onSelectTrack, onTrackChange, onProjectChange, onOpenFxRack,
 }: MixerConsoleProps) {
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
+  const [paletteFor, setPaletteFor] = useState<string | null>(null);
+
   const patchFx = useCallback((track: Track, mutate: (fx: TrackFx) => TrackFx) => {
     onTrackChange(track.id, { fx: mutate(normalizeTrackFx(track.fx)) });
   }, [onTrackChange]);
+
+  const commitRename = useCallback(() => {
+    if (renaming && renaming.value.trim()) {
+      onTrackChange(renaming.id, { name: renaming.value.trim() });
+    }
+    setRenaming(null);
+  }, [renaming, onTrackChange]);
 
   const masterEq = project.masterEq ?? { low: 0, mid: 0, high: 0, midFreq: 1000 };
 
@@ -104,7 +115,27 @@ export function MixerConsole({
             onMouseDown={() => onSelectTrack(track.id)}
           >
             <div className="flex w-full items-center justify-between px-1">
-              <div className={cn('h-1.5 w-8 rounded-full', colors.stripe)} />
+              <div className="relative">
+                <button
+                  type="button"
+                  className={cn('h-1.5 w-8 cursor-pointer rounded-full transition-transform hover:scale-y-150', colors.stripe)}
+                  title="Track color"
+                  onClick={(e) => { e.stopPropagation(); setPaletteFor(paletteFor === track.id ? null : track.id); }}
+                />
+                {paletteFor === track.id && (
+                  <div className="sym-color-pop" onClick={(e) => e.stopPropagation()}>
+                    {TRACK_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={cn('sym-color-pop__dot', TRACK_COLOR_MAP[c].stripe, track.color === c && 'sym-color-pop__dot--active')}
+                        onClick={() => { onTrackChange(track.id, { color: c }); setPaletteFor(null); }}
+                        aria-label={`Set color ${c}`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-1">
                 {trackLanes(track).length > 0 && (
                   <span className="sym-pro-chip sym-pro-chip--gold" title="Track has automation lanes">AUTO</span>
@@ -113,8 +144,39 @@ export function MixerConsole({
               </div>
             </div>
 
-            <div className={cn('sym-strip__label', colors.bg, colors.border)}>
-              {track.name}
+            {renaming?.id === track.id ? (
+              <input
+                autoFocus
+                className="sym-strip__label-input"
+                value={renaming.value}
+                onChange={(e) => setRenaming({ id: track.id, value: e.target.value })}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') setRenaming(null);
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <div
+                className={cn('sym-strip__label', colors.bg, colors.border)}
+                title="Double-click to rename"
+                onDoubleClick={(e) => { e.stopPropagation(); setRenaming({ id: track.id, value: track.name }); }}
+              >
+                {track.name}
+              </div>
+            )}
+
+            <div className="flex w-full items-center justify-between px-0.5">
+              <span className="sym-knob__label">Inserts</span>
+              <button
+                type="button"
+                className="text-white/35 transition-colors hover:text-violet-300"
+                title="Open FX rack for this channel"
+                onClick={(e) => { e.stopPropagation(); onOpenFxRack?.(track.id); }}
+              >
+                <Pencil className="h-2.5 w-2.5" />
+              </button>
             </div>
 
             <div className="sym-strip__inserts">

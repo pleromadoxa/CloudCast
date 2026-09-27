@@ -1,5 +1,6 @@
 import { Circle, Pause, Play, Repeat, Square, Timer } from 'lucide-react';
 import { SymphonyButton } from './SymphonyButton';
+import { StereoVuMeter } from './hardware/PeakVuMeter';
 import { cn } from '../../lib/utils';
 
 const KEYS = ['C maj', 'G maj', 'D maj', 'A maj', 'E maj', 'F maj', 'B maj', 'A min', 'E min', 'D min'];
@@ -16,6 +17,8 @@ interface TransportBarProps {
   timeSignature: [number, number];
   musicalKey: string;
   projectName: string;
+  masterMeter: { level: number; peak: number };
+  limiterReductionDb: number;
   onPlay: () => void;
   onPause: () => void;
   onStop: () => void;
@@ -30,6 +33,7 @@ interface TransportBarProps {
 
 export function TransportBar({
   playing, paused, recording, looping, metronome, countIn, position, tempo, timeSignature, musicalKey, projectName,
+  masterMeter, limiterReductionDb,
   onPlay, onPause, onStop, onRecord, onToggleLoop, onToggleMetronome, onToggleCountIn,
   onTempoChange, onKeyChange, onProjectNameChange,
 }: TransportBarProps) {
@@ -118,6 +122,21 @@ export function TransportBar({
       </div>
 
       <div className="ml-auto flex min-w-0 items-center gap-3">
+        <div className="sym-transport-meter" title="Master output level">
+          <span className="sym-transport-lcd__label">Main</span>
+          <StereoVuMeter
+            left={masterMeter.level}
+            right={masterMeter.level * 0.94}
+            leftPeak={masterMeter.peak}
+            rightPeak={masterMeter.peak * 0.94}
+            orientation="horizontal"
+            segments={16}
+            height={110}
+          />
+          <span className={cn('sym-gr-readout', limiterReductionDb < -0.05 && 'sym-gr-readout--active')}>
+            GR {limiterReductionDb < -0.05 ? limiterReductionDb.toFixed(1) : '0.0'}
+          </span>
+        </div>
         <input
           type="text"
           value={projectName}

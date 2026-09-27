@@ -14,8 +14,10 @@ import {
   type PlayheadPosition,
 } from '../../lib/symphony/dragTypes';
 import { cn } from '../../lib/utils';
-import { AudioWaveform, MidiDots, SegmentedVuMeter, TRACK_COLOR_MAP } from './symphonyUi';
-import { SymphonyButton, symPianoKeyClass } from './SymphonyButton';
+import { AudioWaveform, MidiDots } from './symphonyUi';
+import { TRACK_COLOR_MAP, symPianoKeyClass } from './symphonyTheme';
+import { StereoVuMeter } from './hardware/PeakVuMeter';
+import { SymphonyButton } from './SymphonyButton';
 import { PlayheadTicker } from './PlayheadTicker';
 
 function trackIcon(instrumentId: string): string {
@@ -29,8 +31,18 @@ function trackIcon(instrumentId: string): string {
   return '🎹';
 }
 
-function VolumeMeter({ level, trackColor }: { level: number; trackColor: TrackColor }) {
-  return <SegmentedVuMeter level={level} trackColor={trackColor} />;
+function VolumeMeter({ level }: { level: number }) {
+  return (
+    <StereoVuMeter
+      left={level}
+      right={level * 0.92}
+      leftPeak={level}
+      rightPeak={level * 0.92}
+      orientation="horizontal"
+      segments={12}
+      height={96}
+    />
+  );
 }
 
 interface TrackHeadersProps {
@@ -47,6 +59,15 @@ interface TrackHeadersProps {
 export function TrackHeaders({
   tracks, selectedTrackId, meterLevels, onSelectTrack, onTrackChange, onRemoveTrack, onAddTrack, maxTracks,
 }: TrackHeadersProps) {
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
+
+  const commitRename = () => {
+    if (renaming && renaming.value.trim()) {
+      onTrackChange(renaming.id, { name: renaming.value.trim() });
+    }
+    setRenaming(null);
+  };
+
   return (
     <div className="sym-panel sym-panel--tracks flex w-44 shrink-0 flex-col lg:w-52">
       <div className="sym-panel__header sym-panel__header--ruler">
@@ -79,7 +100,28 @@ export function TrackHeaders({
               <div className="flex items-center gap-1.5">
                 <span className="sym-track-row__index">{track.index}</span>
                 <span className="text-sm drop-shadow-sm">{trackIcon(track.instrumentId)}</span>
-                <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-white/90">{track.name}</span>
+                {renaming?.id === track.id ? (
+                  <input
+                    autoFocus
+                    className="min-w-0 flex-1 rounded border border-violet-400/50 bg-black/40 px-1 text-[11px] font-semibold text-white outline-none"
+                    value={renaming.value}
+                    onChange={(e) => setRenaming({ id: track.id, value: e.target.value })}
+                    onBlur={commitRename}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRename();
+                      if (e.key === 'Escape') setRenaming(null);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <span
+                    className="min-w-0 flex-1 truncate text-[11px] font-semibold text-white/90"
+                    title="Double-click to rename"
+                    onDoubleClick={(e) => { e.stopPropagation(); setRenaming({ id: track.id, value: track.name }); }}
+                  >
+                    {track.name}
+                  </span>
+                )}
                 <SymphonyButton
                   variant="ms"
                   accent="red"
@@ -101,7 +143,7 @@ export function TrackHeaders({
                 <SymphonyButton variant="ghost" accent="red" onClick={(e) => { e.stopPropagation(); onRemoveTrack(track.id); }}
                   className="hidden h-4 w-4 text-[12px] group-hover:inline" title="Remove track">×</SymphonyButton>
               </div>
-              <VolumeMeter level={meterLevels[track.id] ?? 0} trackColor={track.color} />
+              <VolumeMeter level={meterLevels[track.id] ?? 0} />
             </div>
           </div>
         );})}
@@ -263,6 +305,7 @@ export function TimelineView({
     origLength: number;
     origTrackId: string;
   } | null>(null);
+  const dragAbortRef = useRef<AbortController | null>(null);
 
   const width = totalBars * barWidth;
   const playheadPx = playheadToPx(playheadPosition.bar, playheadPosition.beat, playheadPosition.tick, barWidth);
@@ -336,9 +379,9 @@ export function TimelineView({
 
   const onPointerUp = useCallback(() => {
     dragRef.current = null;
-    window.removeEventListener('pointermove', onPointerMove);
-    window.removeEventListener('pointerup', onPointerUp);
-  }, [onPointerMove]);
+    dragAbortRef.current?.abort();
+    dragAbortRef.current = null;
+  }, []);
 
   const startDrag = (mode: DragMode, regionId: string, e: React.PointerEvent) => {
     if (editTool !== 'select' && editTool !== 'trim') return;
@@ -353,14 +396,14 @@ export function TimelineView({
       origLength: region.lengthBars,
       origTrackId: region.trackId,
     };
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
+    dragAbortRef.current?.abort();
+    const ac = new AbortController();
+    dragAbortRef.current = ac;
+    window.addEventListener('pointermove', onPointerMove, { signal: ac.signal });
+    window.addEventListener('pointerup', onPointerUp, { signal: ac.signal });
   };
 
-  useEffect(() => () => {
-    window.removeEventListener('pointermove', onPointerMove);
-    window.removeEventListener('pointerup', onPointerUp);
-  }, [onPointerMove, onPointerUp]);
+  useEffect(() => () => dragAbortRef.current?.abort(), []);
 
   return (
     <div className="sym-timeline flex min-h-0 min-w-0 flex-1 flex-col">

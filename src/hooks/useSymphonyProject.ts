@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import type { LoopItem, NoteEvent, Region, SymphonyProject, Track, TimelineMarker } from '../types/symphony';
+import type { AutomationLane, AutomationParam, LoopItem, NoteEvent, Region, SymphonyProject, Track, TimelineMarker } from '../types/symphony';
 import { LOOP_LIBRARY } from '../lib/symphony/loops';
 import { getInstrument } from '../lib/symphony/instruments';
 import { duplicateRegion, joinRegions, regionsOverlap, splitRegion, trimRegion } from '../lib/symphony/regionOps';
@@ -330,6 +330,67 @@ export function useSymphonyProject(maxTracks: number) {
     }));
   }, [commit]);
 
+  const upsertLanePoint = useCallback((trackId: string, param: AutomationParam, bar: number, beat: number, value: number) => {
+    commit((prev) => ({
+      ...prev,
+      tracks: prev.tracks.map((t) => {
+        if (t.id !== trackId) return t;
+        const point = normalizeAutomationPoint(bar, beat, value, param === 'pan' ? -100 : 0, 100);
+        const lanes = t.automationLanes ?? [];
+        const lane = lanes.find((l) => l.param === param);
+        const rest = lane ? lane.points.filter((p) => !(p.bar === point.bar && Math.abs(p.beat - point.beat) < 0.01)) : [];
+        const nextLane: AutomationLane = {
+          param,
+          enabled: lane?.enabled ?? true,
+          points: [...rest, point].sort((a, b) => a.bar * 4 + a.beat - (b.bar * 4 + b.beat)),
+        };
+        return {
+          ...t,
+          automationLanes: [...lanes.filter((l) => l.param !== param), nextLane],
+        };
+      }),
+    }));
+  }, [commit]);
+
+  const removeLanePoint = useCallback((trackId: string, param: AutomationParam, bar: number, beat: number) => {
+    commit((prev) => ({
+      ...prev,
+      tracks: prev.tracks.map((t) => {
+        if (t.id !== trackId) return t;
+        const lanes = (t.automationLanes ?? []).map((l) =>
+          l.param === param
+            ? { ...l, points: l.points.filter((p) => !(p.bar === bar && Math.abs(p.beat - beat) < 0.01)) }
+            : l,
+        );
+        return { ...t, automationLanes: lanes };
+      }),
+    }));
+  }, [commit]);
+
+  const setLaneEnabled = useCallback((trackId: string, param: AutomationParam, enabled: boolean) => {
+    commit((prev) => ({
+      ...prev,
+      tracks: prev.tracks.map((t) => {
+        if (t.id !== trackId) return t;
+        const lanes = t.automationLanes ?? [];
+        const lane = lanes.find((l) => l.param === param);
+        const nextLane: AutomationLane = lane
+          ? { ...lane, enabled }
+          : { param, enabled, points: [] };
+        return { ...t, automationLanes: [...lanes.filter((l) => l.param !== param), nextLane] };
+      }),
+    }));
+  }, [commit]);
+
+  const clearLane = useCallback((trackId: string, param: AutomationParam) => {
+    commit((prev) => ({
+      ...prev,
+      tracks: prev.tracks.map((t) => (t.id === trackId
+        ? { ...t, automationLanes: (t.automationLanes ?? []).filter((l) => l.param !== param) }
+        : t)),
+    }));
+  }, [commit]);
+
   const appendRecordedNotes = useCallback((trackId: string, notes: NoteEvent[], startBar: number) => {
     commit((prev) => {
       const track = prev.tracks.find((t) => t.id === trackId);
@@ -401,6 +462,10 @@ export function useSymphonyProject(maxTracks: number) {
     removeMarker,
     addAutomationPoint,
     clearTrackAutomation,
+    upsertLanePoint,
+    removeLanePoint,
+    setLaneEnabled,
+    clearLane,
     appendRecordedNotes,
     undo,
     redo,

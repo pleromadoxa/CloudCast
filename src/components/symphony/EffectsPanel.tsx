@@ -1,7 +1,7 @@
 import { Sparkles, Wand2 } from 'lucide-react';
 import type { Region, SymphonyProject, Track } from '../../types/symphony';
 import { SymphonyButton } from './SymphonyButton';
-import { TRACK_COLOR_MAP } from './symphonyUi';
+import { TRACK_COLOR_MAP } from './symphonyTheme';
 import { cn } from '../../lib/utils';
 
 interface EffectsPanelProps {

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Download, FileAudio, X } from 'lucide-react';
 import type { ExportFormat, ExportSettings, SymphonyProject } from '../../types/symphony';
 import { defaultExportSettings } from '../../types/symphony';
-import { downloadBlob, estimateFileSizeBytes, exportProjectAudio, projectEndBeat, renderWindowBeats } from '../../lib/symphony/exportAudio';
+import { downloadBlob, estimateFileSizeBytes, exportProjectAudio, exportStemsZip, projectEndBeat, renderWindowBeats, stemTracks } from '../../lib/symphony/exportAudio';
 import { SymphonyButton } from './SymphonyButton';
 import { ToggleSwitch } from './hardware/LcdPanel';
 import { cn } from '../../lib/utils';
@@ -39,8 +39,13 @@ export function ExportDialog({ project, initialSettings, onClose, onExported }: 
   }));
   const [stage, setStage] = useState<Stage>('idle');
   const [status, setStatus] = useState<string | null>(null);
+  const [stemProgress, setStemProgress] = useState<{ stemIndex: number; stemCount: number; trackName: string } | null>(null);
+  const [scope, setScope] = useState<'mixdown' | 'stems'>('mixdown');
 
   const patch = (p: Partial<ExportSettings>) => setSettings((s) => ({ ...s, ...p }));
+
+  const stemCount = useMemo(() => stemTracks(project).length, [project]);
+  const stemsMode = scope === 'stems';
 
   const durationSec = useMemo(() => {
     const { startBeat, endBeat } = renderWindowBeats(project, {
@@ -51,17 +56,31 @@ export function ExportDialog({ project, initialSettings, onClose, onExported }: 
     return ((endBeat - startBeat) * 60) / project.tempo + (settings.includeTail ? 2.5 : 0);
   }, [project, settings.range, settings.includeTail, settings.sampleRate]);
 
-  const estimatedBytes = useMemo(
-    () => estimateFileSizeBytes(settings, durationSec),
-    [settings, durationSec],
-  );
+  const estimatedBytes = useMemo(() => {
+    const spec = stemsMode ? { ...settings, format: 'wav' as ExportFormat } : settings;
+    const per = estimateFileSizeBytes(spec, durationSec);
+    return stemsMode ? per * Math.max(1, stemCount) : per;
+  }, [settings, durationSec, stemsMode, stemCount]);
 
   const busy = stage === 'rendering' || stage === 'encoding';
 
   const handleExport = async () => {
     setStage('rendering');
     setStatus(null);
+    setStemProgress(null);
     try {
+      if (stemsMode) {
+        const { blob, fileName } = await exportStemsZip(
+          project,
+          { ...settings, format: 'wav' },
+          (s, info) => { setStage(s); setStemProgress(info ?? null); },
+        );
+        downloadBlob(blob, fileName);
+        setStage('done');
+        setStatus(`Exported ${stemCount} stems → ${fileName} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
+        onExported?.(fileName);
+        return;
+      }
       const { blob, fileName } = await exportProjectAudio(project, settings, (s) => setStage(s));
       downloadBlob(blob, fileName);
       setStage('done');
@@ -86,18 +105,39 @@ export function ExportDialog({ project, initialSettings, onClose, onExported }: 
         </div>
 
         <div className="sym-format-tabs">
-          {(Object.keys(FORMAT_INFO) as ExportFormat[]).map((fmt) => (
-            <button
-              key={fmt}
-              type="button"
-              className={cn('sym-format-tab', settings.format === fmt && 'sym-format-tab--active')}
-              onClick={() => patch({ format: fmt })}
-            >
-              <div>{FORMAT_INFO[fmt].title}</div>
-              <div className="mt-0.5 text-[7px] font-semibold tracking-widest opacity-70">{FORMAT_INFO[fmt].sub}</div>
-            </button>
-          ))}
+          <button
+            type="button"
+            className={cn('sym-format-tab', !stemsMode && 'sym-format-tab--active')}
+            onClick={() => setScope('mixdown')}
+          >
+            <div>MIXDOWN</div>
+            <div className="mt-0.5 text-[7px] font-semibold tracking-widest opacity-70">Single stereo file</div>
+          </button>
+          <button
+            type="button"
+            className={cn('sym-format-tab', stemsMode && 'sym-format-tab--active')}
+            onClick={() => setScope('stems')}
+          >
+            <div>STEMS</div>
+            <div className="mt-0.5 text-[7px] font-semibold tracking-widest opacity-70">Per-track WAV · ZIP</div>
+          </button>
         </div>
+
+        {!stemsMode && (
+          <div className="sym-format-tabs">
+            {(Object.keys(FORMAT_INFO) as ExportFormat[]).map((fmt) => (
+              <button
+                key={fmt}
+                type="button"
+                className={cn('sym-format-tab', settings.format === fmt && 'sym-format-tab--active')}
+                onClick={() => patch({ format: fmt })}
+              >
+                <div>{FORMAT_INFO[fmt].title}</div>
+                <div className="mt-0.5 text-[7px] font-semibold tracking-widest opacity-70">{FORMAT_INFO[fmt].sub}</div>
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="sym-settings__group">
           <div className="flex flex-col gap-2">
@@ -121,7 +161,7 @@ export function ExportDialog({ project, initialSettings, onClose, onExported }: 
                 <option value={96000}>96 kHz</option>
               </select>
             </SettingRow>
-            {settings.format !== 'mp3' ? (
+            {(stemsMode || settings.format !== 'mp3') && (
               <SettingRow label="Bit depth">
                 <select
                   className="sym-settings__select"
@@ -132,7 +172,8 @@ export function ExportDialog({ project, initialSettings, onClose, onExported }: 
                   <option value={24}>24-bit</option>
                 </select>
               </SettingRow>
-            ) : (
+            )}
+            {!stemsMode && settings.format === 'mp3' && (
               <SettingRow label="Bitrate">
                 <select
                   className="sym-settings__select"
@@ -179,7 +220,7 @@ export function ExportDialog({ project, initialSettings, onClose, onExported }: 
           <div>
             <div className="sym-lcd-pro__label">Estimated</div>
             <div className="sym-lcd-pro__value sym-lcd-pro__value--sm">
-              {(estimatedBytes / 1024 / 1024).toFixed(2)} MB · {durationSec.toFixed(1)}s
+              {stemsMode ? `${stemCount} stems · ` : ''}{(estimatedBytes / 1024 / 1024).toFixed(2)} MB · {durationSec.toFixed(1)}s
             </div>
           </div>
           <div className="text-right">
@@ -204,7 +245,9 @@ export function ExportDialog({ project, initialSettings, onClose, onExported }: 
               />
             </div>
             <p className={cn('mt-1.5 text-[10px]', stage === 'error' ? 'text-red-300' : 'text-white/55')}>
-              {status ?? (stage === 'rendering' ? 'Rendering mix through console graph…' : 'Encoding audio…')}
+              {status ?? (stemProgress && (stage === 'rendering' || stage === 'encoding')
+                ? `${stage === 'rendering' ? 'Rendering' : 'Encoding'} stem ${stemProgress.stemIndex + 1}/${stemProgress.stemCount} · ${stemProgress.trackName}…`
+                : stage === 'rendering' ? 'Rendering mix through console graph…' : 'Encoding audio…')}
             </p>
           </div>
         )}
@@ -213,8 +256,8 @@ export function ExportDialog({ project, initialSettings, onClose, onExported }: 
           <SymphonyButton variant="default" accent="neutral" onClick={onClose} disabled={busy}>
             CANCEL
           </SymphonyButton>
-          <SymphonyButton variant="default" accent="violet" onClick={() => void handleExport()} disabled={busy}>
-            <Download className="h-3 w-3" /> EXPORT {settings.format.toUpperCase()}
+          <SymphonyButton variant="default" accent="violet" onClick={() => void handleExport()} disabled={busy || (stemsMode && stemCount === 0)}>
+            <Download className="h-3 w-3" /> {stemsMode ? `EXPORT ${stemCount} STEMS (ZIP)` : `EXPORT ${settings.format.toUpperCase()}`}
           </SymphonyButton>
         </div>
       </div>

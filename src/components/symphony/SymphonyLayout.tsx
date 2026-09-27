@@ -25,24 +25,27 @@ import { exportProjectMidi } from '../../lib/symphony/exportMidi';
 import { getInstrument } from '../../lib/symphony/instruments';
 import { loadSymphonyPrefs, saveSymphonyPrefs } from '../../lib/symphony/symphonyPrefs';
 import { SymphonyButton } from './SymphonyButton';
-import { TRACK_COLOR_MAP } from './symphonyUi';
+import { TRACK_COLOR_MAP } from './symphonyTheme';
 import { cn } from '../../lib/utils';
 
 import { EffectsPanel, CyclePanel } from './EffectsPanel';
 import { MixerConsole } from './MixerConsole';
 import { SymphonySettingsPanel } from './SymphonySettingsPanel';
 import { FxRackPanel } from './FxRackPanel';
+import { AutomationPanel } from './AutomationPanel';
+import { ShortcutsDialog } from './ShortcutsDialog';
 import { ExportDialog } from './ExportDialog';
 import { BAR_WIDTH, ZOOM_LEVELS } from '../../lib/symphony/dragTypes';
 import { stretchPatternToTempo } from '../../lib/symphony/noteUtils';
 
-type BottomPanel = 'loops' | 'instruments' | 'effects' | 'cloud' | 'mixer' | 'fxrack' | 'settings';
+type BottomPanel = 'loops' | 'instruments' | 'effects' | 'cloud' | 'mixer' | 'fxrack' | 'automation' | 'settings';
 
 const DOCK_TAB_LABELS: Record<BottomPanel, string> = {
   mixer: '▤ Mixer',
   loops: '◆ Loops',
   instruments: '♫ Instruments',
   fxrack: '✦ FX Rack',
+  automation: '∿ Automation',
   effects: '✧ Effects & Tools',
   settings: '⚙ Settings',
   cloud: '☁ Regal Cloud',
@@ -65,6 +68,7 @@ export function SymphonyLayout() {
   const [cloudStatus, setCloudStatus] = useState<string | null>(null);
   const [cloudLoading, setCloudLoading] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [prefs, setPrefs] = useState<SymphonyPrefs>(() => loadSymphonyPrefs());
   const [zoomIndex, setZoomIndex] = useState(2);
 
@@ -94,11 +98,13 @@ export function SymphonyLayout() {
 
   useEffect(() => { void listCloudProjects().then(setCloudProjects); }, []);
 
+  const { visibleTracks, setSelectedTrackId, selectedTrackId: symSelectedTrackId } = sym;
+
   useEffect(() => {
-    if (!sym.selectedTrackId && sym.visibleTracks[0]) {
-      sym.setSelectedTrackId(sym.visibleTracks[0].id);
+    if (!symSelectedTrackId && visibleTracks[0]) {
+      setSelectedTrackId(visibleTracks[0].id);
     }
-  }, [sym.visibleTracks, sym.selectedTrackId, sym.setSelectedTrackId]);
+  }, [visibleTracks, symSelectedTrackId, setSelectedTrackId]);
 
   const activeTrackId = sym.selectedTrackId ?? sym.visibleTracks[0]?.id ?? null;
 
@@ -165,6 +171,8 @@ export function SymphonyLayout() {
         if (sym.selectedRegionId) { e.preventDefault(); sym.deleteRegion(sym.selectedRegionId); }
       }
       if (e.code === 'KeyD' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sym.duplicateSelectedRegion(); }
+      if (e.key === '?') { e.preventDefault(); setShowShortcuts((v) => !v); }
+      if (e.key === 'Escape') setShowShortcuts(false);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -195,6 +203,9 @@ export function SymphonyLayout() {
           </SymphonyButton>
           <SymphonyButton variant="icon" accent="neutral" onClick={() => sym.redo()} title="Redo (⌘⇧Z)">
             <Redo2 className="h-3.5 w-3.5" />
+          </SymphonyButton>
+          <SymphonyButton variant="icon" accent="neutral" onClick={() => setShowShortcuts(true)} title="Keyboard shortcuts (?)">
+            <Keyboard className="h-3.5 w-3.5" />
           </SymphonyButton>
           <SymphonyButton variant="toggle" accent="violet" active={sym.snapEnabled} onClick={() => sym.setSnapEnabled(!sym.snapEnabled)}>
             SNAP
@@ -250,6 +261,8 @@ export function SymphonyLayout() {
         timeSignature={sym.project.timeSignature}
         musicalKey={sym.project.key}
         projectName={sym.project.name}
+        masterMeter={playback.masterMeter}
+        limiterReductionDb={playback.limiterReductionDb}
         onPlay={() => { void playback.handleTransport(); }}
         onPause={playback.handlePause}
         onStop={playback.handleStop}
@@ -409,7 +422,7 @@ export function SymphonyLayout() {
           className={cn(
             'sym-bottom-panel shrink-0',
             bottomPanel === 'mixer' && 'h-[330px]',
-            (bottomPanel === 'settings' || bottomPanel === 'fxrack') && 'h-[360px]',
+            (bottomPanel === 'settings' || bottomPanel === 'fxrack' || bottomPanel === 'automation') && 'h-[360px]',
             (bottomPanel === 'effects' || bottomPanel === 'instruments' || bottomPanel === 'cloud') && 'lg:h-44',
           )}
         >
@@ -449,6 +462,7 @@ export function SymphonyLayout() {
               onSelectTrack={sym.setSelectedTrackId}
               onTrackChange={sym.updateTrack}
               onProjectChange={sym.updateProject}
+              onOpenFxRack={(id) => { sym.setSelectedTrackId(id); setBottomPanel('fxrack'); }}
             />
           )}
           {bottomPanel === 'fxrack' && (
@@ -456,6 +470,17 @@ export function SymphonyLayout() {
               track={selectedTrack}
               onTrackChange={sym.updateTrack}
               onClearAutomation={sym.clearTrackAutomation}
+            />
+          )}
+          {bottomPanel === 'automation' && (
+            <AutomationPanel
+              track={selectedTrack}
+              totalBars={sym.totalBars}
+              playheadBeat={playback.position.bar * 4 + playback.position.beat}
+              onUpsertPoint={sym.upsertLanePoint}
+              onRemovePoint={sym.removeLanePoint}
+              onSetLaneEnabled={sym.setLaneEnabled}
+              onClearLane={sym.clearLane}
             />
           )}
           {bottomPanel === 'settings' && (
@@ -507,7 +532,7 @@ export function SymphonyLayout() {
 
       <footer className="sym-dock flex shrink-0 items-center justify-between px-3 py-2">
         <div className="flex flex-wrap gap-1">
-          {(['mixer', 'loops', 'instruments', 'fxrack', 'effects', 'settings', 'cloud'] as BottomPanel[]).map((panel) => (
+          {(['mixer', 'loops', 'instruments', 'fxrack', 'automation', 'effects', 'settings', 'cloud'] as BottomPanel[]).map((panel) => (
             <SymphonyButton
               key={panel}
               variant="toggle"
@@ -538,6 +563,8 @@ export function SymphonyLayout() {
           onExported={(fileName) => setCloudStatus(`Exported ${fileName}`)}
         />
       )}
+
+      {showShortcuts && <ShortcutsDialog onClose={() => setShowShortcuts(false)} />}
     </div>
   );
 }

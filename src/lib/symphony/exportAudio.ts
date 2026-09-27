@@ -16,6 +16,7 @@ import { laneValueToParam, scheduleLaneRamp, trackLanes } from './automationSche
 import {
   buildReverbImpulseResponse, createDelayBus, createMasterChain, createTrackFxChain,
 } from './fxChain';
+import { createZip, type ZipEntry } from './zipBundle';
 
 const MIDI_TO_FREQ = (n: number) => 440 * Math.pow(2, (n - 69) / 12);
 const TAIL_SEC = 2.5;
@@ -25,6 +26,10 @@ export interface RenderOptions {
   sampleRate: number;
   range: 'project' | 'cycle';
   includeTail: boolean;
+  /** Render only these tracks (stem export). */
+  onlyTracks?: string[];
+  /** Skip the master bus chain/master volume (stem export). */
+  skipMaster?: boolean;
 }
 
 export function projectEndBeat(project: SymphonyProject): number {
@@ -137,10 +142,15 @@ export async function renderProjectToBuffer(
 
   // Master bus (mirrors SymphonyAudioEngine.init).
   const masterGain = offline.createGain();
-  masterGain.gain.value = ((project.masterVolume ?? 85) / 100) * 0.85;
-  const masterChain = createMasterChain(offline, project, false);
-  masterGain.connect(masterChain.input);
-  masterChain.output.connect(offline.destination);
+  masterGain.gain.value = opts.skipMaster ? 1 : ((project.masterVolume ?? 85) / 100) * 0.85;
+  const masterChain = opts.skipMaster ? null : createMasterChain(offline, project, false);
+  const busOut: AudioNode = masterChain ? masterChain.input : offline.destination;
+  if (masterChain) {
+    masterGain.connect(masterChain.input);
+    masterChain.output.connect(offline.destination);
+  } else {
+    masterGain.connect(offline.destination);
+  }
 
   const reverbInput = offline.createGain();
   reverbInput.gain.value = 0.45;
@@ -150,12 +160,13 @@ export async function renderProjectToBuffer(
   reverbReturn.gain.value = 0.9;
   reverbInput.connect(convolver);
   convolver.connect(reverbReturn);
-  reverbReturn.connect(masterChain.input);
+  reverbReturn.connect(busOut);
 
   const delayBus = createDelayBus(offline, tempo);
-  delayBus.output.connect(masterChain.input);
+  delayBus.output.connect(busOut);
 
-  const anySolo = project.tracks.some((t) => t.solo);
+  const renderedTracks = project.tracks.filter((t) => !opts.onlyTracks || opts.onlyTracks.includes(t.id));
+  const anySolo = renderedTracks.some((t) => t.solo);
   const timeAtBeat = (beat: number) => Math.max(0, (beat - startBeat) * beatDur);
 
   const scheduleTrack = (track: Track): void => {
@@ -229,7 +240,7 @@ export async function renderProjectToBuffer(
     }
   };
 
-  for (const track of project.tracks) scheduleTrack(track);
+  for (const track of renderedTracks) scheduleTrack(track);
 
   return offline.startRendering();
 }
@@ -455,4 +466,71 @@ export function downloadBlob(blob: Blob, fileName: string): void {
   a.download = fileName;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export type ExportStage = 'rendering' | 'encoding' | 'done';
+export interface StemProgress {
+  stemIndex: number;
+  stemCount: number;
+  trackName: string;
+}
+
+export interface StemFile {
+  fileName: string;
+  blob: Blob;
+}
+
+/** Which tracks get a stem: audible tracks only (honors mute/solo). */
+export function stemTracks(project: SymphonyProject): Track[] {
+  const anySolo = project.tracks.some((t) => t.solo);
+  return project.tracks.filter((t) => !t.muted && (!anySolo || t.solo));
+}
+
+/**
+ * Render one stem per audible track: post-fader with reverb/delay sends,
+ * without master bus processing (standard stem delivery practice).
+ */
+export async function renderProjectStems(
+  project: SymphonyProject,
+  settings: ExportSettings,
+  onProgress?: (stage: ExportStage, info?: StemProgress) => void,
+): Promise<StemFile[]> {
+  const targets = stemTracks(project);
+  const stems: StemFile[] = [];
+  for (let i = 0; i < targets.length; i++) {
+    const track = targets[i];
+    const progress: StemProgress = { stemIndex: i, stemCount: targets.length, trackName: track.name };
+    onProgress?.('rendering', progress);
+    const buffer = await renderProjectToBuffer(project, {
+      sampleRate: settings.sampleRate,
+      range: settings.range,
+      includeTail: settings.includeTail,
+      onlyTracks: [track.id],
+      skipMaster: true,
+    });
+    if (settings.normalize) normalizeBuffer(buffer);
+    onProgress?.('encoding', progress);
+    const safe = track.name.replace(/[^\w\-. ]+/g, '').trim() || `Track ${track.index}`;
+    stems.push({
+      fileName: `${String(track.index).padStart(2, '0')}-${safe.replace(/\s+/g, '-')}.wav`,
+      blob: encodeWav(buffer, settings.bitDepth),
+    });
+  }
+  onProgress?.('done');
+  return stems;
+}
+
+/** Render all stems and bundle them as a ZIP archive. */
+export async function exportStemsZip(
+  project: SymphonyProject,
+  settings: ExportSettings,
+  onProgress?: (stage: ExportStage, info?: StemProgress) => void,
+): Promise<{ blob: Blob; fileName: string }> {
+  const stems = await renderProjectStems(project, settings, onProgress);
+  const entries: ZipEntry[] = [];
+  for (const stem of stems) {
+    entries.push({ name: stem.fileName, data: new Uint8Array(await stem.blob.arrayBuffer()) });
+  }
+  const safeName = (settings.fileName || project.name || 'mixdown').replace(/[^\w\-. ]+/g, '');
+  return { blob: createZip(entries), fileName: `${safeName}-stems.zip` };
 }

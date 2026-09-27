@@ -63,13 +63,3 @@ export const SymphonyButton = forwardRef<HTMLButtonElement, SymphonyButtonProps>
   ),
 );
 SymphonyButton.displayName = 'SymphonyButton';
-
-/** div/role=button list row with same press feel (no inner face) */
-export function symListItemClass(active = false, className?: string) {
-  return cn('sym-list-item', active && 'sym-list-item--active', className);
-}
-
-/** Piano key classes */
-export function symPianoKeyClass(black = false) {
-  return cn('sym-piano-key', black ? 'sym-piano-key--black' : 'sym-piano-key--white');
-}

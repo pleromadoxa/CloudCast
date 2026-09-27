@@ -5,6 +5,7 @@ import {
   estimateFileSizeBytes,
   normalizeBuffer,
   renderWindowBeats,
+  stemTracks,
 } from './exportAudio';
 import { defaultExportSettings, type SymphonyProject } from '../../types/symphony';
 
@@ -138,5 +139,24 @@ describe('estimateFileSizeBytes', () => {
   it('estimates MP3 size from bitrate', () => {
     const settings = { ...defaultExportSettings('x'), format: 'mp3' as const, mp3BitrateKbps: 320 as const };
     expect(estimateFileSizeBytes(settings, 10)).toBe((320 * 1000 / 8) * 10);
+  });
+});
+
+describe('stemTracks', () => {
+  const track = (id: string, patch: Record<string, unknown> = {}) =>
+    ({ id, name: id, muted: false, solo: false, ...patch }) as unknown as SymphonyProject['tracks'][number];
+
+  it('returns every unmuted track when nothing is soloed', () => {
+    const project = {
+      tracks: [track('a'), track('b'), track('c', { muted: true })],
+    } as unknown as SymphonyProject;
+    expect(stemTracks(project).map((t) => t.id)).toEqual(['a', 'b']);
+  });
+
+  it('restricts to soloed tracks when any solo is active', () => {
+    const project = {
+      tracks: [track('a'), track('b', { solo: true }), track('c', { solo: true, muted: true })],
+    } as unknown as SymphonyProject;
+    expect(stemTracks(project).map((t) => t.id)).toEqual(['b']);
   });
 });
