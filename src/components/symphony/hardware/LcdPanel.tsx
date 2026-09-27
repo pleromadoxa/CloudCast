@@ -20,19 +20,17 @@ export interface LcdReadoutProps {
   label?: string;
   value: ReactNode;
   small?: boolean;
-  amber?: boolean;
   className?: string;
 }
 
 /** Single LCD value with engraved caption. */
-export function LcdReadout({ label, value, small = false, amber = false, className }: LcdReadoutProps) {
+export function LcdReadout({ label, value, small = false, className }: LcdReadoutProps) {
   return (
     <div className={cn('flex flex-col gap-0.5', className)}>
       {label && <span className="sym-lcd-pro__label">{label}</span>}
       <span className={cn('sym-lcd-pro__value', small && 'sym-lcd-pro__value--sm')}>
         {value}
       </span>
-      {amber && <span className="sr-only">amber display</span>}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import type { SymphonyProject, Track, TrackFx } from '../../types/symphony';
 import { defaultTrackFx, normalizeTrackFx } from '../../types/symphony';
+import { trackLanes } from '../../lib/symphony/automationSchedule';
 import { cn } from '../../lib/utils';
 import { HardwareKnob } from './hardware/HardwareKnob';
 import { HardwareFader } from './hardware/HardwareFader';
@@ -104,7 +105,12 @@ export function MixerConsole({
           >
             <div className="flex w-full items-center justify-between px-1">
               <div className={cn('h-1.5 w-8 rounded-full', colors.stripe)} />
-              <span className="sym-knob__label">{String(track.index).padStart(2, '0')}</span>
+              <div className="flex items-center gap-1">
+                {trackLanes(track).length > 0 && (
+                  <span className="sym-pro-chip sym-pro-chip--gold" title="Track has automation lanes">AUTO</span>
+                )}
+                <span className="sym-knob__label">{String(track.index).padStart(2, '0')}</span>
+              </div>
             </div>
 
             <div className={cn('sym-strip__label', colors.bg, colors.border)}>

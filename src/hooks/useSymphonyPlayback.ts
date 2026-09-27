@@ -21,17 +21,18 @@ export function useSymphonyPlayback(
   const [meterReadings, setMeterReadings] = useState<Record<string, MeterReading>>({});
   const [masterMeter, setMasterMeter] = useState<MeterReading>({ level: 0, peak: 0 });
   const [limiterReductionDb, setLimiterReductionDb] = useState(0);
-  const ballisticsRef = useRef<MeterBallistics | null>(null);
-  if (!ballisticsRef.current) {
+  const [ballistics] = useState(() => {
     const prefs = loadSymphonyPrefs();
-    ballisticsRef.current = new MeterBallistics(prefs.peakHoldMs, prefs.meterDecayDbPerSec);
-  }
+    return new MeterBallistics(prefs.peakHoldMs, prefs.meterDecayDbPerSec);
+  });
   const recordedNotesRef = useRef<NoteEvent[]>([]);
   const activeRecordedRef = useRef<Map<number, number>>(new Map());
   const recordStartBeatsRef = useRef(0);
   const scrubbingRef = useRef(false);
   const projectRef = useRef(project);
-  projectRef.current = project;
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
 
   useEffect(() => {
     const engine = new SymphonyAudioEngine();
@@ -51,7 +52,6 @@ export function useSymphonyPlayback(
   useEffect(() => {
     if (!playing && !paused) return;
     const prefs = loadSymphonyPrefs();
-    const ballistics = ballisticsRef.current!;
     ballistics.configure(prefs.peakHoldMs, prefs.meterDecayDbPerSec);
     const masterBallistics = new MeterBallistics(prefs.peakHoldMs, Math.max(30, prefs.meterDecayDbPerSec));
     const id = setInterval(() => {
@@ -72,7 +72,7 @@ export function useSymphonyPlayback(
       setLimiterReductionDb(engine.getLimiterReductionDb());
     }, 60);
     return () => clearInterval(id);
-  }, [playing, paused]);
+  }, [playing, paused, ballistics]);
 
   // Live mixer sync during playback
   useEffect(() => {
@@ -155,11 +155,11 @@ export function useSymphonyPlayback(
     setPlaying(false);
     setPaused(false);
     setPosition({ bar: 1, beat: 1, tick: 0 });
-    ballisticsRef.current?.reset();
+    ballistics.reset();
     setMeterReadings({});
     setMasterMeter({ level: 0, peak: 0 });
     setLimiterReductionDb(0);
-  }, [recording, playing, paused, commitRecording]);
+  }, [recording, playing, paused, commitRecording, ballistics]);
 
   const previewNotes = useCallback((
     trackId: string,
