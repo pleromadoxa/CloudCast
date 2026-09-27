@@ -100,7 +100,7 @@ export function applyProgramPresetConfig(config: ProgramPresetConfig): void {
     defaultQuality: 'auto',
     viewMode: 'grid',
     mixerViewMode: 'advanced',
-    simpleProductionView: false,
+    simpleProductionView: true,
     globalOverlay: 'none',
     display: { aspectRatio: '16:9' },
     pip: { position: 'bottom-right', size: 'medium', border: true, opacity: 100 },

@@ -6,13 +6,23 @@
  * The goal is a surface that reads as the real thing: metal that tints its own
  * reflections and smears its highlight along the grain, lacquer that carries a
  * distinct coat lobe, fabric with a sheen rim, leather with polished high
- * points over a matte base.
+ * points over a matte base — plus the rest of the shared fidelity standard:
+ * real refraction through glass (sub-surface IOR + Beer–Lambert absorption) and
+ * height-field displacement (parallax occlusion on screen, real vertex relief
+ * on budgeted geometry via `displaceMeshFromHeight`).
  */
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial';
 import type { Texture } from '@babylonjs/core/Materials/Textures/texture';
 import type { Scene } from '@babylonjs/core/scene';
-import { getPbrMaps, type ProceduralPbrKind } from './textures';
+import type { Mesh } from '@babylonjs/core/Meshes/mesh';
+import { getPbrMaps, type ProceduralPbrKind, type ProceduralPbrMaps } from './textures';
+import {
+  anisotropyFor,
+  displacementFor,
+  refractionFor,
+  type FidelityTier,
+} from '../../../lib/virtualStudio/fidelity';
 
 export interface PbrOptions {
   /** Multiplies the metallic channel (1 = as authored). */
@@ -25,8 +35,12 @@ export interface PbrOptions {
   clearCoat?: { intensity?: number; roughness?: number };
   /** Fabric sheen rim. */
   sheen?: { intensity?: number; color?: string; roughness?: number };
-  /** Anisotropic response — brushed metal, silk. */
-  anisotropy?: number;
+  /**
+   * Anisotropic response — brushed metal, silk, carpet pile. Either a strength
+   * (0–1) or a full spec with the grain rotation in radians. The grain field is
+   * attached automatically from the surface's derived direction map.
+   */
+  anisotropy?: number | { intensity: number; rotation?: number };
   /** Environment (IBL) intensity multiplier. */
   environmentIntensity?: number;
   /** Direct light intensity multiplier. */
@@ -35,6 +49,18 @@ export interface PbrOptions {
   emissive?: { color: string; intensity: number };
   /** Transparent materials (glass, haze). */
   transparency?: { alpha: number; indexOfRefraction?: number; roughness?: number };
+  /**
+   * Real refraction through the surface — the scene genuinely bends through
+   * the medium (sub-surface IOR + intensity + Beer–Lambert tint). Implies
+   * transparency; use instead of `transparency` for glass and liquids.
+   */
+  refraction?: { ior?: number; tint?: string; intensity?: number; absorptionDistance?: number };
+  /**
+   * Height-field relief: `parallax` walks the surface per-pixel (cheap, always
+   * available); `scale`/`bias` are the world-space relief used by
+   * `displaceMeshFromHeight` on subdivided geometry.
+   */
+  displacement?: { scale?: number; bias?: number; parallax?: number };
   /** Back-face culling off for panels seen from behind. */
   doubleSided?: boolean;
   /** Extra normal-map bite. */
@@ -106,13 +132,47 @@ export function createPbrMaterial(
   }
 
   if (options.anisotropy !== undefined) {
+    const spec = typeof options.anisotropy === 'number' ? { intensity: options.anisotropy } : options.anisotropy;
     material.anisotropy.isEnabled = true;
-    material.anisotropy.intensity = options.anisotropy;
+    material.anisotropy.intensity = spec.intensity;
+    if (spec.rotation !== undefined) material.anisotropy.angle = spec.rotation;
+    // Direction field derived from the surface's own grain (RG direction,
+    // B strength) — the same physics the three.js stage reads.
+    material.anisotropy.texture = maps.anisotropy;
   }
 
   if (options.emissive) {
     material.emissiveColor = parseColor(options.emissive.color);
     material.emissiveIntensity = options.emissive.intensity;
+  }
+
+  if (options.refraction) {
+    // Real refraction: the scene bends through the medium instead of the
+    // surface faking it with alpha. Beer–Lambert tint rides along.
+    material.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+    material.alpha = 1;
+    material.backFaceCulling = false;
+    material.subSurface.isRefractionEnabled = true;
+    material.subSurface.linkRefractionWithTransparency = true;
+    material.subSurface.indexOfRefraction = options.refraction.ior ?? 1.52;
+    material.subSurface.refractionIntensity = options.refraction.intensity ?? 1;
+    if (options.refraction.tint) {
+      material.subSurface.tintColor = parseColor(options.refraction.tint);
+      material.subSurface.tintColorAtDistance = options.refraction.absorptionDistance ?? 0.4;
+    }
+    // Fresnel-weighted reflectivity like real float glass.
+    material.reflectivityColor = new Color3(0.04, 0.04, 0.04);
+  }
+
+  if (options.displacement) {
+    // Parallax occlusion walks the height field per-pixel — detailed relief
+    // without extra vertices. Real vertex relief is applied separately through
+    // `displaceMeshFromHeight` on budgeted geometry.
+    if (options.displacement.parallax !== undefined && options.displacement.parallax > 0) {
+      material._useParallax = true;
+      material._useParallaxOcclusion = true;
+      material._parallaxScaleBias = options.displacement.parallax;
+    }
   }
 
   if (options.transparency) {
@@ -139,6 +199,80 @@ export function createPbrMaterial(
 }
 
 /* -------------------------------------------------- curated material set --- */
+
+/**
+ * Real refractive glass — the scene genuinely bends through the surface
+ * (sub-surface IOR) with Beer–Lambert absorption tint. Babylon's counterpart
+ * to the three.js `refractiveGlassMaterial`. Tiers without a refraction budget
+ * fall back to plain alpha glass so the scene never re-renders twice for it.
+ */
+export function createGlassMaterial(
+  scene: Scene,
+  name: string,
+  opts: {
+    tint?: string;
+    ior?: number;
+    absorptionDistance?: number;
+    roughness?: number;
+    fidelity?: FidelityTier;
+  } = {},
+): PBRMaterial {
+  const refraction = refractionFor(opts.fidelity ?? 'high');
+  if (!refraction) {
+    return createPbrMaterial(scene, name, 'glass_frost', {
+      metalScale: 0,
+      transparency: { alpha: 0.16, indexOfRefraction: opts.ior ?? 1.52 },
+      doubleSided: true,
+    });
+  }
+  return createPbrMaterial(scene, name, 'glass_frost', {
+    metalScale: 0,
+    roughnessScale: (opts.roughness ?? refraction.roughness) * 4,
+    tint: opts.tint ?? refraction.attenuationColor,
+    refraction: {
+      ior: opts.ior ?? refraction.ior,
+      tint: opts.tint ?? refraction.attenuationColor,
+      intensity: refraction.transmission,
+      absorptionDistance: opts.absorptionDistance ?? refraction.attenuationDistance,
+    },
+    doubleSided: true,
+  });
+}
+
+/**
+ * Real vertex displacement — pushes each vertex along its normal by the
+ * surface height field, so silhouettes carry relief (the Babylon counterpart
+ * of three's `displacementMap`). Use on subdivided floors/panels; the caller
+ * owns the geometry and any re-normalling.
+ */
+export function displaceMeshFromHeight(
+  mesh: Mesh,
+  maps: ProceduralPbrMaps,
+  scale: number,
+  bias = 0,
+): void {
+  const ctx = maps.height.getContext() as CanvasRenderingContext2D;
+  const size = maps.height.getSize();
+  const pixels = ctx.getImageData(0, 0, size.width, size.height).data;
+  const positions = mesh.getVerticesData('position');
+  const normals = mesh.getVerticesData('normal');
+  const uvs = mesh.getVerticesData('uv');
+  if (!positions || !normals || !uvs) return;
+
+  for (let v = 0; v < uvs.length / 2; v += 1) {
+    const u = uvs[v * 2] - Math.floor(uvs[v * 2]);
+    const w = uvs[v * 2 + 1] - Math.floor(uvs[v * 2 + 1]);
+    const x = Math.min(size.width - 1, Math.max(0, Math.round(u * (size.width - 1))));
+    const y = Math.min(size.height - 1, Math.max(0, Math.round((1 - w) * (size.height - 1))));
+    const height = pixels[(y * size.width + x) * 4] / 255;
+    const offset = height * scale + bias;
+    positions[v * 3] += normals[v * 3] * offset;
+    positions[v * 3 + 1] += normals[v * 3 + 1] * offset;
+    positions[v * 3 + 2] += normals[v * 3 + 2] * offset;
+  }
+  mesh.updateVerticesData('position', positions, false, false);
+  mesh.createNormals(true);
+}
 
 export interface StudioMaterialSet {
   /** Structural metal — desk frames, truss, legs. */
@@ -168,20 +302,36 @@ export interface StudioMaterialSet {
 
 export function createStudioMaterialSet(
   scene: Scene,
-  opts: { environmentIntensity?: number } = {},
+  opts: { environmentIntensity?: number; fidelity?: FidelityTier } = {},
 ): StudioMaterialSet {
   const env = opts.environmentIntensity ?? 1;
+  const tier = opts.fidelity ?? 'high';
+  // The shared fidelity standard grades the physical lobes: metals smear along
+  // their grain, carpet pile sheens directionally, wood/textile/plaster carry
+  // height relief — identical physics to the three.js stage.
+  const metalGrain = anisotropyFor(tier, 'metal');
+  const pileGrain = anisotropyFor(tier, 'textile');
+  const woodGrain = anisotropyFor(tier, 'wood');
+  const woodRelief = displacementFor(tier, 'wood');
+  const textileRelief = displacementFor(tier, 'textile');
+  const plasterRelief = displacementFor(tier, 'plaster');
+  const grain = (spec: { intensity: number; rotation: number } | null) =>
+    spec ? { intensity: spec.intensity, rotation: spec.rotation } : undefined;
+  const relief = (spec: { scale: number; bias: number; parallax: number } | null) =>
+    spec ? { scale: spec.scale, bias: spec.bias, parallax: spec.parallax } : undefined;
+
   const set: StudioMaterialSet = {
     brushedMetal: createPbrMaterial(scene, 'brushed-metal', 'brushed_aluminium', {
       metalScale: 1,
       roughnessScale: 0.92,
-      anisotropy: 0.55,
+      anisotropy: grain(metalGrain),
       environmentIntensity: env,
     }),
     chrome: createPbrMaterial(scene, 'chrome', 'polished_chrome', {
       metalScale: 1,
       roughnessScale: 0.85,
       clearCoat: { intensity: 0.25, roughness: 0.02 },
+      anisotropy: grain(metalGrain),
       environmentIntensity: env * 1.15,
     }),
     anodized: createPbrMaterial(scene, 'anodized', 'black_anodized', {
@@ -192,23 +342,29 @@ export function createStudioMaterialSet(
     brass: createPbrMaterial(scene, 'brass', 'brass', {
       metalScale: 1,
       roughnessScale: 0.9,
-      anisotropy: 0.35,
+      anisotropy: grain(metalGrain),
       environmentIntensity: env,
     }),
     walnut: createPbrMaterial(scene, 'walnut', 'lacquered_walnut', {
       metalScale: 0,
       clearCoat: { intensity: 1, roughness: 0.075 },
+      anisotropy: grain(woodGrain),
+      displacement: relief(woodRelief),
       environmentIntensity: env,
     }),
     oak: createPbrMaterial(scene, 'oak', 'lacquered_oak', {
       metalScale: 0,
       clearCoat: { intensity: 0.9, roughness: 0.11 },
+      anisotropy: grain(woodGrain),
+      displacement: relief(woodRelief),
       environmentIntensity: env,
     }),
     upholstery: createPbrMaterial(scene, 'upholstery', 'upholstery', {
       metalScale: 0,
       roughnessScale: 1,
       sheen: { intensity: 0.65, color: '#8fa3c8', roughness: 0.42 },
+      anisotropy: grain(pileGrain),
+      displacement: relief(textileRelief),
       environmentIntensity: env,
     }),
     leather: createPbrMaterial(scene, 'leather', 'leather', {
@@ -223,15 +379,22 @@ export function createStudioMaterialSet(
     }),
     carpet: createPbrMaterial(scene, 'carpet', 'carpet', {
       metalScale: 0,
+      // Wool-fibre BRDF — matches `CARPET_GRADE` on the three.js side: the
+      // sheen lobe is what makes grazing light catch the fibre tips.
+      sheen: { intensity: 1, color: '#cfc4b6', roughness: 0.48 },
+      anisotropy: grain(pileGrain),
+      displacement: relief(textileRelief),
       environmentIntensity: env * 0.85,
     }),
     wall: createPbrMaterial(scene, 'wall', 'painted_wall', {
       metalScale: 0,
+      displacement: relief(plasterRelief),
       environmentIntensity: env * 0.9,
     }),
     fabric: createPbrMaterial(scene, 'fabric', 'black_fabric', {
       metalScale: 0,
       sheen: { intensity: 0.35, color: '#7c8aa8', roughness: 0.6 },
+      anisotropy: grain(pileGrain),
       environmentIntensity: env * 0.8,
     }),
     screenPanel: createPbrMaterial(scene, 'screen-panel', 'screen_dead', {

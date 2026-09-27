@@ -23,16 +23,18 @@ export type GradeLutInput = Pick<ColorGradeSettings, 'contrast' | 'saturation' |
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
 /**
- * Build the grading LUT for the given engine grade.
+ * The grade transform — one display-referred sRGB colour in, graded colour out.
  *
- * Voxel layout follows `LookupTexture`'s contract (verified against its own
- * `applyLUT`): the texel at linear index `x + y·size + z·size²` stores the
- * output colour for the input `(x, y, z)/(size-1)`.
+ * Shared by both engines: the R3F stage bakes it into a 3D lookup texture and
+ * the Babylon stage into the flat strip its `ColorGradingTexture` loads, so a
+ * show's grade is the identical math wherever the set renders.
  */
-export function buildGradeLut(grade: GradeLutInput, size = 32): LookupTexture {
-  const data = new Float32Array(size * size * size * 4);
-  const s = size - 1;
-
+export function gradeColor(
+  r: number,
+  g: number,
+  b: number,
+  grade: GradeLutInput,
+): { r: number; g: number; b: number } {
   // Colour temperature as a physical white-balance gain: warm pushes toward
   // amber (more red, less blue), cool toward blue — the same channel balance a
   // Kelvin CCT shift produces, not a hue rotation.
@@ -50,40 +52,82 @@ export function buildGradeLut(grade: GradeLutInput, size = 32): LookupTexture {
   const satDelta = clamp(grade.saturation - 1, -1, 1);
   const vibDelta = clamp(grade.vibrance - 1, -1, 1);
 
+  // 1 — white balance
+  let r1 = r * gainR;
+  let g1 = g * gainG;
+  let b1 = b * gainB;
+
+  // 2 — contrast about mid grey
+  r1 = (r1 - pivot) * (1 + contrast) + pivot;
+  g1 = (g1 - pivot) * (1 + contrast) + pivot;
+  b1 = (b1 - pivot) * (1 + contrast) + pivot;
+
+  // 3 — saturation + vibrance
+  const lum = 0.2126 * r1 + 0.7152 * g1 + 0.0722 * b1;
+  const chroma = Math.max(r1, g1, b1) - Math.min(r1, g1, b1);
+  const vibMask = 1 - Math.min(1, chroma * 1.8);
+  const sat = 1 + satDelta + vibDelta * vibMask;
+  r1 = lum + (r1 - lum) * sat;
+  g1 = lum + (g1 - lum) * sat;
+  b1 = lum + (b1 - lum) * sat;
+
+  return { r: clamp(r1, 0, 1), g: clamp(g1, 0, 1), b: clamp(b1, 0, 1) };
+}
+
+/**
+ * Build the grading LUT for the given engine grade.
+ *
+ * Voxel layout follows `LookupTexture`'s contract (verified against its own
+ * `applyLUT`): the texel at linear index `x + y·size + z·size²` stores the
+ * output colour for the input `(x, y, z)/(size-1)`.
+ */
+export function buildGradeLut(grade: GradeLutInput, size = 32): LookupTexture {
+  const data = new Float32Array(size * size * size * 4);
+  const s = size - 1;
+
   for (let bz = 0; bz < size; bz += 1) {
     for (let gy = 0; gy < size; gy += 1) {
       for (let rx = 0; rx < size; rx += 1) {
         const i = (rx + gy * size + bz * size * size) * 4;
-        let r = rx / s;
-        let g = gy / s;
-        let b = bz / s;
-
-        // 1 — white balance
-        r *= gainR;
-        g *= gainG;
-        b *= gainB;
-
-        // 2 — contrast about mid grey
-        r = (r - pivot) * (1 + contrast) + pivot;
-        g = (g - pivot) * (1 + contrast) + pivot;
-        b = (b - pivot) * (1 + contrast) + pivot;
-
-        // 3 — saturation + vibrance
-        const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        const chroma = Math.max(r, g, b) - Math.min(r, g, b);
-        const vibMask = 1 - Math.min(1, chroma * 1.8);
-        const sat = 1 + satDelta + vibDelta * vibMask;
-        r = lum + (r - lum) * sat;
-        g = lum + (g - lum) * sat;
-        b = lum + (b - lum) * sat;
-
-        data[i] = clamp(r, 0, 1);
-        data[i + 1] = clamp(g, 0, 1);
-        data[i + 2] = clamp(b, 0, 1);
+        const out = gradeColor(rx / s, gy / s, bz / s, grade);
+        data[i] = out.r;
+        data[i + 1] = out.g;
+        data[i + 2] = out.b;
         data[i + 3] = 1;
       }
     }
   }
 
   return new LookupTexture(data, size);
+}
+
+/**
+ * The same grade baked into a flat 2D LUT strip — width `size²`, height `size`,
+ * the blue slices laid out left to right (slice `b` occupies columns
+ * `[b·size, (b+1)·size)`, column-in-slice = red, row = green). This is the
+ * layout Babylon's `ColorGradingTexture` loads, so the Babylon stage runs the
+ * identical show LUT as the R3F stage.
+ */
+export function buildGradeStripCanvas(grade: GradeLutInput, size = 32): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = size * size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  const img = ctx.createImageData(canvas.width, canvas.height);
+  const s = size - 1;
+  for (let bz = 0; bz < size; bz += 1) {
+    for (let gy = 0; gy < size; gy += 1) {
+      for (let rx = 0; rx < size; rx += 1) {
+        const out = gradeColor(rx / s, gy / s, bz / s, grade);
+        const o = (gy * canvas.width + (bz * size + rx)) * 4;
+        img.data[o] = Math.round(out.r * 255);
+        img.data[o + 1] = Math.round(out.g * 255);
+        img.data[o + 2] = Math.round(out.b * 255);
+        img.data[o + 3] = 255;
+      }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas;
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutGrid, LogOut, SlidersHorizontal } from 'lucide-react';
+import { LayoutGrid, LogOut, Maximize2, Minimize2, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useProduction } from '../../context/ProductionContext';
 import { reconnectWhepPoolDevice } from '../../lib/whepStreamPool';
@@ -9,7 +9,7 @@ import { AccessCodePanel } from '../session/AccessCodePanel';
 import { CloudCastLogo } from '../brand/CloudCastLogo';
 import { CLOUDCAST_NAV_LOGO } from '../../lib/branding';
 import { resolveProductPlan, canLinkAudioVideoMixers, canUseAudioFatChannel } from '../../lib/productEntitlements';
-import { useAudioConsoleState } from '../../hooks/useAudioConsoleState';
+import { useAudioConsoleState, isSimpleConsoleView } from '../../hooks/useAudioConsoleState';
 import { peekWhepPoolSnapshot } from '../../lib/whepStreamPool';
 import { resolveHybridAudioStream } from '../../lib/deviceIngress';
 import { useAudioMixerEngine } from '../../hooks/useAudioMixerEngine';
@@ -95,6 +95,7 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
     onToggleConsoleEnabled,
     onTogglePeakHold,
     onSetConsoleViewMode,
+    onToggleSimpleConsoleView,
     onSetFatParam,
     onToggleHpfBypass,
     onPatchNoiseCancel,
@@ -108,6 +109,8 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
     onStoreScene,
     onRecallScene,
   } = useAudioConsoleState(devices);
+
+  const simpleView = isSimpleConsoleView(state);
 
   const maxHostUsbInputs = session?.maxUsbDevices ?? 2;
   const hostUsb = useLocalHostAudioInputs(maxHostUsbInputs);
@@ -431,12 +434,43 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Audio Mixer · {AUDIO_MIXER_MAX_CHANNELS}ch
             </span>
-            {profile && (
+            {profile && !simpleView && (
               <span className="rounded bg-sky-500/15 px-2 py-0.5 text-[9px] font-bold tracking-wider text-sky-200 ring-1 ring-sky-400/20">
                 {profile.entitlements?.universal ? 'UNIVERSAL' : planId.toUpperCase()}
               </span>
             )}
+            {simpleView && (
+              <span className="rounded bg-violet-600/25 px-2 py-0.5 text-[9px] font-bold tracking-wider text-violet-200">
+                SIMPLE
+              </span>
+            )}
           </div>
+          <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onToggleSimpleConsoleView}
+            className={cn(
+              'dashboard-simple-toggle mixer-btn flex items-center gap-1.5 px-2 py-1 text-[9px] font-bold tracking-wider',
+              simpleView && 'border-violet-400/50 bg-violet-600/20 text-violet-100',
+            )}
+            title={
+              simpleView
+                ? 'Restore full console — Fat Channel, FX, routing, and session panels'
+                : 'Simple view — streamlined console for small live events'
+            }
+          >
+            {simpleView ? (
+              <>
+                <Maximize2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">FULL VIEW</span>
+              </>
+            ) : (
+              <>
+                <Minimize2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">SIMPLE</span>
+              </>
+            )}
+          </button>
           <AccessCodePanel
             session={session}
             isLoading={sessionLoading}
@@ -447,7 +481,23 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
             onRetry={reconnect}
             className="dashboard-header-access shrink-0"
           />
+          </div>
         </div>
+        {simpleView ? (
+          <div className="dashboard-header-bottom flex min-w-0 items-center justify-end gap-2 text-[10px]">
+            <span className="dashboard-header-stat font-bold text-sky-300">{liveInputCount} LIVE</span>
+            <span className="dashboard-header-stat text-mixer-muted">{mutedChannelCount} MUTED</span>
+            {state.consoleEnabled ? (
+              <span className="font-bold text-emerald-400">● CONSOLE ON</span>
+            ) : (
+              <span className="font-bold text-mixer-muted">CONSOLE OFF</span>
+            )}
+            {state.masterMuted && <span className="font-bold text-mixer-red">MASTER MUTED</span>}
+            <button type="button" onClick={() => { void signOut(); }} className="mixer-btn p-1" title="Sign out">
+              <LogOut className="h-3 w-3" />
+            </button>
+          </div>
+        ) : (
         <div className="dashboard-header-bottom flex min-w-0 items-center justify-end gap-2">
           <VideoBridgePanel
             mode="audio"
@@ -469,6 +519,7 @@ export function AudioMixerLayout({ hidden = false }: AudioMixerLayoutProps) {
             </button>
           </div>
         </div>
+        )}
       </header>
       )}
 

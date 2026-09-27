@@ -10,6 +10,7 @@ import type { ConsoleSceneSnapshot, SceneId } from '../../lib/audioConsolePersis
 import {
   CONSOLE_BANKS,
   isMixEnabled,
+  isSimpleConsoleView,
   SCENE_IDS,
   type AudioConsoleState,
   type ConsoleBank,
@@ -163,18 +164,21 @@ export function StudioLiveConsole({
   const selectedId = selected?.deviceId ?? '';
   const fat = getFatChannelParams(state, selectedId);
   const noiseCancel = getNoiseCancelSettings(state, selectedId);
-  const compact = state.consoleViewMode === 'compact';
+  const simple = isSimpleConsoleView(state);
+  const compact = simple || state.consoleViewMode === 'compact';
 
   return (
     <div
       className={cn(
         'studiolive-console studiolive-console--premium',
         compact && 'studiolive-console--compact',
+        simple && 'studiolive-console--simple',
       )}
       onPointerDown={() => { void unlockDashboardAudio(); }}
     >
       <div className="studiolive-console__ambient" aria-hidden />
 
+      {!simple && (
       <div className="studiolive-view-toggle flex items-center gap-2 px-2 pt-2">
         <span className="text-[9px] font-bold uppercase tracking-wider text-mixer-muted">View</span>
         {([
@@ -197,6 +201,7 @@ export function StudioLiveConsole({
           </button>
         ))}
       </div>
+      )}
 
       <AudioDevicesStrip
         devices={liveDevices}
@@ -387,6 +392,7 @@ export function StudioLiveConsole({
               selected={state.selectedChannel === index}
               live={live}
               label={label}
+              simple={simple}
               volume={state.inputVolumes[device.deviceId] ?? 75}
               muted={state.inputMuted[device.deviceId] ?? false}
               solo={state.soloId === device.deviceId}

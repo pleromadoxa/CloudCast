@@ -38,6 +38,12 @@ export interface AudioConsoleState {
   peakHoldEnabled: boolean;
   /** Compact vs full StudioLive surface. */
   consoleViewMode: ConsoleViewMode;
+  /**
+   * Simple production view — stripped-down console (like the video mixer's
+   * simple view) for small live events. Defaults to true; once the operator
+   * toggles it the choice is persisted and respected on return.
+   */
+  simpleConsoleView?: boolean;
   masterVolume: number;
   masterMuted: boolean;
   monitorMuted: boolean;
@@ -80,6 +86,7 @@ function defaultConsoleState(): AudioConsoleState {
     consoleEnabled: true,
     peakHoldEnabled: false,
     consoleViewMode: 'advanced',
+    simpleConsoleView: true,
     masterVolume: 80,
     masterMuted: false,
     monitorMuted: false,
@@ -141,6 +148,11 @@ export function isMixEnabled(state: AudioConsoleState, deviceId: string): boolea
   return state.mixEnabled[deviceId] !== false;
 }
 
+/** Simple view is on unless the operator has explicitly switched to full view. */
+export function isSimpleConsoleView(state: AudioConsoleState): boolean {
+  return state.simpleConsoleView !== false;
+}
+
 export function getVolumeForDevice(state: AudioConsoleState, deviceId: string | null): number {
   if (!deviceId || !state.consoleEnabled) return 0;
   if (state.masterMuted) return 0;
@@ -167,6 +179,8 @@ export function useAudioConsoleState(devices: Device[]) {
   const [state, setState] = useState<AudioConsoleState>(() =>
     mergeLoadedState(defaultConsoleState(), loadedRef.current),
   );
+  /** Full-view layout parked while simple view is active (mirrors the video mixer). */
+  const layoutSnapshotRef = useRef<{ consoleViewMode: ConsoleViewMode; activeBank: ConsoleBank } | null>(null);
   const [scenes, setScenes] = useState<Partial<Record<SceneId, ConsoleSceneSnapshot>>>(
     () => loadedRef.current?.scenes ?? {},
   );
@@ -293,6 +307,35 @@ export function useAudioConsoleState(devices: Device[]) {
       consoleViewMode,
       activeBank: consoleViewMode === 'compact' ? 'inputs' : prev.activeBank,
     }));
+  }, []);
+
+  /**
+   * Simple ⇄ full console view — mirrors the video mixer: entering simple
+   * view parks the current console density + bank and forces the compact
+   * surface; leaving restores them. The choice is persisted either way.
+   */
+  const onToggleSimpleConsoleView = useCallback(() => {
+    setState((prev) => {
+      if (!isSimpleConsoleView(prev)) {
+        layoutSnapshotRef.current = {
+          consoleViewMode: prev.consoleViewMode,
+          activeBank: prev.activeBank,
+        };
+        return {
+          ...prev,
+          simpleConsoleView: true,
+          consoleViewMode: 'compact',
+          activeBank: 'inputs',
+        };
+      }
+      const snap = layoutSnapshotRef.current;
+      layoutSnapshotRef.current = null;
+      return {
+        ...prev,
+        simpleConsoleView: false,
+        ...(snap ? { consoleViewMode: snap.consoleViewMode, activeBank: snap.activeBank } : {}),
+      };
+    });
   }, []);
 
   const onSetFatParam = useCallback(
@@ -476,6 +519,7 @@ export function useAudioConsoleState(devices: Device[]) {
     onToggleConsoleEnabled,
     onTogglePeakHold,
     onSetConsoleViewMode,
+    onToggleSimpleConsoleView,
     onSetFatParam,
     onToggleHpfBypass,
     onPatchNoiseCancel,

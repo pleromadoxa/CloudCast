@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
@@ -6,6 +6,7 @@ import type { StudioScreenSource } from '../../../lib/virtualStudio/types';
 import { PbrSurface } from './PbrSurface';
 import { ScreenSurface } from '../ScreenSurface';
 import { useStudioTexture } from '../useStudioTexture';
+import { useLightSlot, useScreenLightScale } from './fidelityLighting';
 
 /**
  * Physical screen fixtures — the "plugins" of a virtual set. Each one is a
@@ -29,22 +30,102 @@ type FixtureProps = {
 const BEZEL = '#101013';
 const BRUSHED = '#2a2a30';
 
+/** Screens are hero emitters — they claim light slots above props. */
+const SCREEN_LIGHT_PRIORITY = 80;
+
+/**
+ * Live spill tint — samples the picture on the screen a few times a second and
+ * derives its mean colour, so the light washing the set actually changes with
+ * the content (a red graphic turns the floor warm, a blue one cools it). Falls
+ * back to neutral screen white for sources that can't be sampled (cross-origin
+ * media taints the sampling canvas — caught and ignored).
+ */
+function useScreenSpillTint(source: StudioScreenSource | undefined): string {
+  const fallback = '#d7e6ff';
+  const [tint, setTint] = useState(fallback);
+  const sampler = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    if (!source) return;
+    let cancelled = false;
+    const probe = () => {
+      const element =
+        source.kind === 'canvas'
+          ? source.canvas
+          : source.kind === 'live-video'
+            ? (source.video ?? null)
+            : null;
+      if (!element) return;
+      try {
+        if (!sampler.current) {
+          sampler.current = document.createElement('canvas');
+          sampler.current.width = 4;
+          sampler.current.height = 4;
+        }
+        const canvas = sampler.current;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+        ctx.drawImage(element as CanvasImageSource, 0, 0, 4, 4);
+        const data = ctx.getImageData(0, 0, 4, 4).data;
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          r += data[i];
+          g += data[i + 1];
+          b += data[i + 2];
+        }
+        const n = data.length / 4 || 1;
+        // Keep a floor of blue-grey so a dark picture still reads as "screen
+        // light" instead of switching the fixture off entirely.
+        const hex = `#${[r / n, g / n, b / n]
+          .map((v) => Math.max(48, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'))
+          .join('')}`;
+        if (!cancelled) setTint(hex);
+      } catch {
+        /* tainted or transient source — keep the neutral tint */
+      }
+    };
+    probe();
+    const timer = setInterval(probe, 250);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [source]);
+
+  return tint;
+}
+
 /**
  * Practical light spilling from a screen onto the set — real screens visibly
- * wash nearby surfaces with cool light, which is one of the strongest
- * photoreal cues on a virtual set.
+ * wash nearby surfaces with light, which is one of the strongest photoreal cues
+ * on a virtual set. Intensity is physically coupled to the panel's emissive
+ * brightness through the fidelity spec, the colour follows the picture, and a
+ * light slot is claimed against the set's dynamic-light budget.
  */
 function ScreenSpill({
   intensity,
   distance,
   position = [0, 0, 0.5],
+  source,
 }: {
   intensity: number;
   distance: number;
   position?: [number, number, number];
+  source?: StudioScreenSource;
 }) {
+  const active = useLightSlot(SCREEN_LIGHT_PRIORITY);
+  const lightScale = useScreenLightScale();
+  const tint = useScreenSpillTint(source);
+  if (!active) return null;
   return (
-    <pointLight position={position} intensity={intensity} distance={distance} decay={2} color="#d7e6ff" />
+    <pointLight
+      position={position}
+      intensity={intensity * lightScale}
+      distance={distance}
+      decay={2}
+      color={tint}
+    />
   );
 }
 
@@ -116,7 +197,7 @@ export const Television = memo(function Television({
   const bezel = 0.045;
   return (
     <group position={position} rotation={rotation} scale={scale}>
-      {spill && <ScreenSpill intensity={5 * brightness} distance={3.2} position={[0, 0, 0.55]} />}
+      {spill && <ScreenSpill intensity={5 * brightness} distance={3.2} position={[0, 0, 0.55]} source={source} />}
       <RoundedBox args={[width, height, 0.055]} radius={0.012} smoothness={4} castShadow receiveShadow>
         <PbrSurface color={BEZEL} metalness={0.6} roughness={0.32} envMapIntensity={1.2} />
       </RoundedBox>
@@ -159,7 +240,7 @@ export const FramedMonitor = memo(function FramedMonitor({
   const height = width * 0.6;
   return (
     <group position={position} rotation={rotation} scale={scale}>
-      {spill && <ScreenSpill intensity={2.2 * brightness} distance={2.2} position={[0, 0, 0.4]} />}
+      {spill && <ScreenSpill intensity={2.2 * brightness} distance={2.2} position={[0, 0, 0.4]} source={source} />}
       <RoundedBox args={[width, height, 0.04]} radius={0.01} smoothness={4} castShadow receiveShadow>
         <PbrSurface color={BEZEL} metalness={0.55} roughness={0.3} />
       </RoundedBox>
@@ -210,8 +291,8 @@ export const VideoWall = memo(function VideoWall({
     <group position={position} rotation={rotation} scale={scale}>
       {spill && (
         <>
-          <ScreenSpill intensity={9 * brightness} distance={8} position={[-width * 0.22, 0, 1]} />
-          <ScreenSpill intensity={9 * brightness} distance={8} position={[width * 0.22, 0, 1]} />
+          <ScreenSpill intensity={9 * brightness} distance={8} position={[-width * 0.22, 0, 1]} source={source} />
+          <ScreenSpill intensity={9 * brightness} distance={8} position={[width * 0.22, 0, 1]} source={source} />
         </>
       )}
       <RoundedBox args={[width + frame, height + frame, 0.12]} radius={0.02} smoothness={4} castShadow receiveShadow>
@@ -273,7 +354,7 @@ export const RibbonBanner = memo(function RibbonBanner({
 }: FixtureProps & { width?: number; height?: number; scroll?: number }) {
   return (
     <group position={position} rotation={rotation} scale={scale}>
-      {spill && <ScreenSpill intensity={3 * brightness} distance={3} position={[0, -0.15, 0.5]} />}
+      {spill && <ScreenSpill intensity={3 * brightness} distance={3} position={[0, -0.15, 0.5]} source={source} />}
       <RoundedBox args={[width, height, 0.07]} radius={0.02} smoothness={4} castShadow receiveShadow>
         <PbrSurface color="#0c0c10" metalness={0.55} roughness={0.4} />
       </RoundedBox>
@@ -306,7 +387,7 @@ export const StandingBanner = memo(function StandingBanner({
 }: FixtureProps & { width?: number; height?: number }) {
   return (
     <group position={position} rotation={rotation} scale={scale}>
-      {spill && <ScreenSpill intensity={1.4 * brightness} distance={2.4} position={[0, height / 2 + 0.08, 0.4]} />}
+      {spill && <ScreenSpill intensity={1.4 * brightness} distance={2.4} position={[0, height / 2 + 0.08, 0.4]} source={source} />}
       <RoundedBox args={[width, height, 0.035]} radius={0.012} smoothness={4} position={[0, height / 2 + 0.08, 0]} castShadow receiveShadow>
         <PbrSurface color="#15151a" metalness={0.4} roughness={0.5} />
       </RoundedBox>
@@ -359,8 +440,8 @@ export const CurvedVideoWall = memo(function CurvedVideoWall({
     <group position={position} rotation={rotation} scale={scale}>
       {spill && (
         <>
-          <ScreenSpill intensity={8 * brightness} distance={9} position={[-radius * 0.28, 0, radius - 2.4]} />
-          <ScreenSpill intensity={8 * brightness} distance={9} position={[radius * 0.28, 0, radius - 2.4]} />
+          <ScreenSpill intensity={8 * brightness} distance={9} position={[-radius * 0.28, 0, radius - 2.4]} source={source} />
+          <ScreenSpill intensity={8 * brightness} distance={9} position={[radius * 0.28, 0, radius - 2.4]} source={source} />
         </>
       )}
       {/* housing */}

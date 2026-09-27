@@ -12,9 +12,16 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { PixelStreamClient } from './pixelStreaming';
 import type { PixelStreamStats } from './pixelStreaming';
 import type { UnrealStreamSettings } from '../../../lib/stageEngines';
+import type { FidelityTier } from '../../../lib/virtualStudio/fidelity';
 
 export interface UnrealPixelStreamStageProps {
   settings: UnrealStreamSettings;
+  /**
+   * Shared fidelity tier — pushed to the Unreal instance as console commands
+   * (Lumen GI/reflections, virtual shadows, volumetric fog, TSR, streaming
+   * pool) so this engine matches the R3F and Babylon stages exactly.
+   */
+  fidelity?: FidelityTier;
   visible?: boolean;
   interactive?: boolean;
   /**
@@ -30,6 +37,7 @@ export interface UnrealPixelStreamStageProps {
 
 export function UnrealPixelStreamStage({
   settings,
+  fidelity = 'high',
   visible = true,
   interactive = true,
   onStageSource,
@@ -66,6 +74,7 @@ export function UnrealPixelStreamStage({
         turnUsername: settings.turnUsername,
         turnCredential: settings.turnCredential,
         autoPause: settings.autoPause,
+        fidelity,
         onStats: (next) => {
           setStats(next);
           onStats?.(next);
@@ -86,10 +95,14 @@ export function UnrealPixelStreamStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.signallingUrl, settings.turnUrl, settings.forceTURN]);
 
-  /* --- quality / resolution -------------------------------------------- */
+  /* --- quality / resolution / fidelity ---------------------------------- */
   useEffect(() => {
     clientRef.current?.applyQuality(settings.quality);
   }, [settings.quality]);
+
+  useEffect(() => {
+    clientRef.current?.applyFidelity(fidelity);
+  }, [fidelity]);
 
   useEffect(() => {
     clientRef.current?.applyResolution(settings.resolution);

@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react';
 import * as THREE from 'three';
-import { pbrFromTexture, pbrSolid } from '../../../lib/prism/pbrMaterials';
+import { carpetPbrOptions, pbrFromTexture, pbrSolid } from '../../../lib/prism/pbrMaterials';
 import { PbrSurface } from './PbrSurface';
 import type { StudioFit, StudioScreenSource } from '../../../lib/virtualStudio/types';
 import { ScreenSurface } from '../ScreenSurface';
@@ -124,15 +124,26 @@ export const RoomShell = memo(function RoomShell({
     <group position={position} rotation={rotation} scale={scale}>
       {/* floor — double-sided so low hero-angle cameras keep the ground */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[width, depth]} />
-        <PbrSurface
-          map={materials.floor.map}
-          color={floorColor}
-          roughness={materials.floor.roughness}
-          metalness={materials.floor.metalness}
-          envMapIntensity={1.8}
-          side={THREE.DoubleSide}
-        />
+        {floorTexture === 'carpet' ? (
+          /* Carpet gets a subdivided slab so the pile displacement lifts the
+             tufts, plus the full wool BRDF from `carpetPbrOptions`. */
+          <>
+            <planeGeometry args={[width, depth, 72, 54]} />
+            <PbrSurface color={floorColor} {...carpetPbrOptions(12)} side={THREE.DoubleSide} />
+          </>
+        ) : (
+          <>
+            <planeGeometry args={[width, depth]} />
+            <PbrSurface
+              map={materials.floor.map}
+              color={floorColor}
+              roughness={materials.floor.roughness}
+              metalness={materials.floor.metalness}
+              envMapIntensity={1.8}
+              side={THREE.DoubleSide}
+            />
+          </>
+        )}
       </mesh>
       {/* ceiling */}
       <mesh position={[0, height, 0]} rotation={[Math.PI / 2, 0, 0]} material={materials.ceiling}>

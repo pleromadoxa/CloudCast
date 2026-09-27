@@ -43,6 +43,7 @@ export function AudioInputChannel({
   selected,
   live,
   label,
+  simple = false,
   volume,
   muted,
   solo,
@@ -63,6 +64,8 @@ export function AudioInputChannel({
   selected: boolean;
   live: boolean;
   label: string;
+  /** Simple production view — strip the channel down to fader + M/S. */
+  simple?: boolean;
   volume: number;
   muted: boolean;
   solo: boolean;
@@ -122,7 +125,7 @@ export function AudioInputChannel({
         <span className={cn('studiolive-channel__badge', `studiolive-channel__badge--${status.tone}`)}>
           {status.text}
         </span>
-        {!empty && (
+        {!empty && !simple && (
           <span className="studiolive-channel__source" title={AUDIO_SOURCE_LABELS[audioSource]}>
             {sourceShortLabel(audioSource)}
           </span>
@@ -179,14 +182,16 @@ export function AudioInputChannel({
       </div>
 
       <div className="studiolive-channel__controls" onClick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          onClick={onSelect}
-          className={cn('studiolive-btn studiolive-btn--select', selected && 'studiolive-btn--on')}
-          title="Select channel"
-        >
-          SEL
-        </button>
+        {!simple && (
+          <button
+            type="button"
+            onClick={onSelect}
+            className={cn('studiolive-btn studiolive-btn--select', selected && 'studiolive-btn--on')}
+            title="Select channel"
+          >
+            SEL
+          </button>
+        )}
         <button
           type="button"
           disabled={!live}
@@ -208,18 +213,20 @@ export function AudioInputChannel({
         >
           M
         </button>
-        <button
-          type="button"
-          disabled={!live}
-          onClick={() => {
-            void unlockDashboardAudio();
-            onToggleMix();
-          }}
-          className={cn('studiolive-btn studiolive-btn--pgm', onMix && 'studiolive-btn--on')}
-          title={onMix ? 'In main mix (PGM)' : 'Excluded from main mix'}
-        >
-          <Radio className="h-2.5 w-2.5" />
-        </button>
+        {!simple && (
+          <button
+            type="button"
+            disabled={!live}
+            onClick={() => {
+              void unlockDashboardAudio();
+              onToggleMix();
+            }}
+            className={cn('studiolive-btn studiolive-btn--pgm', onMix && 'studiolive-btn--on')}
+            title={onMix ? 'In main mix (PGM)' : 'Excluded from main mix'}
+          >
+            <Radio className="h-2.5 w-2.5" />
+          </button>
+        )}
       </div>
 
       <footer className="studiolive-channel__footer">

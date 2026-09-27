@@ -50,6 +50,9 @@ const PrismMotionPreviewPage = lazy(() =>
   import('./pages/PrismMotionPreviewPage').then((m) => ({ default: m.PrismMotionPreviewPage })),
 );
 const PrismScenePreviewPage = lazy(() => import('./pages/PrismScenePreviewPage'));
+const PrismEnginePreviewPage = lazy(() =>
+  import('./pages/PrismEnginePreviewPage').then((m) => ({ default: m.PrismEnginePreviewPage })),
+);
 
 export default function App() {
   return (
@@ -125,9 +128,34 @@ export default function App() {
                 </Suspense>
               }
             />
-            {import.meta.env.DEV && (
-              <Route path="prism/scene-preview" element={<PrismScenePreviewPage />} />
-            )}
+            <Route
+              path="prism/engine-preview"
+              element={
+                <Suspense
+                  fallback={
+                    <div className="flex h-[100dvh] items-center justify-center bg-black text-[11px] tracking-[0.3em] text-white/50">
+                      LOADING ENGINE…
+                    </div>
+                  }
+                >
+                  <PrismEnginePreviewPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="prism/scene-preview"
+              element={
+                <Suspense
+                  fallback={
+                    <div className="flex h-[100dvh] items-center justify-center bg-black text-[11px] tracking-[0.3em] text-white/50">
+                      LOADING SCENE…
+                    </div>
+                  }
+                >
+                  <PrismScenePreviewPage />
+                </Suspense>
+              }
+            />
             <Route
               path="audio"
               element={

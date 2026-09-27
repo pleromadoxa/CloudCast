@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PlayheadPosition } from '../lib/symphony/dragTypes';
 import { positionToBeats } from '../lib/symphony/dragTypes';
 import { SymphonyAudioEngine } from '../lib/symphony/audioEngine';
+import { amplitudeToMeter, MeterBallistics, type MeterReading } from '../lib/symphony/metering';
+import { loadSymphonyPrefs } from '../lib/symphony/symphonyPrefs';
 import type { NoteEvent, SymphonyProject } from '../types/symphony';
 
 export function useSymphonyPlayback(
@@ -16,7 +18,14 @@ export function useSymphonyPlayback(
   const [metronome, setMetronome] = useState(false);
   const [countIn, setCountIn] = useState(false);
   const [position, setPosition] = useState({ bar: 1, beat: 1, tick: 0 });
-  const [meterLevels, setMeterLevels] = useState<Record<string, number>>({});
+  const [meterReadings, setMeterReadings] = useState<Record<string, MeterReading>>({});
+  const [masterMeter, setMasterMeter] = useState<MeterReading>({ level: 0, peak: 0 });
+  const [limiterReductionDb, setLimiterReductionDb] = useState(0);
+  const ballisticsRef = useRef<MeterBallistics | null>(null);
+  if (!ballisticsRef.current) {
+    const prefs = loadSymphonyPrefs();
+    ballisticsRef.current = new MeterBallistics(prefs.peakHoldMs, prefs.meterDecayDbPerSec);
+  }
   const recordedNotesRef = useRef<NoteEvent[]>([]);
   const activeRecordedRef = useRef<Map<number, number>>(new Map());
   const recordStartBeatsRef = useRef(0);
@@ -38,14 +47,29 @@ export function useSymphonyPlayback(
     return () => engine.dispose();
   }, []);
 
-  // Real VU meters from analysers
+  // Real VU meters from analysers — analog-style ballistics (attack/decay/peak hold)
   useEffect(() => {
     if (!playing && !paused) return;
+    const prefs = loadSymphonyPrefs();
+    const ballistics = ballisticsRef.current!;
+    ballistics.configure(prefs.peakHoldMs, prefs.meterDecayDbPerSec);
+    const masterBallistics = new MeterBallistics(prefs.peakHoldMs, Math.max(30, prefs.meterDecayDbPerSec));
     const id = setInterval(() => {
       const engine = engineRef.current;
       if (!engine) return;
       const ids = projectRef.current.tracks.map((t) => t.id);
-      setMeterLevels(engine.getMeterLevels(ids));
+      const snapshots = engine.getMeterSnapshots(ids);
+      const instantaneous: Record<string, number> = {};
+      for (const [key, snap] of Object.entries(snapshots)) {
+        instantaneous[key] = amplitudeToMeter(Math.max(snap.level, snap.peak * 0.85));
+      }
+      setMeterReadings(ballistics.push(instantaneous));
+      const master = engine.getMasterSnapshot();
+      const masterReading = masterBallistics.push({
+        master: amplitudeToMeter(Math.max(master.level, master.peak * 0.85)),
+      });
+      setMasterMeter(masterReading.master ?? { level: 0, peak: 0 });
+      setLimiterReductionDb(engine.getLimiterReductionDb());
     }, 60);
     return () => clearInterval(id);
   }, [playing, paused]);
@@ -55,7 +79,8 @@ export function useSymphonyPlayback(
     const engine = engineRef.current;
     if (!engine || (!playing && !paused)) return;
     engine.syncProjectMix(project);
-  }, [project.tracks, project.masterVolume, project.limiterThreshold, playing, paused]);
+  }, [project, project.tracks, project.masterVolume, project.limiterThreshold,
+    project.masterEq, project.masterDrive, project.limiterEnabled, playing, paused]);
 
   useEffect(() => {
     engineRef.current?.setMetronomeEnabled(metronome && playing && !paused);
@@ -130,7 +155,10 @@ export function useSymphonyPlayback(
     setPlaying(false);
     setPaused(false);
     setPosition({ bar: 1, beat: 1, tick: 0 });
-    setMeterLevels({});
+    ballisticsRef.current?.reset();
+    setMeterReadings({});
+    setMasterMeter({ level: 0, peak: 0 });
+    setLimiterReductionDb(0);
   }, [recording, playing, paused, commitRecording]);
 
   const previewNotes = useCallback((
@@ -148,6 +176,7 @@ export function useSymphonyPlayback(
         track.volume, track.pan, track.muted, track.solo,
         project.tracks.some((t) => t.solo),
         track.reverbSend ?? 0,
+        track.delaySend ?? 0,
       );
     });
   }, [project.tracks]);
@@ -207,6 +236,18 @@ export function useSymphonyPlayback(
     scrubbingRef.current = false;
   }, [playing]);
 
+  const meterLevels = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [id, reading] of Object.entries(meterReadings)) out[id] = reading.level;
+    return out;
+  }, [meterReadings]);
+
+  const meterPeaks = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [id, reading] of Object.entries(meterReadings)) out[id] = reading.peak;
+    return out;
+  }, [meterReadings]);
+
   return {
     engineRef,
     playing,
@@ -221,6 +262,9 @@ export function useSymphonyPlayback(
     setCountIn,
     position,
     meterLevels,
+    meterPeaks,
+    masterMeter,
+    limiterReductionDb,
     handlePlay,
     handlePause,
     handleResume,

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { carpetField, carpetLayAngle } from './carpetField';
 
 /**
  * Procedural PBR texture studio for the photoreal sets.
@@ -28,6 +29,70 @@ export type ProceduralTextureKind =
 
 const cache = new Map<string, THREE.CanvasTexture>();
 const normalCache = new Map<string, THREE.DataTexture>();
+
+/* ------------------------------------------------------- texture budget --- */
+
+/**
+ * Generation budget for the procedural bank — driven by the fidelity tier
+ * (`fidelity.performance`). This is the asset-compression half of the
+ * performance story: canvases are downscaled to the tier's `maxTextureSize`,
+ * derived (low-frequency) maps are generated at a fraction of the surface size,
+ * and every map takes the tier's anisotropic-filtering sample count instead of
+ * a flat 16×.
+ */
+export interface TextureBudget {
+  /** Largest texture edge generated for a surface map. */
+  maxSize: number;
+  /** Anisotropic filtering samples applied to every generated map. */
+  anisotropy: number;
+  /** Downscale factor for derived (roughness/metalness) maps. */
+  derivedMapScale: number;
+}
+
+const DEFAULT_BUDGET: TextureBudget = { maxSize: 2048, anisotropy: 16, derivedMapScale: 1 };
+let budget: TextureBudget = { ...DEFAULT_BUDGET };
+
+/** Apply the tier's texture budget. Cheap to call; affects new generations. */
+export function setProceduralTextureBudget(next: Partial<TextureBudget>): void {
+  budget = {
+    maxSize: Math.max(32, Math.round(next.maxSize ?? budget.maxSize)),
+    anisotropy: Math.max(1, Math.round(next.anisotropy ?? budget.anisotropy)),
+    derivedMapScale: Math.max(1, Math.round(next.derivedMapScale ?? budget.derivedMapScale)),
+  };
+}
+
+export function getProceduralTextureBudget(): TextureBudget {
+  return { ...budget };
+}
+
+/**
+ * Returns the canvas' ImageData at `scale` (≤ 1) resolution — the browser's
+ * decimator does the filtering, so a 512px source becomes a clean 256px map at
+ * scale 0.5. `scale` of 1 passes the pixels through untouched.
+ */
+function scaledImageData(
+  canvas: HTMLCanvasElement,
+  scale: number,
+): { data: Uint8ClampedArray; width: number; height: number } {
+  const { width: sw, height: sh } = canvas;
+  if (scale >= 1) {
+    return { data: canvas.getContext('2d')!.getImageData(0, 0, sw, sh).data, width: sw, height: sh };
+  }
+  const width = Math.max(8, Math.round(sw * scale));
+  const height = Math.max(8, Math.round(sh * scale));
+  const small = document.createElement('canvas');
+  small.width = width;
+  small.height = height;
+  const ctx = small.getContext('2d')!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(canvas, 0, 0, width, height);
+  return { data: ctx.getImageData(0, 0, width, height).data, width, height };
+}
+
+/** Budget clamp for a source canvas edge — 1 when the source already fits. */
+function budgetScaleFor(sourceSize: number): number {
+  return Math.min(1, budget.maxSize / sourceSize);
+}
 
 function seeded(seed: number) {
   let s = seed % 2147483647;
@@ -184,30 +249,53 @@ function leatherGrain(seed: number, base: string, cell: string) {
   return canvas;
 }
 
-function carpetPattern(seed: number, base: string, accent: string) {
-  const { canvas, ctx } = makeCanvas(256, 256);
-  const rnd = seeded(seed);
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, 256, 256);
-  // Dense fibre pile — thousands of short tufts with catch-light tips.
-  for (let i = 0; i < 5200; i += 1) {
-    const x = rnd() * 256;
-    const y = rnd() * 256;
-    ctx.strokeStyle = rnd() > 0.82 ? accent : base;
-    ctx.globalAlpha = 0.18 + rnd() * 0.3;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + rnd() * 2 - 1, y - 1.5 - rnd() * 2.5);
-    ctx.stroke();
+function carpetPattern(seed: number) {
+  // Painted per texel from the shared carpet field so the albedo describes the
+  // same physical pile as the height, roughness and lay maps derived from it:
+  // heathered wool dye lots, pile self-shading between the tufts, and the faint
+  // sheen difference vacuum tracks leave across the floor.
+  const size = 256;
+  const { canvas, ctx } = makeCanvas(size, size);
+  const field = carpetField(seed, size);
+  const img = ctx.createImageData(size, size);
+  const d = img.data;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const i = y * size + x;
+      const t = field.tone[i];
+      // Heather dye lots — deep → mid → light greige wool, with the odd pale
+      // fleck. Real wool is never a single flat colour.
+      let r: number;
+      let g: number;
+      let b: number;
+      if (t < 0.55) {
+        const k = t / 0.55;
+        r = 38 + (84 - 38) * k;
+        g = 35 + (78 - 35) * k;
+        b = 31 + (71 - 31) * k;
+      } else {
+        const k = (t - 0.55) / 0.45;
+        r = 84 + (136 - 84) * k;
+        g = 78 + (127 - 78) * k;
+        b = 71 + (116 - 71) * k;
+      }
+      if (t > 0.94) {
+        r = 158;
+        g = 148;
+        b = 136;
+      }
+      // Pile self-shading: valleys between tufts sit in shadow, tops catch the
+      // light; wear leaves a faint sheen shift across the tracks.
+      const h = field.height[i];
+      const shade = 0.66 + 0.5 * h + 0.1 * (field.wear[i] - 0.5);
+      const o = i * 4;
+      d[o] = Math.max(0, Math.min(255, r * shade));
+      d[o + 1] = Math.max(0, Math.min(255, g * shade));
+      d[o + 2] = Math.max(0, Math.min(255, b * shade));
+      d[o + 3] = 255;
+    }
   }
-  // Broad tonal bands — the vacuumed sheen of a real carpet.
-  for (let i = 0; i < 8; i += 1) {
-    ctx.fillStyle = accent;
-    ctx.globalAlpha = 0.05 + rnd() * 0.05;
-    ctx.fillRect(0, i * 32 + rnd() * 12, 256, 14 + rnd() * 12);
-  }
-  ctx.globalAlpha = 1;
+  ctx.putImageData(img, 0, 0);
   return canvas;
 }
 
@@ -422,7 +510,7 @@ function buildCanvas(kind: ProceduralTextureKind, seed: number): HTMLCanvasEleme
     case 'leather':
       return leatherGrain(seed + 11, '#7c4a24', '#5d3417');
     case 'carpet':
-      return carpetPattern(seed, '#4a4640', '#625c54');
+      return carpetPattern(seed);
     case 'concrete':
       return noiseWall(seed, '#78767a');
     case 'marble':
@@ -460,18 +548,37 @@ function buildCanvas(kind: ProceduralTextureKind, seed: number): HTMLCanvasEleme
 const FLAT_KINDS: ProceduralTextureKind[] = ['screen_glow', 'wall_decal'];
 
 export function getProceduralTexture(kind: ProceduralTextureKind, seed = 0): THREE.CanvasTexture {
-  const key = `${kind}:${seed}`;
+  const key = `${kind}:${seed}:${budget.maxSize}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
   const canvas = buildCanvas(kind, seed);
+  const scale = budgetScaleFor(Math.max(canvas.width, canvas.height));
+  if (scale < 1) {
+    const small = document.createElement('canvas');
+    small.width = Math.max(8, Math.round(canvas.width * scale));
+    small.height = Math.max(8, Math.round(canvas.height * scale));
+    const ctx = small.getContext('2d')!;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(canvas, 0, 0, small.width, small.height);
+    return cacheTexture(cache, key, small, kind);
+  }
+  return cacheTexture(cache, key, canvas, kind);
+}
+
+function cacheTexture(
+  store: Map<string, THREE.CanvasTexture>,
+  key: string,
+  canvas: HTMLCanvasElement,
+  kind: ProceduralTextureKind,
+): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 16;
+  tex.anisotropy = budget.anisotropy;
   applyKindRepeat(tex, kind);
-  cache.set(key, tex);
+  store.set(key, tex);
   return tex;
 }
 
@@ -506,19 +613,35 @@ export function getProceduralRoughness(
   baseRoughness = 0.55,
 ): THREE.DataTexture | null {
   if (FLAT_KINDS.includes(kind)) return null;
-  const key = `${kind}:${seed}:${baseRoughness}`;
+  const key = `${kind}:${seed}:${baseRoughness}:${budget.maxSize}:${budget.derivedMapScale}`;
   const hit = roughnessCache.get(key);
   if (hit) return hit;
 
   const canvas = buildCanvas(kind, seed);
-  const { width, height } = canvas;
-  const src = canvas.getContext('2d')!.getImageData(0, 0, width, height).data;
+  // Derived maps are low-frequency by nature — generating them at a fraction of
+  // the surface size is visually free and halves the memory.
+  const { data: src, width, height } = scaledImageData(
+    canvas,
+    (budgetScaleFor(Math.max(canvas.width, canvas.height)) / budget.derivedMapScale),
+  );
+  // Carpet roughness comes off the physical pile, not the colour: fibre tips
+  // catch the light (slightly glossier), the valleys between tufts stay matte,
+  // and vacuum tracks leave a faint sheen difference across the floor.
+  const carpet = kind === 'carpet' ? carpetField(seed, width) : null;
   const data = new Uint8Array(width * height * 4);
   for (let i = 0; i < width * height; i += 1) {
     const o = i * 4;
-    const lum = (src[o] * 0.299 + src[o + 1] * 0.587 + src[o + 2] * 0.114) / 255;
-    // mean-preserving swing: bright/dense texels a touch smoother, dark/porous rougher
-    const rough = Math.min(1, Math.max(0.05, baseRoughness * (0.82 + 0.36 * (1 - lum))));
+    let rough: number;
+    if (carpet) {
+      const cx = i % width;
+      const cy = Math.floor(i / width);
+      const fi = (cy % carpet.size) * carpet.size + (cx % carpet.size);
+      rough = Math.min(1, Math.max(0.05, baseRoughness * (1.1 - 0.18 * carpet.height[fi] - 0.08 * carpet.wear[fi])));
+    } else {
+      const lum = (src[o] * 0.299 + src[o + 1] * 0.587 + src[o + 2] * 0.114) / 255;
+      // mean-preserving swing: bright/dense texels a touch smoother, dark/porous rougher
+      rough = Math.min(1, Math.max(0.05, baseRoughness * (0.82 + 0.36 * (1 - lum))));
+    }
     const v = Math.round(rough * 255);
     data[o] = v;
     data[o + 1] = v;
@@ -533,7 +656,7 @@ export function getProceduralRoughness(
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.generateMipmaps = true;
-  tex.anisotropy = 16;
+  tex.anisotropy = budget.anisotropy;
   applyKindRepeat(tex, kind);
   tex.needsUpdate = true;
   roughnessCache.set(key, tex);
@@ -542,18 +665,29 @@ export function getProceduralRoughness(
 
 export function getProceduralNormal(kind: ProceduralTextureKind, seed = 0, strength = 1.1): THREE.DataTexture | null {
   if (FLAT_KINDS.includes(kind)) return null;
-  const key = `${kind}:${seed}:${strength}`;
+  const key = `${kind}:${seed}:${strength}:${budget.maxSize}`;
   const hit = normalCache.get(key);
   if (hit) return hit;
 
   const canvas = buildCanvas(kind, seed);
-  const { width, height } = canvas;
-  const src = canvas.getContext('2d')!.getImageData(0, 0, width, height).data;
+  const { data: src, width, height } = scaledImageData(
+    canvas,
+    budgetScaleFor(Math.max(canvas.width, canvas.height)),
+  );
 
+  // Carpet normals come off the physical pile height (tuft clusters + fibre
+  // striations) — colour-luma would trace the dye flecks instead of the pile.
+  const carpet = kind === 'carpet' ? carpetField(seed, width) : null;
   const lum = new Float32Array(width * height);
   for (let i = 0; i < width * height; i += 1) {
     const o = i * 4;
-    lum[i] = (src[o] * 0.299 + src[o + 1] * 0.587 + src[o + 2] * 0.114) / 255;
+    if (carpet) {
+      const cx = i % width;
+      const cy = Math.floor(i / width);
+      lum[i] = carpet.height[(cy % carpet.size) * carpet.size + (cx % carpet.size)];
+    } else {
+      lum[i] = (src[o] * 0.299 + src[o + 1] * 0.587 + src[o + 2] * 0.114) / 255;
+    }
   }
 
   const at = (x: number, y: number) => lum[((y + height) % height) * width + ((x + width) % width)];
@@ -590,7 +724,7 @@ export function getProceduralNormal(kind: ProceduralTextureKind, seed = 0, stren
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.generateMipmaps = true;
-  tex.anisotropy = 16;
+  tex.anisotropy = budget.anisotropy;
   applyKindRepeat(tex, kind);
   tex.needsUpdate = true;
   normalCache.set(key, tex);
@@ -613,13 +747,15 @@ export function getProceduralMetalness(
   baseMetalness = 0.05,
 ): THREE.DataTexture | null {
   if (FLAT_KINDS.includes(kind)) return null;
-  const key = `${kind}:${seed}:${baseMetalness}`;
+  const key = `${kind}:${seed}:${baseMetalness}:${budget.maxSize}:${budget.derivedMapScale}`;
   const hit = metalnessCache.get(key);
   if (hit) return hit;
 
   const canvas = buildCanvas(kind, seed);
-  const { width, height } = canvas;
-  const src = canvas.getContext('2d')!.getImageData(0, 0, width, height).data;
+  const { data: src, width, height } = scaledImageData(
+    canvas,
+    (budgetScaleFor(Math.max(canvas.width, canvas.height)) / budget.derivedMapScale),
+  );
   const data = new Uint8Array(width * height * 4);
   for (let i = 0; i < width * height; i += 1) {
     const o = i * 4;
@@ -638,7 +774,7 @@ export function getProceduralMetalness(
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.generateMipmaps = true;
-  tex.anisotropy = 16;
+  tex.anisotropy = budget.anisotropy;
   applyKindRepeat(tex, kind);
   tex.needsUpdate = true;
   metalnessCache.set(key, tex);
@@ -794,4 +930,287 @@ export function getMicroMetalness(baseMetalness = 0.05, swing = 0.12): THREE.Dat
   tex.needsUpdate = true;
   microMetalnessCache.set(key, tex);
   return tex;
+}
+
+/* --------------------------------------------- anisotropy + displacement --- */
+
+/**
+ * How strongly each material family smears its highlight along a grain
+ * direction. Brushed metal and carpet pile are the strong cases; wood grain is
+ * a subtle one; plaster/concrete stay essentially isotropic.
+ */
+const ANISOTROPY_STRENGTH: Partial<Record<ProceduralTextureKind, number>> = {
+  metal_brushed: 1,
+  carpet: 0.7,
+  fabric_linen: 0.5,
+  fabric_velvet: 0.55,
+  wood_oak: 0.38,
+  wood_walnut: 0.38,
+  leather: 0.3,
+  concrete: 0.18,
+};
+
+const anisotropyCache = new Map<string, THREE.DataTexture>();
+const displacementCache = new Map<string, THREE.DataTexture>();
+const microAnisotropyCache = new Map<string, THREE.DataTexture>();
+const microDisplacementCache = new Map<string, THREE.DataTexture>();
+
+function finishDataTexture(
+  tex: THREE.DataTexture,
+  kind: ProceduralTextureKind | null,
+  repeat = true,
+): THREE.DataTexture {
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = budget.anisotropy;
+  if (kind && repeat) applyKindRepeat(tex, kind);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Anisotropy map — the grain direction field for `MeshPhysicalMaterial`'s
+ * anisotropic lobe. three.js reads RG as the tangent-space direction in
+ * [-1, 1] (rotated by `anisotropyRotation`) and B as the local strength.
+ *
+ * The direction is derived from the material's own grain: it runs along the
+ * iso-height contours (perpendicular to the luminance gradient), so brushed
+ * streaks, carpet tufts, weave and wood grain all smear their highlights along
+ * the physical texture instead of a fixed UV axis.
+ */
+export function getProceduralAnisotropy(
+  kind: ProceduralTextureKind,
+  seed = 0,
+  strength = 1,
+): THREE.DataTexture | null {
+  const family = ANISOTROPY_STRENGTH[kind] ?? 0;
+  if (FLAT_KINDS.includes(kind) || family <= 0) return null;
+  const key = `${kind}:${seed}:${strength}:${budget.maxSize}`;
+  const hit = anisotropyCache.get(key);
+  if (hit) return hit;
+
+  const canvas = buildCanvas(kind, seed);
+  const { data: src, width, height } = scaledImageData(
+    canvas,
+    budgetScaleFor(Math.max(canvas.width, canvas.height)),
+  );
+  const lum = new Float32Array(width * height);
+  for (let i = 0; i < width * height; i += 1) {
+    const o = i * 4;
+    lum[i] = (src[o] * 0.299 + src[o + 1] * 0.587 + src[o + 2] * 0.114) / 255;
+  }
+  const at = (x: number, y: number) => lum[((y + height) % height) * width + ((x + width) % width)];
+  const carpet = kind === 'carpet' ? carpetField(seed, width) : null;
+  const localStrength = Math.min(1, family * strength);
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const o = (y * width + x) * 4;
+      if (carpet) {
+        // Carpet pile is *laid* in one direction when it is sheared and
+        // finished — the highlight smears along the pile lay, not along the
+        // colour contours. The wear field drifts the lay a few degrees across
+        // the surface so the sheen band wanders like real pile underfoot.
+        const fi = (y % carpet.size) * carpet.size + (x % carpet.size);
+        const angle = carpetLayAngle(carpet.wear[fi]);
+        data[o] = Math.round((Math.cos(angle) * 0.5 + 0.5) * 255);
+        data[o + 1] = Math.round((Math.sin(angle) * 0.5 + 0.5) * 255);
+        data[o + 2] = Math.round(localStrength * 255);
+        data[o + 3] = 255;
+        continue;
+      }
+      const gx = at(x + 1, y) - at(x - 1, y);
+      const gy = at(x, y + 1) - at(x, y - 1);
+      // Grain runs along the contour: the gradient rotated by 90°.
+      let dx = -gy;
+      let dy = gx;
+      const len = Math.hypot(dx, dy);
+      if (len > 1e-5) {
+        dx /= len;
+        dy /= len;
+      } else {
+        // Flat patches default to the family's dominant grain axis (U).
+        dx = 1;
+        dy = 0;
+      }
+      data[o] = Math.round((dx * 0.5 + 0.5) * 255);
+      data[o + 1] = Math.round((dy * 0.5 + 0.5) * 255);
+      data[o + 2] = Math.round(localStrength * 255);
+      data[o + 3] = 255;
+    }
+  }
+  const tex = finishDataTexture(
+    new THREE.DataTexture(data, width, height, THREE.RGBAFormat),
+    kind,
+  );
+  anisotropyCache.set(key, tex);
+  return tex;
+}
+
+/**
+ * Displacement map — the material's height field, so geometry can move its
+ * vertices (or a parallax shader can walk them) instead of only tilting
+ * normals. Red channel carries the height (three samples `.x`).
+ */
+export function getProceduralDisplacement(
+  kind: ProceduralTextureKind,
+  seed = 0,
+): THREE.DataTexture | null {
+  if (FLAT_KINDS.includes(kind)) return null;
+  const key = `${kind}:${seed}:${budget.maxSize}`;
+  const hit = displacementCache.get(key);
+  if (hit) return hit;
+
+  const canvas = buildCanvas(kind, seed);
+  const { data: src, width, height } = scaledImageData(
+    canvas,
+    budgetScaleFor(Math.max(canvas.width, canvas.height)),
+  );
+  // Carpet displacement is the pile height itself — tufts lift off the
+  // backing on subdivided floor geometry.
+  const carpet = kind === 'carpet' ? carpetField(seed, width) : null;
+  const data = new Uint8Array(width * height * 4);
+  for (let i = 0; i < width * height; i += 1) {
+    const o = i * 4;
+    let v: number;
+    if (carpet) {
+      const cx = i % width;
+      const cy = Math.floor(i / width);
+      v = Math.round(carpet.height[(cy % carpet.size) * carpet.size + (cx % carpet.size)] * 255);
+    } else {
+      v = Math.round(src[o] * 0.299 + src[o + 1] * 0.587 + src[o + 2] * 0.114);
+    }
+    data[o] = v;
+    data[o + 1] = v;
+    data[o + 2] = v;
+    data[o + 3] = 255;
+  }
+  const tex = finishDataTexture(
+    new THREE.DataTexture(data, width, height, THREE.RGBAFormat),
+    kind,
+  );
+  displacementCache.set(key, tex);
+  return tex;
+}
+
+/** Micro-grain direction field for solid finishes (shared, cached). */
+export function getMicroAnisotropy(strength = 1): THREE.DataTexture {
+  const key = `${strength}`;
+  const hit = microAnisotropyCache.get(key);
+  if (hit) return hit;
+  const h = microHeightField();
+  const size = MICRO_SIZE;
+  const at = (x: number, y: number) => h[(((y % size) + size) % size) * size + (((x % size) + size) % size)];
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const gx = at(x + 1, y) - at(x - 1, y);
+      const gy = at(x, y + 1) - at(x, y - 1);
+      let dx = -gy;
+      let dy = gx;
+      const len = Math.hypot(dx, dy);
+      if (len > 1e-5) {
+        dx /= len;
+        dy /= len;
+      } else {
+        dx = 1;
+        dy = 0;
+      }
+      const o = (y * size + x) * 4;
+      data[o] = Math.round((dx * 0.5 + 0.5) * 255);
+      data[o + 1] = Math.round((dy * 0.5 + 0.5) * 255);
+      data[o + 2] = Math.round(Math.min(1, Math.max(0, strength)) * 255);
+      data[o + 3] = 255;
+    }
+  }
+  const tex = finishDataTexture(new THREE.DataTexture(data, size, size, THREE.RGBAFormat), null, false);
+  microAnisotropyCache.set(key, tex);
+  return tex;
+}
+
+/** Micro height field for solid finishes — displacement from the same noise. */
+export function getMicroDisplacement(): THREE.DataTexture {
+  const key = 'micro-displacement';
+  const hit = microDisplacementCache.get(key);
+  if (hit) return hit;
+  const h = microHeightField();
+  const size = MICRO_SIZE;
+  const data = new Uint8Array(size * size * 4);
+  for (let i = 0; i < size * size; i += 1) {
+    const v = Math.round(Math.min(1, Math.max(0, h[i])) * 255);
+    const o = i * 4;
+    data[o] = v;
+    data[o + 1] = v;
+    data[o + 2] = v;
+    data[o + 3] = 255;
+  }
+  const tex = finishDataTexture(new THREE.DataTexture(data, size, size, THREE.RGBAFormat), null, false);
+  tex.repeat.set(3, 3);
+  microDisplacementCache.set(key, tex);
+  return tex;
+}
+
+/* ------------------------------------------------------- memory control --- */
+
+const ALL_CACHES: Map<string, THREE.Texture>[] = [
+  cache,
+  normalCache,
+  roughnessCache,
+  metalnessCache,
+  anisotropyCache,
+  displacementCache,
+  microNormalCache,
+  microRoughnessCache,
+  microMetalnessCache,
+  microAnisotropyCache,
+  microDisplacementCache,
+];
+
+/** Approximate GPU footprint of the cached procedural maps, in megabytes. */
+export function proceduralTextureMemoryMb(): number {
+  let bytes = 0;
+  for (const store of ALL_CACHES) {
+    for (const tex of store.values()) {
+      const image = tex.image as { width?: number; height?: number } | null;
+      const w = image?.width ?? 0;
+      const h = image?.height ?? 0;
+      // RGBA8 + a ~34% mip chain overhead.
+      bytes += w * h * 4 * 1.34;
+    }
+  }
+  return bytes / (1024 * 1024);
+}
+
+/**
+ * Disposes every cached procedural map and drops the caches. Callers must make
+ * sure no live material still references these textures — `acquireProceduralTextureBank`
+ * handles that bookkeeping for stages that share the bank.
+ */
+export function disposeProceduralTextureCaches(): void {
+  for (const store of ALL_CACHES) {
+    for (const tex of store.values()) tex.dispose();
+    store.clear();
+  }
+  microHeight = null;
+}
+
+let bankLeases = 0;
+
+/**
+ * Leases the shared procedural bank for a stage. The bank is reference-counted:
+ * when the last lease is released the caches are disposed, so mounting and
+ * swapping virtual sets never leaks texture memory between scenes.
+ */
+export function acquireProceduralTextureBank(): () => void {
+  bankLeases += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    bankLeases = Math.max(0, bankLeases - 1);
+    if (bankLeases === 0) disposeProceduralTextureCaches();
+  };
 }

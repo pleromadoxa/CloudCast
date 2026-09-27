@@ -1,8 +1,9 @@
+/* eslint-disable react-refresh/only-export-components -- the room-style presets and their resolver share one preset-driven module (same pattern as MotionTemplateEngine) */
 import { useMemo } from 'react';
 import { MeshReflectorMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 import type { VirtualSetEnvironment } from '../../lib/prism/virtualSets';
-import { pbrFromTexture, pbrSolid } from '../../lib/prism/pbrMaterials';
+import { carpetMaterial, pbrFromTexture, pbrSolid } from '../../lib/prism/pbrMaterials';
 
 export interface RoomStyle {
   wallColor: string;
@@ -220,6 +221,17 @@ export function PhotorealisticRoomShell({ environment }: { environment: VirtualS
       }),
     [style.floorTexture, style.floorColor, width, depth],
   );
+  // Carpet floors swap the generic surface for the full wool pile BRDF —
+  // heathered albedo, sheen, pile-lay anisotropy and tuft displacement.
+  const carpetMat = useMemo(
+    () =>
+      style.floorTexture === 'carpet'
+        ? carpetMaterial(style.floorColor, 4, {
+            repeat: [Math.max(1, width / 1.6), Math.max(1, depth / 1.6)],
+          })
+        : null,
+    [style.floorTexture, style.floorColor, width, depth],
+  );
 
   return (
     <>
@@ -238,19 +250,30 @@ export function PhotorealisticRoomShell({ environment }: { environment: VirtualS
         <meshStandardMaterial color="#fafafa" roughness={0.85} />
       </mesh>
       <mesh position={[0, -0.01, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[width, depth]} />
-        {style.floorReflective ? (
-          <MeshReflectorMaterial
-            blur={[400, 120]}
-            mixBlur={0.85}
-            mixStrength={0.42}
-            color={style.floorColor}
-            metalness={0.15}
-            roughness={0.35}
-            mirror={0.35}
-          />
+        {carpetMat ? (
+          /* Real carpet: subdivided slab so the pile displacement lifts the
+             tufts off the backing under grazing light. */
+          <>
+            <planeGeometry args={[width, depth, 72, 54]} />
+            <primitive object={carpetMat} attach="material" />
+          </>
         ) : (
-          <primitive object={floorMat} attach="material" />
+          <>
+            <planeGeometry args={[width, depth]} />
+            {style.floorReflective ? (
+              <MeshReflectorMaterial
+                blur={[400, 120]}
+                mixBlur={0.85}
+                mixStrength={0.42}
+                color={style.floorColor}
+                metalness={0.15}
+                roughness={0.35}
+                mirror={0.35}
+              />
+            ) : (
+              <primitive object={floorMat} attach="material" />
+            )}
+          </>
         )}
       </mesh>
       {[[-width / 2, depth / 2], [width / 2, depth / 2], [-width / 2, -depth / 2], [width / 2, -depth / 2]].map(([x, z], i) => (

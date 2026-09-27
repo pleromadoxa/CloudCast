@@ -36,6 +36,14 @@ export function shouldResumeBroadcast(state: Partial<PersistedProductionState> |
   return Date.now() - started < BROADCAST_RESUME_MAX_MS;
 }
 
+/**
+ * Simple production view is the default for every operator until they switch
+ * to full view — once they do, the persisted choice wins on every return.
+ */
+export function resolveSimpleProductionView(stored: boolean | undefined): boolean {
+  return stored ?? true;
+}
+
 export function loadProductionState(): Partial<PersistedProductionState> | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);

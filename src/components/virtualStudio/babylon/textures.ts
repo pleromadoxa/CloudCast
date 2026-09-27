@@ -15,14 +15,26 @@
  * plane — the single biggest tell between "3D" and "photoreal".
  */
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture';
+import './engineExtensions';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture';
 import type { Scene } from '@babylonjs/core/scene';
+import { carpetField, carpetLayAngle } from '../../../lib/prism/carpetField';
 
 export interface ProceduralPbrMaps {
   albedo: DynamicTexture;
   /** R = ambient occlusion, G = roughness, B = metallic (glTF ORM). */
   orm: DynamicTexture;
   normal: DynamicTexture;
+  /**
+   * Greyscale height field — drives parallax occlusion and real vertex
+   * displacement (`displaceMeshFromHeight`) so silhouettes carry relief.
+   */
+  height: DynamicTexture;
+  /**
+   * Grain direction field: RG = tangent-space direction in [-1, 1],
+   * B = local anisotropic strength. Drives `PBRMaterial.anisotropy.texture`.
+   */
+  anisotropy: DynamicTexture;
 }
 
 export type ProceduralPbrKind =
@@ -59,9 +71,41 @@ interface Surface {
   metal: number;
   /** Strength of the derived normal map. */
   normalScale?: number;
+  /** Strength of the derived anisotropic grain field (0 = isotropic). */
+  anisotropy?: number;
+  /**
+   * Pile-lay anisotropy (carpet): the grain direction follows the laid pile
+   * instead of the height contours.
+   */
+  pileLay?: boolean;
 }
 
 /* ------------------------------------------------------------- helpers --- */
+
+/**
+ * Shared carpet fields per (seed, size) — the albedo, roughness, AO, height
+ * and anisotropy painters must all describe the same pile, so the field is
+ * built once and reused.
+ */
+const carpetFields = new Map<string, ReturnType<typeof carpetField>>();
+
+function carpetFieldFor(seed: number, size: number): ReturnType<typeof carpetField> {
+  const key = `${seed}:${size}`;
+  const hit = carpetFields.get(key);
+  if (hit) return hit;
+  const field = carpetField(seed, size);
+  carpetFields.set(key, field);
+  return field;
+}
+
+/**
+ * Deterministic field seed from a channel painter's RNG. Every painter makes
+ * this its first `rng()` call, so all channels of one surface seed the field
+ * identically (`mulberry32(seed)` is restarted per channel with the same seed).
+ */
+function fieldSeed(rng: () => number): number {
+  return Math.floor(rng() * 1e6) + 1;
+}
 
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -302,16 +346,94 @@ const SURFACES: Record<ProceduralPbrKind, Surface> = {
 
   carpet: {
     metal: 0,
-    normalScale: 1.8,
+    normalScale: 1.9,
+    pileLay: true,
+    // Heathered wool painted per texel from the shared `carpetField` — the
+    // same pile physics the three.js stage renders (dye lots, tuft
+    // self-shading, vacuum tracks), so a carpet is the same carpet on both
+    // engines. The `rng` first call seeds the field identically in every
+    // channel painter, so albedo/height/roughness describe one pile.
     albedo: (ctx, size, rng) => {
-      noise(ctx, size, rng, 42, 32);
-      for (let i = 0; i < 2600; i += 1) {
-        ctx.fillStyle = `rgba(${62 + rng() * 60},${64 + rng() * 60},${80 + rng() * 60},0.5)`;
-        ctx.fillRect(rng() * size, rng() * size, 2, 2);
+      const field = carpetFieldFor(fieldSeed(rng), size);
+      const img = ctx.createImageData(size, size);
+      const d = img.data;
+      for (let i = 0; i < size * size; i += 1) {
+        const t = field.tone[i];
+        let r: number;
+        let g: number;
+        let b: number;
+        if (t < 0.55) {
+          const k = t / 0.55;
+          r = 38 + (84 - 38) * k;
+          g = 35 + (78 - 35) * k;
+          b = 31 + (71 - 31) * k;
+        } else {
+          const k = (t - 0.55) / 0.45;
+          r = 84 + (136 - 84) * k;
+          g = 78 + (127 - 78) * k;
+          b = 71 + (116 - 71) * k;
+        }
+        if (t > 0.94) {
+          r = 158;
+          g = 148;
+          b = 136;
+        }
+        const shade = 0.66 + 0.5 * field.height[i] + 0.1 * (field.wear[i] - 0.5);
+        const o = i * 4;
+        d[o] = Math.max(0, Math.min(255, r * shade));
+        d[o + 1] = Math.max(0, Math.min(255, g * shade));
+        d[o + 2] = Math.max(0, Math.min(255, b * shade));
+        d[o + 3] = 255;
       }
+      ctx.putImageData(img, 0, 0);
     },
-    roughness: (ctx, size, rng) => noise(ctx, size, rng, 232, 24),
-    height: (ctx, size, rng) => noise(ctx, size, rng, 128, 52),
+    roughness: (ctx, size, rng) => {
+      const field = carpetFieldFor(fieldSeed(rng), size);
+      const img = ctx.createImageData(size, size);
+      const d = img.data;
+      for (let i = 0; i < size * size; i += 1) {
+        // Fibre tips catch the light, the valleys between tufts stay matte.
+        const v = Math.max(
+          0,
+          Math.min(255, Math.round((1.08 - 0.16 * field.height[i] - 0.06 * field.wear[i]) * 220)),
+        );
+        const o = i * 4;
+        d[o] = v;
+        d[o + 1] = v;
+        d[o + 2] = v;
+        d[o + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+    },
+    ao: (ctx, size, rng) => {
+      // Valleys between tufts sit in shadow.
+      const field = carpetFieldFor(fieldSeed(rng), size);
+      const img = ctx.createImageData(size, size);
+      const d = img.data;
+      for (let i = 0; i < size * size; i += 1) {
+        const v = Math.round((0.55 + 0.45 * field.height[i]) * 255);
+        const o = i * 4;
+        d[o] = v;
+        d[o + 1] = v;
+        d[o + 2] = v;
+        d[o + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+    },
+    height: (ctx, size, rng) => {
+      const field = carpetFieldFor(fieldSeed(rng), size);
+      const img = ctx.createImageData(size, size);
+      const d = img.data;
+      for (let i = 0; i < size * size; i += 1) {
+        const v = Math.round(field.height[i] * 255);
+        const o = i * 4;
+        d[o] = v;
+        d[o + 1] = v;
+        d[o + 2] = v;
+        d[o + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+    },
   },
 
   painted_wall: {
@@ -548,6 +670,111 @@ function buildOrmMap(scene: Scene, name: string, surface: Surface, seed: number)
   return texture;
 }
 
+/** Greyscale height field — the relief source for parallax + displacement. */
+function buildHeightMap(scene: Scene, name: string, surface: Surface, seed: number): DynamicTexture {
+  const size = TEXTURE_SIZE;
+  const texture = newTexture(scene, name);
+  const out = texture.getContext() as CanvasRenderingContext2D;
+  const heightCanvas = document.createElement('canvas');
+  heightCanvas.width = size;
+  heightCanvas.height = size;
+  const hctx = heightCanvas.getContext('2d');
+  if (!hctx) {
+    flat(out, size, 128);
+    texture.update(false);
+    return texture;
+  }
+  surface.height(hctx, size, mulberry32(seed));
+  // The height painter already draws greyscale — pass it through.
+  out.drawImage(heightCanvas, 0, 0);
+  texture.update(false);
+  return texture;
+}
+
+/**
+ * Grain direction field for the anisotropic lobe. Direction runs along the
+ * iso-height contours (perpendicular to the height gradient), so brushed
+ * streaks, weave and pile smear their highlights along the physical texture.
+ * RG = direction in [-1, 1], B = strength (same layout three.js uses, so both
+ * engines read the same physics).
+ */
+function buildAnisotropyMap(
+  scene: Scene,
+  name: string,
+  surface: Surface,
+  seed: number,
+  strength: number,
+): DynamicTexture {
+  const size = TEXTURE_SIZE;
+  const texture = newTexture(scene, name);
+  const out = texture.getContext() as CanvasRenderingContext2D;
+  const heightCanvas = document.createElement('canvas');
+  heightCanvas.width = size;
+  heightCanvas.height = size;
+  const hctx = heightCanvas.getContext('2d');
+  if (!hctx) {
+    flat(out, size, 128);
+    texture.update(false);
+    return texture;
+  }
+  surface.height(hctx, size, mulberry32(seed));
+  const src = hctx.getImageData(0, 0, size, size);
+  const dst = out.createImageData(size, size);
+  const heightAt = (x: number, y: number): number =>
+    src.data[((x & (size - 1)) + ((y & (size - 1)) * size)) * 4] / 255;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const gx = heightAt(x + 1, y) - heightAt(x - 1, y);
+      const gy = heightAt(x, y + 1) - heightAt(x, y - 1);
+      // Grain runs along the contour: the gradient rotated by 90°.
+      let dx = -gy;
+      let dy = gx;
+      const len = Math.hypot(dx, dy);
+      if (len > 1e-5) {
+        dx /= len;
+        dy /= len;
+      } else {
+        dx = 1;
+        dy = 0;
+      }
+      if (surface.pileLay) {
+        // Carpet pile is laid in one direction when the carpet is finished —
+        // the highlight smears along the lay (drifting slightly with the pile
+        // height), not along the colour contours.
+        const angle = carpetLayAngle(0.5 + (heightAt(x, y) - 0.5) * 0.35);
+        dx = Math.cos(angle);
+        dy = Math.sin(angle);
+      }
+      const i = (x + y * size) * 4;
+      dst.data[i] = (dx * 0.5 + 0.5) * 255;
+      dst.data[i + 1] = (dy * 0.5 + 0.5) * 255;
+      dst.data[i + 2] = Math.max(0, Math.min(1, strength)) * 255;
+      dst.data[i + 3] = 255;
+    }
+  }
+  out.putImageData(dst, 0, 0);
+  texture.update(false);
+  return texture;
+}
+
+/**
+ * How strongly each surface family smears its highlight along the grain —
+ * mirrors the three.js bank (`proceduralTextures.ANISOTROPY_STRENGTH`) so both
+ * engines grade brushed metal, pile and weave identically.
+ */
+const KIND_ANISOTROPY: Partial<Record<ProceduralPbrKind, number>> = {
+  brushed_aluminium: 1,
+  brass: 0.6,
+  carpet: 0.7,
+  upholstery: 0.5,
+  black_fabric: 0.5,
+  lacquered_walnut: 0.38,
+  lacquered_oak: 0.38,
+  leather: 0.3,
+  painted_wall: 0.15,
+  marble: 0.12,
+};
+
 function buildMaps(scene: Scene, kind: ProceduralPbrKind): ProceduralPbrMaps {
   const surface = SURFACES[kind];
   const seed = hashSeed(kind);
@@ -557,6 +784,14 @@ function buildMaps(scene: Scene, kind: ProceduralPbrKind): ProceduralPbrMaps {
     albedo,
     orm: buildOrmMap(scene, `${kind}-orm`, surface, seed),
     normal: buildNormalMap(scene, `${kind}-normal`, surface, seed),
+    height: buildHeightMap(scene, `${kind}-height`, surface, seed),
+    anisotropy: buildAnisotropyMap(
+      scene,
+      `${kind}-aniso`,
+      surface,
+      seed,
+      surface.anisotropy ?? KIND_ANISOTROPY[kind] ?? 0.4,
+    ),
   };
 }
 
@@ -580,6 +815,8 @@ export function disposePbrMaps(scene: Scene): void {
     maps.albedo.dispose();
     maps.orm.dispose();
     maps.normal.dispose();
+    maps.height.dispose();
+    maps.anisotropy.dispose();
     cache.delete(key);
   }
 }

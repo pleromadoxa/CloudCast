@@ -8,6 +8,7 @@ export type PersistedAudioConsole = Pick<
   | 'consoleEnabled'
   | 'peakHoldEnabled'
   | 'consoleViewMode'
+  | 'simpleConsoleView'
   | 'masterVolume'
   | 'masterMuted'
   | 'monitorMuted'
@@ -101,6 +102,8 @@ export function pickPersistedConsole(state: AudioConsoleState): PersistedAudioCo
     consoleEnabled: state.consoleEnabled,
     peakHoldEnabled: state.peakHoldEnabled,
     consoleViewMode: state.consoleViewMode,
+    // Normalize so the saved preference is always explicit (default: simple).
+    simpleConsoleView: state.simpleConsoleView ?? true,
     masterVolume: state.masterVolume,
     masterMuted: state.masterMuted,
     monitorMuted: state.monitorMuted,

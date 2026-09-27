@@ -15,6 +15,7 @@ import { ensureAudioOutputReady, unlockDashboardAudio } from '../lib/audioOutput
 import {
   loadProductionState,
   pickPersistedProduction,
+  resolveSimpleProductionView,
   saveProductionState,
   shouldResumeBroadcast,
 } from '../lib/productionPersistence';
@@ -39,8 +40,11 @@ const resolvedOpenPanels = normalizeOpenPanels(
   (storedProduction?.activePanel as MixerPanel | undefined) ?? 'sources',
 );
 
-const initialSimpleProduction =
-  (storedProduction?.simpleProductionView as boolean | undefined) ?? false;
+// Simple production view is the default until the operator switches to full
+// view — their choice is persisted in the production state below.
+const initialSimpleProduction = resolveSimpleProductionView(
+  storedProduction?.simpleProductionView as boolean | undefined,
+);
 
 const DEFAULT_CONTROLS: DashboardControls = {
   selectedStreamIds: [],

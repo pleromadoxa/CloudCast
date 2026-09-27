@@ -5,11 +5,11 @@ import type { ImportedModelEntry } from '../components/prism/ImportedModelGroup'
 import type { PrismSceneObject } from '../types/prismFeed';
 
 /**
- * Dev-only visual harness for the classic virtual scene renderer.
+ * Visual harness for the classic virtual scene renderer.
  *
  * Renders a representative set with sample placed props and library scans so
  * lighting, IBL, materials and tone mapping can be reviewed in the browser
- * without an authenticated studio session. Reachable at
+ * without an authenticated studio session. Available in all builds at
  * `/prism/scene-preview?set=furnished_living&yaw=0&pitch=0.14&zoom=1.05`.
  */
 

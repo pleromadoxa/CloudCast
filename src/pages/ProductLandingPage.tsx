@@ -4,6 +4,7 @@ import { CLOUDCAST_PRODUCTS } from '../config/products';
 import { getProductGuideSection, parseProductSlug, productLandingPath, productPricingPath, PRODUCT_SEO_KEYWORDS } from '../config/productLanding';
 import { RouteSEO } from '../components/seo/RouteSEO';
 import { ProductHeroBackground } from '../components/products/ProductHeroBackground';
+import { ProductHeroDemo } from '../components/products/ProductHeroDemo';
 import { productHeroMedia } from '../config/productHeroMedia';
 import { mergeSEO } from '../config/seo';
 
@@ -107,6 +108,25 @@ export function ProductLandingPage() {
                 FULL GUIDE
               </Link>
             </div>
+          </div>
+
+          {/* Live 3D preview of the real dashboard — blended into the hero. */}
+          <div className="relative mx-auto mt-14 max-w-5xl">
+            <p className="mb-2 text-center text-[10px] font-bold tracking-[0.32em] text-mixer-muted">
+              LIVE PREVIEW · THE {product.shortName.toUpperCase()} DASHBOARD
+            </p>
+            <div
+              className="relative"
+              style={{
+                maskImage: 'radial-gradient(140% 135% at 50% 38%, #000 62%, transparent 100%)',
+                WebkitMaskImage: 'radial-gradient(140% 135% at 50% 38%, #000 62%, transparent 100%)',
+              }}
+            >
+              <ProductHeroDemo productId={productId} accent={product.accent} />
+            </div>
+            <p className="-mt-4 text-center text-xs text-mixer-muted">
+              An animated sample workspace — the signed-in dashboard is fully interactive.
+            </p>
           </div>
         </section>
 

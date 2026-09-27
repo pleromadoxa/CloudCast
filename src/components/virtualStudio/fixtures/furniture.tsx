@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { useStudioMaterials } from './materials';
 import { PbrSurface } from './PbrSurface';
 import { LightBeam } from './LightBeam';
+import { useLightSlot, usePracticalLightScale, useVolumetrics } from './fidelityLighting';
 import {
   PLANT_SPECIES,
   pickPlantSpecies,
@@ -14,6 +15,7 @@ import {
   type PlantSpecies,
 } from './plantModels';
 import {
+  carpetPbrOptions,
   lacqueredWoodMaterial,
   leatherMaterial,
   upholsteryMaterial,
@@ -609,12 +611,12 @@ export const AreaRug = memo(function AreaRug({
   depth = 2.4,
   color = '#7c2d12',
 }: PlaceProps & { width?: number; depth?: number; color?: string }) {
-  const m = useStudioMaterials();
   return (
     <group position={position} rotation={rotation} scale={scale}>
+      {/* Subdivided so the tuft displacement genuinely lifts the pile. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]} receiveShadow>
-        <planeGeometry args={[width, depth]} />
-        <PbrSurface map={m.carpet.map} color={color} roughness={0.95} />
+        <planeGeometry args={[width, depth, 40, 30]} />
+        <PbrSurface color={color} {...carpetPbrOptions()} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
         <planeGeometry args={[width + 0.1, depth + 0.1]} />
@@ -870,6 +872,9 @@ export const PottedPlant = memo(function PottedPlant({
 
 /* --------------------------------------------------------------- lighting */
 
+/** Practical fixtures sit just under screens in the light-slot ranking. */
+const PRACTICAL_LIGHT_PRIORITY = 70;
+
 export const FloorLamp = memo(function FloorLamp({
   position,
   rotation,
@@ -878,6 +883,9 @@ export const FloorLamp = memo(function FloorLamp({
   height = 1.6,
 }: PlaceProps & { glow?: string; height?: number }) {
   const m = useStudioMaterials();
+  const lit = useLightSlot(PRACTICAL_LIGHT_PRIORITY);
+  const lightScale = usePracticalLightScale();
+  const volumetrics = useVolumetrics();
   return (
     <group position={position} rotation={rotation} scale={scale}>
       <mesh position={[0, 0.03, 0]} material={m.dark} castShadow>
@@ -897,10 +905,36 @@ export const FloorLamp = memo(function FloorLamp({
           toneMapped={false}
         />
       </mesh>
-      <pointLight position={[0, height - 0.1, 0]} intensity={4.5} distance={7} decay={2} color={glow} />
+      {/* The shade's glow and the light it throws are one physical quantity —
+          when the budget is spent the emissive still reads, it just stops
+          costing a dynamic light. */}
+      {lit && (
+        <pointLight position={[0, height - 0.1, 0]} intensity={4.5 * lightScale} distance={7} decay={2} color={glow} />
+      )}
       {/* open shade spills light up and down through the haze */}
-      <LightBeam position={[0, height + 0.77, 0]} height={1.2} radius={0.5} color={glow} opacity={0.07} direction="up" />
-      <LightBeam position={[0, height - 0.77, 0]} height={1.2} radius={0.55} color={glow} opacity={0.07} />
+      {volumetrics && (
+        <>
+          <LightBeam
+            position={[0, height + 0.77, 0]}
+            height={1.2}
+            radius={0.5}
+            color={glow}
+            opacity={volumetrics.beamIntensity * 1.2}
+            direction="up"
+            segments={volumetrics.beamSegments}
+            animated={volumetrics.animated}
+          />
+          <LightBeam
+            position={[0, height - 0.77, 0]}
+            height={1.2}
+            radius={0.55}
+            color={glow}
+            opacity={volumetrics.beamIntensity * 1.2}
+            segments={volumetrics.beamSegments}
+            animated={volumetrics.animated}
+          />
+        </>
+      )}
     </group>
   );
 });
@@ -912,6 +946,9 @@ export const PendantLight = memo(function PendantLight({
   drop = 1.4,
 }: { position?: [number, number, number]; scale?: number; glow?: string; drop?: number }) {
   const m = useStudioMaterials();
+  const lit = useLightSlot(PRACTICAL_LIGHT_PRIORITY);
+  const lightScale = usePracticalLightScale();
+  const volumetrics = useVolumetrics();
   return (
     <group position={position} scale={scale}>
       <mesh position={[0, drop / 2, 0]}>
@@ -925,9 +962,19 @@ export const PendantLight = memo(function PendantLight({
         <sphereGeometry args={[0.07, 16, 12]} />
         <PbrSurface color={glow} emissive={glow} emissiveIntensity={3} toneMapped={false} />
       </mesh>
-      <pointLight position={[0, -0.2, 0]} intensity={6} distance={8} decay={2} color={glow} />
+      {lit && <pointLight position={[0, -0.2, 0]} intensity={6 * lightScale} distance={8} decay={2} color={glow} />}
       {/* soft pool of light in the air below the shade */}
-      <LightBeam position={[0, -0.2 - 0.85, 0]} height={1.7} radius={0.62} color={glow} opacity={0.08} />
+      {volumetrics && (
+        <LightBeam
+          position={[0, -0.2 - 0.85, 0]}
+          height={1.7}
+          radius={0.62}
+          color={glow}
+          opacity={volumetrics.beamIntensity * 1.4}
+          segments={volumetrics.beamSegments}
+          animated={volumetrics.animated}
+        />
+      )}
     </group>
   );
 });
@@ -1030,8 +1077,10 @@ export const StageDeck = memo(function StageDeck({
   return (
     <group position={position} rotation={rotation} scale={scale}>
       <RoundedBox args={[width, height, depth]} radius={0.02} smoothness={3} position={[0, height / 2, 0]} material={m.dark} castShadow receiveShadow />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, height + 0.005, 0]} material={m.carpet} receiveShadow>
-        <planeGeometry args={[width, depth]} />
+      {/* Deck carpet — subdivided for the pile relief. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, height + 0.005, 0]} receiveShadow>
+        <planeGeometry args={[width, depth, 40, 24]} />
+        <PbrSurface color="#ffffff" {...carpetPbrOptions()} />
       </mesh>
       <mesh position={[0, height * 0.35, depth / 2 + 0.005]}>
         <planeGeometry args={[width - 0.2, 0.04]} />

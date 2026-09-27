@@ -7397,3 +7397,51 @@ body {
   animation: studio-fx-punch 0.7s ease-out forwards;
   background: radial-gradient(circle at center, transparent 32%, rgba(4, 6, 10, 0.94) 100%);
 }
+
+/* ── Audio mixer simple production view ── */
+.studiolive-console--simple .studiolive-top--compact {
+  grid-template-columns: minmax(260px, 420px);
+  justify-content: center;
+}
+
+.studiolive-console--simple .studiolive-master {
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  background: linear-gradient(180deg, rgba(12, 20, 32, 0.85) 0%, rgba(6, 10, 18, 0.95) 100%);
+  padding: 0.85rem;
+}
+
+.studiolive-console--simple .studiolive-scenes {
+  justify-content: center;
+  gap: 0.65rem;
+}
+
+.studiolive-console--simple .studiolive-fader-bank {
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 0.65rem;
+  padding: 0.85rem;
+}
+
+.studiolive-console--simple .studiolive-channel {
+  padding: 0.85rem 0.5rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.14);
+  background: linear-gradient(180deg, rgba(14, 22, 36, 0.75) 0%, rgba(6, 10, 18, 0.9) 100%);
+}
+
+.studiolive-console--simple .studiolive-channel__controls {
+  gap: 0.5rem;
+  width: 100%;
+  justify-content: center;
+}
+
+.studiolive-console--simple .studiolive-btn {
+  min-width: 32px;
+  min-height: 28px;
+  font-size: 10px;
+}
+
+.studiolive-console--simple .studiolive-channel-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}

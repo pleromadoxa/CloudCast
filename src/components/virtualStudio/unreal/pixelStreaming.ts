@@ -19,7 +19,18 @@
  * and the input messages (`mouseMove`, `mouseDown`, `mouseUp`, `mouseWheel`,
  * `keyDown`, `keyUp`) that make the remote render interactive — which is what
  * lets CloudCast drive an Aximmetry-grade Unreal set from the browser.
+ *
+ * The data channel also carries **console commands**, which is how CloudCast
+ * enforces the same physical-fidelity spec the R3F and Babylon stages implement
+ * in-engine: Lumen global illumination and reflections, virtual shadow maps,
+ * volumetric fog and TSR are all pushed from `fidelity.ts` so every virtual set
+ * renders to the identical standard on all three engines.
  */
+import {
+  unrealFidelityCommands,
+  unrealScalabilityLevel,
+} from '../../../lib/virtualStudio/fidelity';
+import type { FidelityTier } from '../../../lib/virtualStudio/fidelity';
 
 export type PixelStreamState =
   | 'idle'
@@ -50,6 +61,8 @@ export interface PixelStreamOptions {
   turnUsername: string;
   turnCredential: string;
   autoPause: boolean;
+  /** Fidelity tier pushed to the streamer once the session is live. */
+  fidelity?: FidelityTier;
   onStats?: (stats: PixelStreamStats) => void;
   onFrame?: (frame: { width: number; height: number }) => void;
 }
@@ -87,11 +100,13 @@ export class PixelStreamClient {
   private latencyMs: number | null = null;
   private bytesReceived = 0;
   private resolution: { width: number; height: number } | null = null;
+  private fidelity: FidelityTier | null;
   private readonly video: HTMLVideoElement;
 
   constructor(options: PixelStreamOptions, video: HTMLVideoElement) {
     this.options = options;
     this.video = video;
+    this.fidelity = options.fidelity ?? null;
     this.video.autoplay = true;
     this.video.playsInline = true;
     this.video.muted = true;
@@ -217,11 +232,29 @@ export class PixelStreamClient {
     else this.sendCommand('r.ScreenPercentage 100');
   }
 
+  /**
+   * Push the shared fidelity spec to the Unreal instance: scalability groups,
+   * then the physical rendering features (Lumen GI + reflections, virtual
+   * shadow maps, volumetric fog, TSR, anisotropy, streaming pool). Commands
+   * queue until the session is streaming.
+   */
+  applyFidelity(tier: FidelityTier): void {
+    this.fidelity = tier;
+    this.pushFidelity();
+  }
+
   /** Apply a render resolution request (Unreal console). */
   applyResolution(resolution: string): void {
     const [width, height] = resolution.split('x').map((v) => Number.parseInt(v, 10));
     if (!width || !height) return;
     this.sendCommand(`r.SetRes ${width}x${height}w`);
+  }
+
+  private pushFidelity(): void {
+    const tier = this.fidelity;
+    if (!tier || this.state !== 'streaming') return;
+    for (const command of unrealScalabilityLevel(tier)) this.sendCommand(command);
+    for (const command of unrealFidelityCommands(tier)) this.sendCommand(command);
   }
 
   /* ------------------------------------------------------------- private --- */
@@ -352,6 +385,8 @@ export class PixelStreamClient {
           this.resolution = { width: settings.width ?? 0, height: settings.height ?? 0 };
           this.options.onFrame?.(this.resolution);
           this.setState('streaming', null);
+          // The data channel is live — enforce the fidelity spec now.
+          this.pushFidelity();
           this.emit();
         });
       }

@@ -44,6 +44,13 @@ import {
   studioQualityPreset,
   type StudioQualityTier,
 } from '../../lib/virtualStudio/quality';
+import {
+  fidelityProfile,
+  type GlobalIlluminationSpec,
+  type VolumetricSpec,
+} from '../../lib/virtualStudio/fidelity';
+import { acquireProceduralTextureBank, setProceduralTextureBudget } from '../../lib/prism/proceduralTextures';
+import { StudioFidelityProvider } from './fixtures/fidelityLighting';
 
 /**
  * The virtual studio stage: a production-grade R3F canvas lit by real HDRI
@@ -332,11 +339,17 @@ function ensureAreaLightTables() {
 }
 
 /**
- * The light rig. A real HDRI supplies ambient, specular and reflections; a
- * fitted key directional and a rim spot give shape (both shadow casters); and
- * two softbox area lights replace the old fill/kicker directionals — area
- * lights are what make metal, glass and skin read like a studio instead of a
- * render.
+ * The light rig. A real HDRI supplies ambient, specular and reflections (the
+ * global-illumination base); a fitted key directional and a rim spot give shape
+ * (both shadow casters); and two softbox area lights replace the old
+ * fill/kicker directionals — area lights are what make metal, glass and skin
+ * read like a studio instead of a render.
+ *
+ * The rig follows the shared fidelity standard: the hemisphere bounce is the
+ * profile's `bounceIntensity`, the god-ray shaft is the profile's volumetric
+ * beam (disabled with the rest of the volumetrics on cheap tiers), and every
+ * fixture in the set couples its light to its emissive brightness through the
+ * same `emissiveLightRatio`.
  */
 function StudioLighting({
   environment,
@@ -346,6 +359,8 @@ function StudioLighting({
   accent,
   temperature = 0.5,
   contactShadows,
+  gi,
+  volumetrics,
 }: {
   environment: StudioEnvironmentProfile;
   intensity: number;
@@ -356,6 +371,10 @@ function StudioLighting({
   temperature?: number;
   /** Soft grounding term under set dressing — off so AR keeps its live plate. */
   contactShadows: boolean;
+  /** Global-illumination spec from the shared fidelity standard. */
+  gi: GlobalIlluminationSpec;
+  /** Volumetric spec — `null` disables visible shafts entirely. */
+  volumetrics: VolumetricSpec | null;
 }) {
   ensureAreaLightTables();
   // Cool-to-warm balance across the rig — the operator's colour temperature.
@@ -386,8 +405,12 @@ function StudioLighting({
 
   return (
     <>
-      {/* self-hosted CC0 scan — correct speculars, reflections and mood */}
-      <Environment files={environment.file} environmentIntensity={environment.intensity * intensity} />
+      {/* self-hosted CC0 scan — the global-illumination base: correct
+          speculars, reflections and mood, scaled by the profile's IBL level */}
+      <Environment
+        files={environment.file}
+        environmentIntensity={environment.intensity * intensity * gi.environmentIntensity}
+      />
 
       {/* key light: the one directional, shadow camera fitted to the set.
           The frustum is fitted tight to the dressed set (not the whole stage)
@@ -423,9 +446,10 @@ function StudioLighting({
         color={fillColor}
         rotation={[Math.PI / 2, 0, 0]}
       />
-      {/* hemisphere sky/ground term — ambient bounce that tints the floor warm
-          and the sky cool, the way an actual room does. */}
-      <hemisphereLight args={[fillColor, '#2a2118', 0.22 * intensity]} />
+      {/* hemisphere sky/ground term — the global-illumination bounce that tints
+          the floor warm and the sky cool, the way an actual room does. Its
+          strength is the profile's `bounceIntensity`. */}
+      <hemisphereLight args={[fillColor, '#2a2118', gi.bounceIntensity * intensity]} />
       {/* camera-left softbox fill — area light, no shadow map cost */}
       <rectAreaLight
         position={[-5.4, 3.2, 2.2]}
@@ -477,15 +501,21 @@ function StudioLighting({
           color="#05070d"
         />
       )}
-      {/* god-ray shaft from the overhead studio spot, visible in the haze */}
-      <LightBeam
-        position={[0, 3.85, -1.5]}
-        rotation={[-0.4, 0, 0]}
-        height={8}
-        radius={1.9}
-        color={keyColor}
-        opacity={0.055}
-      />
+      {/* god-ray shaft from the overhead studio spot — visible only where the
+          volumetric budget exists; the beam reads the profile's haze/segment
+          spec so it degrades in lockstep with the rest of the rig */}
+      {volumetrics && (
+        <LightBeam
+          position={[0, 3.85, -1.5]}
+          rotation={[-0.4, 0, 0]}
+          height={8}
+          radius={1.9}
+          color={keyColor}
+          opacity={volumetrics.beamIntensity}
+          segments={volumetrics.beamSegments}
+          animated={volumetrics.animated}
+        />
+      )}
     </>
   );
 }
@@ -652,11 +682,28 @@ export function StudioStage({
   const engineSettings = useRenderEngineSettings();
   const tier = auto ? autoTier : quality;
   const preset = studioQualityPreset(tier);
+  // The shared fidelity standard: materials, GI, volumetrics and the
+  // performance budget all read from the same tier the stage is running.
+  const profile = fidelityProfile(tier);
   const shadowsEnabled = (shadows ?? preset.shadows) && engineSettings.shadows;
   // Fine-grained render resolution — steps in small increments as measured
   // frame time moves so weak GPUs stay fluid without dropping whole tiers.
   const [dprScale, setDprScale] = useState(preset.maxDpr);
   const dpr = Math.min(dprScale, preset.maxDpr);
+
+  /* Asset compression + memory management: the tier caps texture generation
+     size, anisotropic filtering and derived-map density, and the shared
+     procedural bank is reference-counted so its maps are disposed when the
+     last stage lets go instead of accumulating across scene swaps. */
+  const budget = profile.performance;
+  useEffect(() => {
+    setProceduralTextureBudget({
+      maxSize: budget.maxTextureSize,
+      anisotropy: budget.textureAnisotropy,
+      derivedMapScale: budget.derivedMapScale,
+    });
+  }, [budget.maxTextureSize, budget.textureAnisotropy, budget.derivedMapScale]);
+  useEffect(() => acquireProceduralTextureBank(), []);
 
   const exposure = useMemo(
     () =>
@@ -709,9 +756,10 @@ export function StudioStage({
           camera={{ fov: 38, near: 0.1, far: 220, position: [0, 1.6, 6] }}
         >
           <StageExposure exposure={exposure} />
-          {/* atmospheric haze — aerial depth and a medium for the light beams.
-              Skipped for AR so the live back plate stays crisp. */}
-          {!isAr && <fogExp2 attach="fog" args={['#0c1016', 0.014]} />}
+          {/* atmospheric haze — aerial depth and a medium the light beams
+              scatter through, at the profile's volumetric density. Skipped for
+              AR so the live back plate stays crisp. */}
+          {!isAr && <fogExp2 attach="fog" args={['#0c1016', profile.volumetrics?.hazeDensity ?? 0.008]} />}
           <CanvasReporter onCanvasReady={onCanvasReady} />
           <Suspense fallback={null}>
             <StudioLighting
@@ -724,6 +772,8 @@ export function StudioStage({
               /* AR composites over a live plate — a contact shadow would paint
                  a dark pool over the real floor the talent is standing on. */
               contactShadows={!isAr}
+              gi={profile.globalIllumination}
+              volumetrics={isAr ? null : profile.volumetrics}
             />
             <StudioCameraRig {...rigCamera} transition={transition} />
             {interactive && onCameraChange && (
@@ -738,7 +788,10 @@ export function StudioStage({
                 onChange={handleCameraChange}
               />
             )}
-            {children}
+            {/* Set dressing reads the active fidelity tier through this: lamps
+                and screens claim dynamic-light slots against the tier's budget
+                and couple their light to their emissive brightness. */}
+            <StudioFidelityProvider tier={tier}>{children}</StudioFidelityProvider>
           <StudioPostProcessing
             bloom={bloom}
             bloomIntensity={bloomIntensity}
