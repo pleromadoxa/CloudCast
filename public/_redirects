@@ -1,4 +1,27 @@
 # SPA fallback for the Cloudflare Pages mirror (cloudcast.pages.dev).
 # Exact files (e.g. prerendered marketing pages) always win; unmatched
 # app routes fall back to the client router — same behavior as the Worker.
-/* /index.html 200
+#
+# Rules are scoped per route prefix instead of `/* /index.html 200` because
+# the Cloudflare deploy validator rejects a catch-all whose destination
+# re-matches its own pattern ("Infinite loop detected", code 100324).
+# Keep this list in sync with the routes in src/App.tsx when adding a NEW
+# top-level route (sub-routes under an existing prefix are covered).
+/audio /index.html 200
+/replay /index.html 200
+/symphony /index.html 200
+/display /index.html 200
+/display/* /index.html 200
+/dashboard /index.html 200
+/dashboard/* /index.html 200
+/prism /index.html 200
+/prism/* /index.html 200
+/products /index.html 200
+/products/* /index.html 200
+/for/* /index.html 200
+/legal/* /index.html 200
+/pricing /index.html 200
+/login /index.html 200
+/hub /index.html 200
+/profile /index.html 200
+/admin /index.html 200
