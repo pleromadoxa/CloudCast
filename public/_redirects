@@ -1,0 +1,4 @@
+# SPA fallback for the Cloudflare Pages mirror (cloudcast.pages.dev).
+# Exact files (e.g. prerendered marketing pages) always win; unmatched
+# app routes fall back to the client router — same behavior as the Worker.
+/* /index.html 200
