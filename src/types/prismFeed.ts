@@ -118,6 +118,8 @@ export interface PrismSceneExtendedState {
       yaw?: number;
       pitch?: number;
       roll?: number;
+      /** Standing or seated framing — seated rests the plate at lap height. */
+      pose?: 'standing' | 'seated';
     };
     /** Camera/production transition style & travel time. */
     transition?: {

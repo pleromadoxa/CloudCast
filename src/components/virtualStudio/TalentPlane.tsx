@@ -20,6 +20,8 @@ export interface TalentPlaneProps {
   roll?: number;
   /** Mirror the talent onto the polished studio floor. */
   reflection?: boolean;
+  /** Seated talents mirror shorter — their reflection starts at the seat line. */
+  pose?: 'standing' | 'seated';
 }
 
 export const TalentPlane = memo(function TalentPlane({
@@ -32,6 +34,7 @@ export const TalentPlane = memo(function TalentPlane({
   pitch = 0,
   roll = 0,
   reflection = true,
+  pose = 'standing',
 }: TalentPlaneProps) {
   const useKeyed = keyerEnabled && keyedCanvas;
   const source = useKeyed ? keyedCanvas : rawVideo;
@@ -63,6 +66,8 @@ export const TalentPlane = memo(function TalentPlane({
   if (!texture) return null;
 
   const height = width * (9 / 16);
+  // A seated talent's mirror starts at the seat line — reflect less of them.
+  const reflectionHeight = height * (pose === 'seated' ? 0.5 : 0.75);
 
   return (
     <group position={position} rotation={[pitch, yaw, roll]}>
@@ -71,8 +76,8 @@ export const TalentPlane = memo(function TalentPlane({
         <meshBasicMaterial map={texture} transparent alphaTest={0.02} side={THREE.DoubleSide} />
       </mesh>
       {reflection && (
-        <mesh position={[0, -position[1] + 0.014, height * 0.28]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[width, height * 0.75]} />
+        <mesh position={[0, -position[1] + 0.014, reflectionHeight * 0.38]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[width, reflectionHeight]} />
           <meshBasicMaterial
             map={texture}
             transparent

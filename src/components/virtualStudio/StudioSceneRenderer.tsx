@@ -177,6 +177,7 @@ export const StudioSceneRenderer = memo(function StudioSceneRenderer({
           yaw={placement.yaw ?? 0}
           pitch={placement.pitch ?? 0}
           roll={placement.roll ?? 0}
+          pose={placement.pose ?? 'standing'}
           reflection={(talent?.showReflections ?? true) && !isAr}
         />
       )}

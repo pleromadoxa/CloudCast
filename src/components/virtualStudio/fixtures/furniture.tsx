@@ -111,6 +111,27 @@ export const SportsDesk = memo(function SportsDesk({
 
 /* --------------------------------------------------------------- seating */
 
+/**
+ * Ergonomic seat heights (metres) — floor to the top of the seat cushion.
+ *
+ * This is the one dimension that decides whether a real person (or a seated
+ * talent plate) actually fits a chair: too tall and the sitter's legs dangle,
+ * too low and they can't stand up. Every chair below is built to these
+ * numbers — task 0.50 m, dining 0.455 m, lounge 0.42 m, sofa 0.44 m — so
+ * talent posed as `seated` lands on the cushion exactly like a real sitter.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- fixture spec shared with talent placement code (same pattern as fidelityLighting)
+export const SEAT_HEIGHT = {
+  /** Office/task chair — matches the anchor desk working height. */
+  task: 0.5,
+  /** Dining/desk chair — standard 450 mm seat. */
+  dining: 0.455,
+  /** Deep lounge chair / tub chair. */
+  lounge: 0.42,
+  /** Sofa seat. */
+  sofa: 0.44,
+} as const;
+
 /** Broadcast sofa — deep cushions, seam gaps, piping and tapered legs. */
 export const StudioSofa = memo(function StudioSofa({
   position,
@@ -136,38 +157,44 @@ export const StudioSofa = memo(function StudioSofa({
   const seam = useMemo(() => new THREE.MeshStandardMaterial({ color: new THREE.Color(color).multiplyScalar(0.55), roughness: 0.95 }), [color]);
   return (
     <group position={position} rotation={rotation} scale={scale}>
-      {/* base + shadow gap under the seat cushions */}
-      <RoundedBox args={[width, 0.3, 1.0]} radius={0.07} smoothness={4} position={[0, 0.25, 0]} material={clothDark} castShadow receiveShadow />
-      <mesh position={[0, 0.425, 0.02]}>
+      {/* base + shadow gap under the seat cushions (seat top = SEAT_HEIGHT.sofa) */}
+      <RoundedBox args={[width, 0.2, 1.0]} radius={0.06} smoothness={4} position={[0, 0.2, 0]} material={clothDark} castShadow receiveShadow />
+      <mesh position={[0, 0.315, 0.02]}>
         <boxGeometry args={[width - 0.18, 0.03, 0.9]} />
         <PbrSurface color="#0b0b0d" roughness={1} />
       </mesh>
       {/* back */}
-      <RoundedBox args={[width, 0.62, 0.24]} radius={0.09} smoothness={4} position={[0, 0.66, -0.4]} material={cloth} castShadow />
+      <RoundedBox args={[width, 0.62, 0.24]} radius={0.09} smoothness={4} position={[0, 0.55, -0.4]} material={cloth} castShadow />
       {[-1, 1].map((side) => (
         <RoundedBox
           key={side}
-          args={[width / 2 - 0.08, 0.18, 0.92]}
-          radius={0.07}
+          args={[width / 2 - 0.08, 0.15, 0.92]}
+          radius={0.065}
           smoothness={4}
-          position={[side * (width / 4 - 0.02), 0.48, 0.02]}
+          position={[side * (width / 4 - 0.02), 0.365, 0.02]}
           material={cloth}
           castShadow
         />
       ))}
+      {/* stuffed cushion crown — the pillow top that reads as weight-bearing */}
+      {[-1, 1].map((side) => (
+        <mesh key={`crown${side}`} position={[side * (width / 4 - 0.02), 0.425, 0.02]} scale={[1, 0.2, 1]} material={cloth} castShadow>
+          <sphereGeometry args={[width / 4 - 0.075, 16, 10]} />
+        </mesh>
+      ))}
       {/* seat-cushion piping + crease lines + tuft buttons */}
       {[-1, 1].map((side) => (
-        <group key={`seam${side}`} position={[side * (width / 4 - 0.02), 0.48, 0.02]}>
-          <mesh position={[0, 0.092, 0]} rotation={[-Math.PI / 2, 0, 0]} material={seam}>
+        <group key={`seam${side}`} position={[side * (width / 4 - 0.02), 0.365, 0.02]}>
+          <mesh position={[0, 0.077, 0]} rotation={[-Math.PI / 2, 0, 0]} material={seam}>
             <torusGeometry args={[0.3, 0.006, 6, 40]} />
           </mesh>
           {/* front crease where the cushion body rolls over */}
-          <mesh position={[0, 0.045, 0.445]} material={seam}>
+          <mesh position={[0, 0.035, 0.445]} material={seam}>
             <boxGeometry args={[width / 2 - 0.14, 0.012, 0.012]} />
           </mesh>
           {[-0.14, 0.14].map((x) =>
             [-0.14, 0.14].map((z) => (
-              <mesh key={`${x}${z}`} position={[x, 0.088, z]} scale={[1, 0.35, 1]} material={seam}>
+              <mesh key={`${x}${z}`} position={[x, 0.073, z]} scale={[1, 0.35, 1]} material={seam}>
                 <sphereGeometry args={[0.022, 10, 8]} />
               </mesh>
             )),
@@ -176,7 +203,7 @@ export const StudioSofa = memo(function StudioSofa({
       ))}
       {/* back-cushion piping */}
       {[-1, 1].map((side) => (
-        <mesh key={`pipe${side}`} position={[side * (width / 4 - 0.02), 0.6, -0.275]} material={seam}>
+        <mesh key={`pipe${side}`} position={[side * (width / 4 - 0.02), 0.5, -0.275]} material={seam}>
           <torusGeometry args={[0.24, 0.008, 6, 36]} />
         </mesh>
       ))}
@@ -187,11 +214,11 @@ export const StudioSofa = memo(function StudioSofa({
             args={[0.22, 0.42, 1.0]}
             radius={0.09}
             smoothness={4}
-            position={[(side * width) / 2 - side * 0.11, 0.5, 0]}
+            position={[(side * width) / 2 - side * 0.11, 0.42, 0]}
             material={cloth}
             castShadow
           />
-          <mesh position={[(side * width) / 2 - side * 0.11, 0.71, 0]} rotation={[0, 0, Math.PI / 2]} material={seam}>
+          <mesh position={[(side * width) / 2 - side * 0.11, 0.63, 0]} rotation={[0, 0, Math.PI / 2]} material={seam}>
             <torusGeometry args={[0.1, 0.008, 6, 24, Math.PI]} />
           </mesh>
         </group>
@@ -213,8 +240,8 @@ export const StudioSofa = memo(function StudioSofa({
         </group>
       ))}
       {/* throw pillows in the lighter tone */}
-      <RoundedBox args={[0.36, 0.36, 0.12]} radius={0.06} smoothness={4} position={[-width / 2 + 0.42, 0.66, -0.24]} rotation={[0.2, 0.3, 0.12]} material={pillow} castShadow />
-      <RoundedBox args={[0.36, 0.36, 0.12]} radius={0.06} smoothness={4} position={[width / 2 - 0.42, 0.66, -0.24]} rotation={[0.15, -0.25, -0.1]} material={pillow} castShadow />
+      <RoundedBox args={[0.36, 0.36, 0.12]} radius={0.06} smoothness={4} position={[-width / 2 + 0.42, 0.57, -0.24]} rotation={[0.2, 0.3, 0.12]} material={pillow} castShadow />
+      <RoundedBox args={[0.36, 0.36, 0.12]} radius={0.06} smoothness={4} position={[width / 2 - 0.42, 0.57, -0.24]} rotation={[0.15, -0.25, -0.1]} material={pillow} castShadow />
     </group>
   );
 });
@@ -235,31 +262,34 @@ export const StudioArmchair = memo(function StudioArmchair({
   return (
     <group position={position} rotation={rotation} scale={scale}>
       {/* outer shell (slightly darker, reads as the chair's structure) */}
-      <RoundedBox args={[0.92, 0.62, 0.22]} radius={0.1} smoothness={5} position={[0, 0.65, -0.385]} rotation={[-0.16, 0, 0]} material={clothDark} castShadow />
-      {/* seat base with shadow gap */}
-      <RoundedBox args={[0.88, 0.24, 0.88]} radius={0.08} smoothness={4} position={[0, 0.3, 0]} material={clothDark} castShadow receiveShadow />
-      <mesh position={[0, 0.435, 0.02]}>
+      <RoundedBox args={[0.92, 0.62, 0.22]} radius={0.1} smoothness={5} position={[0, 0.53, -0.385]} rotation={[-0.16, 0, 0]} material={clothDark} castShadow />
+      {/* seat base with shadow gap (seat top = SEAT_HEIGHT.lounge) */}
+      <RoundedBox args={[0.88, 0.18, 0.88]} radius={0.07} smoothness={4} position={[0, 0.21, 0]} material={clothDark} castShadow receiveShadow />
+      <mesh position={[0, 0.315, 0.02]}>
         <boxGeometry args={[0.72, 0.025, 0.72]} />
         <PbrSurface color="#0b0b0d" roughness={1} />
       </mesh>
       {/* back cushion with top-edge piping */}
-      <RoundedBox args={[0.82, 0.56, 0.17]} radius={0.08} smoothness={4} position={[0, 0.68, -0.315]} rotation={[-0.16, 0, 0]} material={cloth} castShadow />
-      <mesh position={[0, 0.945, -0.36]} rotation={[-0.16, 0, 0]} material={seam}>
+      <RoundedBox args={[0.82, 0.56, 0.17]} radius={0.08} smoothness={4} position={[0, 0.56, -0.315]} rotation={[-0.16, 0, 0]} material={cloth} castShadow />
+      <mesh position={[0, 0.825, -0.36]} rotation={[-0.16, 0, 0]} material={seam}>
         <torusGeometry args={[0.1, 0.008, 6, 24, Math.PI]} />
       </mesh>
-      {/* seat cushion + piping ring + front crease */}
-      <RoundedBox args={[0.8, 0.15, 0.8]} radius={0.055} smoothness={4} position={[0, 0.52, 0.03]} material={cloth} castShadow />
-      <mesh position={[0, 0.598, 0.03]} rotation={[-Math.PI / 2, 0, 0]} material={seam}>
+      {/* seat cushion + stuffing crown + piping ring + front crease */}
+      <RoundedBox args={[0.8, 0.12, 0.8]} radius={0.05} smoothness={4} position={[0, 0.36, 0.03]} material={cloth} castShadow />
+      <mesh position={[0, 0.408, 0.03]} scale={[1, 0.17, 1]} material={cloth} castShadow>
+        <sphereGeometry args={[0.36, 18, 10]} />
+      </mesh>
+      <mesh position={[0, 0.4215, 0.03]} rotation={[-Math.PI / 2, 0, 0]} material={seam}>
         <torusGeometry args={[0.28, 0.007, 6, 40]} />
       </mesh>
-      <mesh position={[0, 0.485, 0.418]} material={seam}>
+      <mesh position={[0, 0.335, 0.418]} material={seam}>
         <boxGeometry args={[0.66, 0.012, 0.012]} />
       </mesh>
       {/* curved arms: angled elbow + rounded cap */}
       {[-1, 1].map((side) => (
         <group key={side}>
-          <RoundedBox args={[0.15, 0.3, 0.82]} radius={0.07} smoothness={4} position={[side * 0.42, 0.52, -0.02]} rotation={[0, 0, side * -0.1]} material={clothDark} castShadow />
-          <mesh position={[side * 0.42, 0.685, -0.02]} rotation={[0, 0, Math.PI / 2]} material={seam}>
+          <RoundedBox args={[0.15, 0.3, 0.82]} radius={0.07} smoothness={4} position={[side * 0.42, 0.4, -0.02]} rotation={[0, 0, side * -0.1]} material={clothDark} castShadow />
+          <mesh position={[side * 0.42, 0.565, -0.02]} rotation={[0, 0, Math.PI / 2]} material={seam}>
             <torusGeometry args={[0.075, 0.008, 6, 20, Math.PI]} />
           </mesh>
         </group>
@@ -268,11 +298,15 @@ export const StudioArmchair = memo(function StudioArmchair({
       {[-1, 1].map((sx) =>
         [-1, 1].map((sz) => (
           <group key={`${sx}${sz}`} position={[sx * 0.33, 0, sz * 0.33]}>
-            <mesh position={[0, 0.21, 0]} rotation={[sz * -0.16, 0, sx * 0.16]} material={m.walnut} castShadow>
-              <cylinderGeometry args={[0.028, 0.018, 0.24, 12]} />
+            <mesh position={[0, 0.145, 0]} rotation={[sz * -0.16, 0, sx * 0.16]} material={m.walnut} castShadow>
+              <cylinderGeometry args={[0.028, 0.018, 0.17, 12]} />
             </mesh>
-            <mesh position={[sx * 0.02, 0.325, sz * 0.02]} material={m.brass} castShadow>
-              <cylinderGeometry args={[0.03, 0.032, 0.045, 12]} />
+            <mesh position={[sx * 0.016, 0.222, sz * 0.016]} material={m.brass} castShadow>
+              <cylinderGeometry args={[0.03, 0.032, 0.04, 12]} />
+            </mesh>
+            {/* floor glide — keeps the leg from scuffing the set floor */}
+            <mesh position={[0, 0.008, 0]} material={m.dark}>
+              <cylinderGeometry args={[0.021, 0.019, 0.016, 10]} />
             </mesh>
           </group>
         )),
@@ -293,31 +327,44 @@ export const StudioChair = memo(function StudioChair({
   const legs = useMemo(() => Array.from({ length: 5 }, (_, i) => (i / 5) * Math.PI * 2), []);
   return (
     <group position={position} rotation={rotation} scale={scale}>
-      {/* seat cushion with piping + shell under it */}
-      <RoundedBox args={[0.52, 0.07, 0.5]} radius={0.03} smoothness={3} position={[0, 0.485, 0]} material={shellMat} castShadow />
-      <RoundedBox args={[0.5, 0.1, 0.48]} radius={0.045} smoothness={4} position={[0, 0.555, 0.01]} material={seatMat} castShadow receiveShadow />
-      <mesh position={[0, 0.608, 0.01]} rotation={[-Math.PI / 2, 0, 0]}>
+      {/* seat cushion with compression crown + shell under it (seat top = SEAT_HEIGHT.task) */}
+      <RoundedBox args={[0.52, 0.07, 0.5]} radius={0.03} smoothness={3} position={[0, 0.42, 0]} material={shellMat} castShadow />
+      <RoundedBox args={[0.5, 0.09, 0.48]} radius={0.04} smoothness={4} position={[0, 0.455, 0.01]} material={seatMat} castShadow receiveShadow />
+      <mesh position={[0, 0.487, 0.01]} scale={[1, 0.16, 1]} material={seatMat} castShadow>
+        <sphereGeometry args={[0.225, 18, 10]} />
+      </mesh>
+      <mesh position={[0, 0.5015, 0.01]} rotation={[-Math.PI / 2, 0, 0]}>
         <torusGeometry args={[0.17, 0.006, 6, 36]} />
         <PbrSurface color="#161b24" roughness={0.95} />
       </mesh>
+      {/* waterfall front edge — the cushion rolls over so it doesn't cut the thighs */}
+      <mesh position={[0, 0.452, 0.242]} rotation={[Math.PI / 2, 0, 0]} material={seatMat} castShadow>
+        <capsuleGeometry args={[0.045, 0.4, 6, 12]} />
+      </mesh>
       {/* contoured back with lumbar curve */}
-      <RoundedBox args={[0.48, 0.58, 0.08]} radius={0.038} smoothness={4} position={[0, 0.86, -0.235]} rotation={[-0.14, 0, 0]} material={seatMat} castShadow />
-      <RoundedBox args={[0.44, 0.16, 0.05]} radius={0.025} smoothness={3} position={[0, 0.72, -0.19]} rotation={[-0.14, 0, 0]} material={shellMat} castShadow />
+      <RoundedBox args={[0.48, 0.58, 0.08]} radius={0.038} smoothness={4} position={[0, 0.79, -0.235]} rotation={[-0.14, 0, 0]} material={seatMat} castShadow />
+      <RoundedBox args={[0.44, 0.16, 0.05]} radius={0.025} smoothness={3} position={[0, 0.65, -0.19]} rotation={[-0.14, 0, 0]} material={shellMat} castShadow />
+      {/* back-frame yoke joining back to the mechanism */}
+      <mesh position={[0, 0.52, -0.245]} rotation={[-0.14, 0, 0]} material={shellMat} castShadow>
+        <boxGeometry args={[0.1, 0.22, 0.045]} />
+      </mesh>
       {/* armrests */}
       {[-1, 1].map((side) => (
         <group key={side} position={[side * 0.3, 0, 0]}>
-          <mesh position={[0, 0.62, -0.05]} rotation={[0, 0, 0]} material={shellMat} castShadow>
+          <mesh position={[0, 0.55, -0.05]} rotation={[0, 0, 0]} material={shellMat} castShadow>
             <boxGeometry args={[0.045, 0.16, 0.045]} />
           </mesh>
-          <RoundedBox args={[0.07, 0.035, 0.26]} radius={0.017} smoothness={3} position={[0, 0.715, -0.02]} material={shellMat} castShadow />
+          <RoundedBox args={[0.07, 0.035, 0.26]} radius={0.017} smoothness={3} position={[0, 0.645, -0.02]} material={shellMat} castShadow />
         </group>
       ))}
-      {/* gas lift */}
-      <mesh position={[0, 0.32, 0]} material={m.chrome} castShadow>
-        <cylinderGeometry args={[0.032, 0.042, 0.32, 16]} />
+      {/* gas lift + tilt mechanism housing */}
+      <mesh position={[0, 0.28, 0]} material={m.chrome} castShadow>
+        <cylinderGeometry args={[0.032, 0.042, 0.28, 16]} />
       </mesh>
-      <mesh position={[0, 0.475, 0]} material={shellMat}>
-        <cylinderGeometry args={[0.05, 0.05, 0.06, 16]} />
+      <RoundedBox args={[0.16, 0.05, 0.2]} radius={0.02} smoothness={3} position={[0, 0.4, 0]} material={shellMat} castShadow />
+      {/* tilt-lock lever */}
+      <mesh position={[0.12, 0.395, 0.06]} rotation={[0, -0.5, 0]} material={shellMat} castShadow>
+        <cylinderGeometry args={[0.008, 0.008, 0.12, 8]} />
       </mesh>
       {/* five-star base with twin-wheel casters */}
       {legs.map((angle, i) => (
@@ -373,7 +420,7 @@ export const TubChair = memo(function TubChair({
   const thetaLen = Math.PI * 2 - gap;
   const rOut = radius;
   const rIn = radius - 0.15;
-  const wallBase = 0.22;
+  const wallBase = 0.18;
 
   // rim roll + arm roll + inner cushion panel placements along the arc
   const rimSegs = useMemo(
@@ -423,25 +470,28 @@ export const TubChair = memo(function TubChair({
           </mesh>
         );
       })}
-      {/* seat base with shadow gap + deep cushion */}
-      <RoundedBox args={[0.72, 0.17, 0.66]} radius={0.07} smoothness={4} position={[0, 0.32, 0.02]} material={clothDark} castShadow receiveShadow />
-      <mesh position={[0, 0.415, 0.02]}>
+      {/* seat base with shadow gap + deep cushion (seat top = SEAT_HEIGHT.lounge) */}
+      <RoundedBox args={[0.72, 0.13, 0.66]} radius={0.06} smoothness={4} position={[0, 0.245, 0.02]} material={clothDark} castShadow receiveShadow />
+      <mesh position={[0, 0.322, 0.02]}>
         <boxGeometry args={[0.6, 0.025, 0.55]} />
         <PbrSurface color="#0b0b0d" roughness={1} />
       </mesh>
-      <RoundedBox args={[0.68, 0.16, 0.62]} radius={0.075} smoothness={5} position={[0, 0.5, 0.03]} material={cloth} castShadow />
-      <mesh position={[0, 0.583, 0.03]} rotation={[-Math.PI / 2, 0, 0]} material={seam}>
+      <RoundedBox args={[0.68, 0.11, 0.62]} radius={0.05} smoothness={5} position={[0, 0.365, 0.03]} material={cloth} castShadow />
+      <mesh position={[0, 0.402, 0.03]} scale={[1, 0.18, 1]} material={cloth} castShadow>
+        <sphereGeometry args={[0.3, 18, 10]} />
+      </mesh>
+      <mesh position={[0, 0.4225, 0.03]} rotation={[-Math.PI / 2, 0, 0]} material={seam}>
         <torusGeometry args={[0.22, 0.007, 6, 40]} />
       </mesh>
       {/* seat centre seam */}
-      <mesh position={[0, 0.578, 0.03]} material={seam}>
+      <mesh position={[0, 0.418, 0.03]} material={seam}>
         <boxGeometry args={[0.008, 0.012, 0.52]} />
       </mesh>
       {/* splayed tapered legs */}
       {[-1, 1].map((sx) =>
         [-1, 1].map((sz) => (
-          <mesh key={`${sx}${sz}`} position={[sx * 0.3, 0.125, sz * 0.27 + 0.02]} rotation={[sz * -0.16, 0, sx * 0.16]} material={legMat} castShadow>
-            <cylinderGeometry args={[0.026, 0.017, 0.26, 12]} />
+          <mesh key={`${sx}${sz}`} position={[sx * 0.3, 0.1, sz * 0.27 + 0.02]} rotation={[sz * -0.16, 0, sx * 0.16]} material={legMat} castShadow>
+            <cylinderGeometry args={[0.026, 0.017, 0.21, 12]} />
           </mesh>
         )),
       )}
@@ -472,40 +522,43 @@ export const LeatherDiningChair = memo(function LeatherDiningChair({
   return (
     <group position={position} rotation={rotation} scale={scale}>
       {/* wraparound leather back + arms (thin curved wall) */}
-      <mesh position={[0, 0.68, -0.02]} material={hide} castShadow receiveShadow>
+      <mesh position={[0, 0.635, -0.02]} material={hide} castShadow receiveShadow>
         <cylinderGeometry args={[0.31, 0.31, 0.5, 40, 1, true, thetaStart, thetaLen]} />
       </mesh>
-      <mesh position={[0, 0.68, -0.02]} material={hideDark}>
+      <mesh position={[0, 0.635, -0.02]} material={hideDark}>
         <cylinderGeometry args={[0.285, 0.285, 0.5, 40, 1, true, thetaStart, thetaLen]} />
       </mesh>
       {/* top roll of the back */}
       {Array.from({ length: 14 }, (_, i) => {
         const t = thetaStart + (i + 0.5) * (thetaLen / 14);
         return (
-          <mesh key={i} position={[Math.sin(t) * 0.298, 0.93, Math.cos(t) * 0.298 - 0.02]} rotation={[0, -t, Math.PI / 2]} material={hide} castShadow>
+          <mesh key={i} position={[Math.sin(t) * 0.298, 0.885, Math.cos(t) * 0.298 - 0.02]} rotation={[0, -t, Math.PI / 2]} material={hide} castShadow>
             <capsuleGeometry args={[0.026, (thetaLen / 14) * 0.298 * 0.85, 6, 10]} />
           </mesh>
         );
       })}
       {/* vertical seam lines on the inner back */}
       {[-1, 1].map((side) => (
-        <mesh key={side} position={[Math.sin(Math.PI + side * 0.62) * 0.29, 0.7, Math.cos(Math.PI + side * 0.62) * 0.29 - 0.02]} rotation={[0, side * -0.62, 0]} material={seam}>
+        <mesh key={side} position={[Math.sin(Math.PI + side * 0.62) * 0.29, 0.655, Math.cos(Math.PI + side * 0.62) * 0.29 - 0.02]} rotation={[0, side * -0.62, 0]} material={seam}>
           <boxGeometry args={[0.008, 0.42, 0.012]} />
         </mesh>
       ))}
-      {/* leather seat cushion with piping */}
-      <RoundedBox args={[0.56, 0.11, 0.52]} radius={0.05} smoothness={4} position={[0, 0.475, 0.02]} material={hide} castShadow />
-      <mesh position={[0, 0.532, 0.02]} rotation={[-Math.PI / 2, 0, 0]} material={seam}>
+      {/* leather seat cushion with crown + piping (seat top = SEAT_HEIGHT.dining) */}
+      <RoundedBox args={[0.56, 0.11, 0.52]} radius={0.05} smoothness={4} position={[0, 0.4, 0.02]} material={hide} castShadow />
+      <mesh position={[0, 0.441, 0.02]} scale={[1, 0.16, 1]} material={hide} castShadow>
+        <sphereGeometry args={[0.255, 18, 10]} />
+      </mesh>
+      <mesh position={[0, 0.4575, 0.02]} rotation={[-Math.PI / 2, 0, 0]} material={seam}>
         <torusGeometry args={[0.185, 0.006, 6, 36]} />
       </mesh>
       {/* oak seat frame band */}
       {[-1, 1].map((side) => (
-        <mesh key={`band${side}`} position={[side * 0.27, 0.4, 0.02]} material={oak} castShadow>
+        <mesh key={`band${side}`} position={[side * 0.27, 0.345, 0.02]} material={oak} castShadow>
           <boxGeometry args={[0.035, 0.05, 0.5]} />
         </mesh>
       ))}
       {[0.24, -0.24].map((z) => (
-        <mesh key={z} position={[0, 0.4, z + 0.02]} material={oak} castShadow>
+        <mesh key={z} position={[0, 0.345, z + 0.02]} material={oak} castShadow>
           <boxGeometry args={[0.52, 0.05, 0.03]} />
         </mesh>
       ))}
@@ -513,10 +566,10 @@ export const LeatherDiningChair = memo(function LeatherDiningChair({
       {[-1, 1].map((sx) =>
         [-1, 1].map((sz) => (
           <group key={`${sx}${sz}`} position={[sx * 0.245, 0, sz * 0.21 + 0.02]}>
-            <mesh position={[0, 0.2, 0]} rotation={[sz * -0.11, 0, sx * 0.11]} material={oak} castShadow>
-              <cylinderGeometry args={[0.022, 0.014, 0.4, 12]} />
+            <mesh position={[0, 0.18, 0]} rotation={[sz * -0.11, 0, sx * 0.11]} material={oak} castShadow>
+              <cylinderGeometry args={[0.022, 0.014, 0.36, 12]} />
             </mesh>
-            <mesh position={[sx * 0.02, 0.395, sz * 0.018]} material={oak} castShadow>
+            <mesh position={[sx * 0.018, 0.352, sz * 0.016]} material={oak} castShadow>
               <cylinderGeometry args={[0.024, 0.024, 0.045, 12]} />
             </mesh>
           </group>
@@ -540,8 +593,12 @@ export const CoffeeTable = memo(function CoffeeTable({
   const shelf = useMemo(() => lacqueredWoodMaterial('wood_oak', 1, { gloss: 0.4 }), []);
   return (
     <group position={position} rotation={rotation} scale={scale}>
-      {/* eased walnut top with a brass inlay line */}
+      {/* eased walnut top over a shadow reveal — reads as a solid 30 mm slab */}
       <RoundedBox args={[width, 0.055, depth]} radius={0.022} smoothness={4} position={[0, 0.42, 0]} material={top} castShadow receiveShadow />
+      <mesh position={[0, 0.383, 0]}>
+        <boxGeometry args={[width * 0.965, 0.022, depth * 0.965]} />
+        <PbrSurface color="#1c1410" roughness={0.85} />
+      </mesh>
       <mesh position={[0, 0.4485, 0]}>
         <boxGeometry args={[width * 0.995, 0.0025, 0.012]} />
         <PbrSurface color="#b08d4f" metalness={1} roughness={0.3} envMapIntensity={1.5} />
@@ -563,6 +620,167 @@ export const CoffeeTable = memo(function CoffeeTable({
       </mesh>
       {/* floating oak shelf */}
       <RoundedBox args={[width * 0.66, 0.035, depth * 0.58]} radius={0.015} smoothness={3} position={[0, 0.175, 0]} material={shelf} castShadow receiveShadow />
+    </group>
+  );
+});
+
+/**
+ * Dining / meeting table — solid timber slab top with breadboard ends, an
+ * eased edge profile over a shadow reveal, an apron frame and tapered legs
+ * with brass foot glides. Built to real table dimensions (0.75 m top height,
+ * 0.75 m knee clearance underneath) so diners and seated talent fit under it.
+ */
+export const DiningTable = memo(function DiningTable({
+  position,
+  rotation,
+  scale = 1,
+  width = 2.0,
+  depth = 1.0,
+  wood = 'walnut',
+}: PlaceProps & { width?: number; depth?: number; wood?: 'walnut' | 'oak' }) {
+  const m = useStudioMaterials();
+  const top = useMemo(() => lacqueredWoodMaterial(wood === 'oak' ? 'wood_oak' : 'wood_walnut', 5, { gloss: 0.55 }), [wood]);
+  const apron = useMemo(() => lacqueredWoodMaterial(wood === 'oak' ? 'wood_oak' : 'wood_walnut', 8, { gloss: 0.3, color: '#7a5c3e' }), [wood]);
+  const breadboard = useMemo(() => new THREE.MeshStandardMaterial({ color: wood === 'oak' ? '#c8a677' : '#6b4a2e', roughness: 0.55 }), [wood]);
+  return (
+    <group position={position} rotation={rotation} scale={scale}>
+      {/* 30 mm slab top: eased edges + shadow reveal beneath */}
+      <RoundedBox args={[width, 0.06, depth]} radius={0.018} smoothness={4} position={[0, 0.72, 0]} material={top} castShadow receiveShadow />
+      <mesh position={[0, 0.678, 0]}>
+        <boxGeometry args={[width * 0.97, 0.026, depth * 0.97]} />
+        <PbrSurface color="#221812" roughness={0.85} />
+      </mesh>
+      {/* breadboard ends — end-grain strips pinned across the slab */}
+      {[-1, 1].map((side) => (
+        <mesh key={side} position={[side * (width / 2 - 0.065), 0.72, 0]} material={breadboard} castShadow>
+          <boxGeometry args={[0.125, 0.058, depth * 0.995]} />
+        </mesh>
+      ))}
+      {/* centre leaf seam */}
+      <mesh position={[0, 0.752, 0]}>
+        <boxGeometry args={[0.004, 0.0025, depth * 0.99]} />
+        <PbrSurface color="#2a2018" roughness={0.6} />
+      </mesh>
+      {/* apron frame */}
+      {[-1, 1].map((side) => (
+        <mesh key={`apron${side}`} position={[side * (width / 2 - 0.14), 0.63, 0]} material={apron} castShadow>
+          <boxGeometry args={[0.035, 0.11, depth - 0.22]} />
+        </mesh>
+      ))}
+      {[-1, 1].map((side) => (
+        <mesh key={`apronz${side}`} position={[0, 0.63, side * (depth / 2 - 0.12)]} material={apron} castShadow>
+          <boxGeometry args={[width - 0.24, 0.11, 0.03]} />
+        </mesh>
+      ))}
+      {/* tapered legs with brass glides */}
+      {[-1, 1].map((sx) =>
+        [-1, 1].map((sz) => (
+          <group key={`${sx}${sz}`} position={[sx * (width / 2 - 0.16), 0, sz * (depth / 2 - 0.14)]}>
+            <mesh position={[0, 0.315, 0]} rotation={[sz * -0.035, 0, sx * 0.035]} material={top} castShadow>
+              <cylinderGeometry args={[0.035, 0.026, 0.63, 12]} />
+            </mesh>
+            <mesh position={[sx * 0.012, 0.012, sz * 0.012]} material={m.brass} castShadow>
+              <cylinderGeometry args={[0.027, 0.024, 0.024, 12]} />
+            </mesh>
+          </group>
+        )),
+      )}
+    </group>
+  );
+});
+
+/** Round accent / side table — turned pedestal on a stepped disc foot. */
+export const SideTable = memo(function SideTable({
+  position,
+  rotation,
+  scale = 1,
+  radius = 0.28,
+  height = 0.55,
+  top = 'marble',
+  metal = '#b08d4f',
+}: PlaceProps & { radius?: number; height?: number; top?: 'marble' | 'walnut'; metal?: string }) {
+  const m = useStudioMaterials();
+  const wood = useMemo(() => lacqueredWoodMaterial('wood_walnut', 4, { gloss: 0.6 }), []);
+  const brass = useMemo(() => new THREE.MeshStandardMaterial({ color: metal, metalness: 1, roughness: 0.28, envMapIntensity: 1.4 }), [metal]);
+  return (
+    <group position={position} rotation={rotation} scale={scale}>
+      {/* eased round top over a thin reveal */}
+      <mesh position={[0, height, 0]} castShadow receiveShadow material={top === 'marble' ? m.marble : wood}>
+        <cylinderGeometry args={[radius, radius * 0.985, 0.038, 40]} />
+      </mesh>
+      <mesh position={[0, height - 0.03, 0]}>
+        <cylinderGeometry args={[radius * 0.93, radius * 0.93, 0.014, 40]} />
+        <PbrSurface color="#191410" roughness={0.8} />
+      </mesh>
+      {/* turned pedestal: waisted column + collar + stepped foot */}
+      <mesh position={[0, height * 0.55, 0]} material={brass} castShadow>
+        <cylinderGeometry args={[0.032, 0.05, height * 0.72, 20]} />
+      </mesh>
+      <mesh position={[0, height * 0.32, 0]} material={brass} castShadow>
+        <cylinderGeometry args={[0.062, 0.062, 0.028, 20]} />
+      </mesh>
+      <mesh position={[0, 0.045, 0]} material={brass} castShadow receiveShadow>
+        <cylinderGeometry args={[radius * 0.62, radius * 0.68, 0.045, 32]} />
+      </mesh>
+      <mesh position={[0, 0.012, 0]}>
+        <cylinderGeometry args={[radius * 0.66, radius * 0.66, 0.014, 32]} />
+        <PbrSurface color="#0d0b09" roughness={0.9} />
+      </mesh>
+    </group>
+  );
+});
+
+/** Slim console / hall table — two soft-close drawers with brass pulls. */
+export const ConsoleTable = memo(function ConsoleTable({
+  position,
+  rotation,
+  scale = 1,
+  width = 1.4,
+  wood = 'walnut',
+}: PlaceProps & { width?: number; wood?: 'walnut' | 'oak' }) {
+  const m = useStudioMaterials();
+  const body = useMemo(() => lacqueredWoodMaterial(wood === 'oak' ? 'wood_oak' : 'wood_walnut', 6, { gloss: 0.5 }), [wood]);
+  const drawerFront = useMemo(() => lacqueredWoodMaterial(wood === 'oak' ? 'wood_oak' : 'wood_walnut', 9, { gloss: 0.42, color: '#8a6746' }), [wood]);
+  return (
+    <group position={position} rotation={rotation} scale={scale}>
+      {/* top slab with eased edge + reveal */}
+      <RoundedBox args={[width, 0.045, 0.4]} radius={0.015} smoothness={4} position={[0, 0.8, 0]} material={body} castShadow receiveShadow />
+      <mesh position={[0, 0.766, 0]}>
+        <boxGeometry args={[width * 0.97, 0.018, 0.375]} />
+        <PbrSurface color="#211811" roughness={0.85} />
+      </mesh>
+      {/* drawer case */}
+      <RoundedBox args={[width - 0.12, 0.22, 0.34]} radius={0.012} smoothness={3} position={[0, 0.635, 0]} material={body} castShadow receiveShadow />
+      {[-1, 1].map((side) => (
+        <group key={side} position={[side * (width / 4 - 0.03), 0.635, 0.176]}>
+          <RoundedBox args={[width / 2 - 0.1, 0.16, 0.018]} radius={0.007} smoothness={3} material={drawerFront} castShadow />
+          {/* brass bar pull */}
+          <mesh position={[0, 0, 0.022]} rotation={[0, 0, Math.PI / 2]} material={m.brass} castShadow>
+            <cylinderGeometry args={[0.007, 0.007, 0.11, 10]} />
+          </mesh>
+          {[-1, 1].map((s) => (
+            <mesh key={s} position={[s * 0.05, 0, 0.012]} material={m.brass}>
+              <cylinderGeometry args={[0.006, 0.006, 0.016, 8]} />
+            </mesh>
+          ))}
+        </group>
+      ))}
+      {/* tapered legs + H-stretcher */}
+      {[-1, 1].map((sx) =>
+        [-1, 1].map((sz) => (
+          <mesh key={`${sx}${sz}`} position={[sx * (width / 2 - 0.08), 0.265, sz * 0.13]} rotation={[sz * -0.05, 0, sx * 0.05]} material={body} castShadow>
+            <cylinderGeometry args={[0.026, 0.018, 0.53, 12]} />
+          </mesh>
+        )),
+      )}
+      {[-1, 1].map((sz) => (
+        <mesh key={`st${sz}`} position={[0, 0.16, sz * 0.13]} rotation={[0, 0, Math.PI / 2]} material={body} castShadow>
+          <cylinderGeometry args={[0.014, 0.014, width - 0.18, 10]} />
+        </mesh>
+      ))}
+      <mesh position={[0, 0.16, 0]} rotation={[Math.PI / 2, 0, 0]} material={body} castShadow>
+        <cylinderGeometry args={[0.013, 0.013, 0.26, 10]} />
+      </mesh>
     </group>
   );
 });

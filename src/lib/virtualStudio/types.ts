@@ -150,6 +150,47 @@ export interface StudioTalentPlacement {
   pitch?: number;
   /** Roll the plate (radians) for dutch-angle compositions. */
   roll?: number;
+  /**
+   * Whether the talent is standing or seated on set furniture. A seated
+   * framing is tighter and rests its frame bottom at lap height so the keyed
+   * talent lands on a chair's seat exactly like a real sitter.
+   */
+  pose?: 'standing' | 'seated';
+}
+
+/** Frame-bottom height (m) of a seated shot — roughly lap/seat level. */
+export const SEATED_FRAME_BOTTOM = 0.35;
+/** Frame-bottom height (m) of the default standing shot. */
+export const STANDING_FRAME_BOTTOM = 0.15;
+/** A seated shot is framed tighter than a standing one. */
+export const SEATED_WIDTH_SCALE = 0.82;
+
+/**
+ * Convert a placement to a seated framing: tighter width, frame bottom at
+ * lap height so the talent visually sits on any chair placed there. Position
+ * X/Z and all angles are preserved.
+ */
+export function seatedTalentPlacement(base: StudioTalentPlacement): StudioTalentPlacement {
+  const width = (base.width ?? 2.4) * SEATED_WIDTH_SCALE;
+  const height = width * (9 / 16);
+  return {
+    ...base,
+    width,
+    position: [base.position[0], SEATED_FRAME_BOTTOM + height / 2, base.position[2]],
+    pose: 'seated',
+  };
+}
+
+/** Convert a placement back to the standing framing (inverse of seated). */
+export function standingTalentPlacement(base: StudioTalentPlacement): StudioTalentPlacement {
+  const width = (base.width ?? 2.4) / SEATED_WIDTH_SCALE;
+  const height = width * (9 / 16);
+  return {
+    ...base,
+    width,
+    position: [base.position[0], STANDING_FRAME_BOTTOM + height / 2, base.position[2]],
+    pose: 'standing',
+  };
 }
 
 export interface StudioSceneDefinition {

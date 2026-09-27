@@ -1,4 +1,5 @@
 import type { StudioSceneDefinition, StudioScreenSlot, StudioTier, StudioTalentPlacement } from './types';
+import { seatedTalentPlacement } from './types';
 
 /**
  * Registry of complete, ready-to-air virtual production scenes.
@@ -78,8 +79,13 @@ const rundown = (
 function talentAt(
   position: [number, number, number],
   width = 2.4,
+  pose: 'standing' | 'seated' = 'standing',
 ): StudioTalentPlacement {
-  return { position, width };
+  const base: StudioTalentPlacement = { position, width, pose };
+  // Desk and sofa shows default to the seated framing — the anchor and the
+  // guests really do sit on the set furniture, so the plate is framed like a
+  // seated shot and rests at the seat line.
+  return pose === 'seated' ? seatedTalentPlacement(base) : base;
 }
 
 export const STUDIO_SCENES: StudioSceneDefinition[] = [
@@ -93,7 +99,7 @@ export const STUDIO_SCENES: StudioSceneDefinition[] = [
     accent: '#e11d48',
     exposureBias: -0.15,
     camera: { yaw: 0, pitch: 0.14, zoom: 1 },
-    talent: talentAt([0, 0.9, 0.45]),
+    talent: talentAt([0, 0.9, 0.45], 2.4, 'seated'),
     backdropSlotId: 'backdrop',
     screens: [
       slot('video_wall', 'LED Video Wall', 'video-wall', true, news('CLOUDCAST NEWSROOM', 'CC NEWS', '#e11d48')),
@@ -114,7 +120,7 @@ export const STUDIO_SCENES: StudioSceneDefinition[] = [
     accent: '#f97316',
     exposureBias: -0.1,
     camera: { yaw: -0.08, pitch: 0.16, zoom: 0.95 },
-    talent: talentAt([0, 0.9, 0.6]),
+    talent: talentAt([0, 0.9, 0.6], 2.4, 'seated'),
     backdropSlotId: 'backdrop',
     screens: [
       slot('jumbotron', 'Jumbotron Wall', 'video-wall', true, view('stadium')),
@@ -154,7 +160,7 @@ export const STUDIO_SCENES: StudioSceneDefinition[] = [
     accent: '#8b5cf6',
     exposureBias: -0.05,
     camera: { yaw: 0.04, pitch: 0.12, zoom: 1 },
-    talent: talentAt([0, 0.9, 1.6]),
+    talent: talentAt([0, 0.9, 1.6], 2.4, 'seated'),
     backdropSlotId: 'backdrop',
     screens: [
       slot('main_screen', 'Presentation Screen', 'video-wall', true, view('architecture')),

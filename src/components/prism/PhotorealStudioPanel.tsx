@@ -39,7 +39,7 @@ import type {
   StudioTalentPlacement,
   StudioTransitionStyle,
 } from '../../lib/virtualStudio/types';
-import { DEFAULT_STUDIO_TRANSITION } from '../../lib/virtualStudio/types';
+import { DEFAULT_STUDIO_TRANSITION, seatedTalentPlacement, standingTalentPlacement } from '../../lib/virtualStudio/types';
 import { getStudioScene, STUDIO_SCENES, studioScenesForPlan } from '../../lib/virtualStudio/sceneRegistry';
 import {
   clampBloomIntensity,
@@ -1167,7 +1167,7 @@ export function PhotorealStudioPanel({
         </div>
         <p className="text-[9px] leading-snug text-mixer-muted">
           Place the keyed live capture anywhere on the stage — position, size and angle it from any
-          view. Applies to the USB/local camera talent plate.
+          view. Seat the talent on set furniture (chairs, sofas, stools) or keep them standing.
         </p>
         {(() => {
           const d: StudioTalentPlacement = photoreal.talentPlacement ??
@@ -1249,6 +1249,40 @@ export function PhotorealStudioPanel({
           ];
           return (
             <div className="space-y-1">
+              {/* standing / seated pose — seats the talent on the set furniture */}
+              <div className="grid grid-cols-2 gap-1">
+                {([
+                  {
+                    key: 'standing' as const,
+                    label: 'STANDING',
+                    title: 'Frame the talent standing on the floor',
+                    apply: standingTalentPlacement,
+                  },
+                  {
+                    key: 'seated' as const,
+                    label: 'SEATED',
+                    title: 'Seat the talent on a chair or sofa — tighter framing resting at the seat line',
+                    apply: seatedTalentPlacement,
+                  },
+                ]).map((opt) => {
+                  const active = (d.pose ?? 'standing') === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      title={opt.title}
+                      onClick={() => patch({ talentPlacement: opt.apply(d) })}
+                      className={
+                        active
+                          ? 'rounded border border-amber-500/60 bg-amber-500/15 py-1 text-[8px] font-bold tracking-wider text-amber-300'
+                          : 'rounded border border-white/10 py-1 text-[8px] font-bold tracking-wider text-mixer-muted hover:border-amber-500/40 hover:text-amber-300'
+                      }
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
               {rows.map((row) => (
                 <div key={row.label} className="flex items-center gap-1.5">
                   <span className="w-9 text-[8px] font-bold tracking-wider text-mixer-muted">
