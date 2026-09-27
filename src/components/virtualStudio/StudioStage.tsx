@@ -313,11 +313,13 @@ function StageExposure({ exposure }: { exposure: number }) {
     // eslint-disable-next-line react-hooks/immutability
     gl.toneMapping = THREE.NoToneMapping;
     gl.toneMappingExposure = exposure;
-    // PCFSoft was deprecated in r184 (it now silently degrades to PCF), so ask
-    // for PCF directly and get softness from shadow.radius instead — the soft
-    // PCF kernel ignores radius, plain PCF scales its sample spread by it.
+    // VSM: the rig tunes real penumbrae — `shadow.radius` scales the blur and
+    // `shadow-blurSamples` drives the Gaussian pass — so shadows soften with
+    // distance from the occluder like a shadow off a soft area light, instead
+    // of the fixed hard kernel plain PCF gives. (PCFSoft was deprecated in
+    // r184 and silently degrades to PCF, which ignores blurSamples.)
     // eslint-disable-next-line react-hooks/immutability
-    if (gl.shadowMap) gl.shadowMap.type = THREE.PCFShadowMap;
+    if (gl.shadowMap) gl.shadowMap.type = THREE.VSMShadowMap;
   }, [gl, exposure]);
   return null;
 }

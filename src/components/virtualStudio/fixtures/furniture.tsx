@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { useStudioMaterials } from './materials';
 import { PbrSurface } from './PbrSurface';
 import { LightBeam } from './LightBeam';
-import { useLightSlot, usePracticalLightScale, useVolumetrics } from './fidelityLighting';
+import { useLightSlot, usePracticalLightScale, useStudioFidelityLighting, useVolumetrics } from './fidelityLighting';
+import { refractionFor } from '../../../lib/virtualStudio/fidelity';
 import {
   PLANT_SPECIES,
   pickPlantSpecies,
@@ -51,6 +52,8 @@ export const AnchorDesk = memo(function AnchorDesk({
   body = '#18181b',
 }: PlaceProps & { accent?: string; width?: number; body?: string }) {
   const m = useStudioMaterials();
+  // Real refraction spec for this tier — low keeps the opaque lacquered look.
+  const glassSpec = refractionFor(useStudioFidelityLighting().tier);
   const bodyMat = useMemo(
     () =>
       body === '#18181b'
@@ -62,14 +65,34 @@ export const AnchorDesk = memo(function AnchorDesk({
     <group position={position} rotation={rotation} scale={scale}>
       <RoundedBox args={[width, 0.78, 1.1]} radius={0.06} smoothness={4} position={[0, 0.39, 0]} material={bodyMat} castShadow receiveShadow />
       <RoundedBox args={[width + 0.14, 0.05, 1.24]} radius={0.02} smoothness={4} position={[0, 0.805, 0]} castShadow>
-        <PbrSurface physical
-          color="#0d0d12"
-          metalness={0.2}
-          roughness={0.06}
-          clearcoat={1}
-          clearcoatRoughness={0.03}
-          envMapIntensity={1.6}
-        />
+        {glassSpec ? (
+          /* Smoked tempered glass: the desk body and grommet refract through
+             it, the dark attenuation gives the black-glass look while the
+             clearcoat keeps the sharp specular sheet a real glass top has. */
+          <PbrSurface physical
+            color="#dde5ec"
+            transmission={glassSpec.transmission}
+            ior={glassSpec.ior}
+            thickness={0.05}
+            dispersion={glassSpec.dispersion}
+            attenuationColor="#161d26"
+            attenuationDistance={0.12}
+            roughness={glassSpec.roughness}
+            metalness={0}
+            clearcoat={1}
+            clearcoatRoughness={0.03}
+            envMapIntensity={glassSpec.envMapIntensity}
+          />
+        ) : (
+          <PbrSurface physical
+            color="#0d0d12"
+            metalness={0.2}
+            roughness={0.06}
+            clearcoat={1}
+            clearcoatRoughness={0.03}
+            envMapIntensity={1.6}
+          />
+        )}
       </RoundedBox>
       <mesh position={[0, 0.5, 0.56]}>
         <planeGeometry args={[width - 0.3, 0.16]} />

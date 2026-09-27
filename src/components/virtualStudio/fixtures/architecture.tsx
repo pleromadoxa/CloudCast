@@ -1,7 +1,9 @@
 import { memo, useMemo } from 'react';
+import { MeshReflectorMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 import { carpetPbrOptions, pbrFromTexture, pbrSolid } from '../../../lib/prism/pbrMaterials';
 import { PbrSurface } from './PbrSurface';
+import { useStudioFidelityLighting } from './fidelityLighting';
 import type { StudioFit, StudioScreenSource } from '../../../lib/virtualStudio/types';
 import { ScreenSurface } from '../ScreenSurface';
 
@@ -66,6 +68,11 @@ export interface RoomShellProps extends PlaceProps {
   wallTexture?: 'wall_paint' | 'wall_brick' | 'concrete';
   floorTexture?: 'wood_oak' | 'wood_walnut' | 'carpet' | 'tile' | 'marble' | 'concrete';
   floorColor?: string;
+  /**
+   * Mirror the set back in a polished floor. Defaults to auto: hard floors
+   * reflect on the high/ultra tiers (one extra scene pass the budget allows),
+   * carpet never reflects and cheap tiers keep the plain surface.
+   */
   floorReflective?: boolean;
   accent?: string;
   /** Recessed ceiling light panels to switch on. */
@@ -86,6 +93,7 @@ export const RoomShell = memo(function RoomShell({
   wallTexture = 'wall_paint',
   floorTexture = 'wood_walnut',
   floorColor = '#1a1512',
+  floorReflective,
   accent = '#38bdf8',
   ceilingLights = 4,
   openBack = true,
@@ -105,6 +113,14 @@ export const RoomShell = memo(function RoomShell({
       trim: pbrSolid('#1c1f26', { metalness: 0.5, roughness: 0.4 }),
     };
   }, [wallTexture, wallColor, floorTexture]);
+
+  const tier = useStudioFidelityLighting().tier;
+  // A polished floor mirrors the rig and the set back — the single strongest
+  // realism cue on a studio floor. Carpet never reflects; the extra scene
+  // pass only runs where the performance budget allows it (high/ultra),
+  // unless the scene explicitly asks either way via `floorReflective`.
+  const reflective =
+    floorReflective ?? (floorTexture !== 'carpet' && (tier === 'high' || tier === 'ultra'));
 
   const lights = useMemo(
     () =>
@@ -134,14 +150,35 @@ export const RoomShell = memo(function RoomShell({
         ) : (
           <>
             <planeGeometry args={[width, depth]} />
-            <PbrSurface
-              map={materials.floor.map}
-              color={floorColor}
-              roughness={materials.floor.roughness}
-              metalness={materials.floor.metalness}
-              envMapIntensity={1.8}
-              side={THREE.DoubleSide}
-            />
+            {reflective ? (
+              /* Depth-aware mirror pass: sharp near furniture feet, diffusing
+                 with distance — how a polished studio floor actually reads. */
+              <MeshReflectorMaterial
+                map={materials.floor.map}
+                color={floorColor}
+                roughness={materials.floor.roughness}
+                metalness={materials.floor.metalness}
+                envMapIntensity={1.8}
+                resolution={512}
+                blur={[400, 120]}
+                mixBlur={0.85}
+                mixStrength={0.42}
+                mirror={0.35}
+                depthScale={0.4}
+                minDepthThreshold={0.3}
+                maxDepthThreshold={1.3}
+                side={THREE.DoubleSide}
+              />
+            ) : (
+              <PbrSurface
+                map={materials.floor.map}
+                color={floorColor}
+                roughness={materials.floor.roughness}
+                metalness={materials.floor.metalness}
+                envMapIntensity={1.8}
+                side={THREE.DoubleSide}
+              />
+            )}
           </>
         )}
       </mesh>
