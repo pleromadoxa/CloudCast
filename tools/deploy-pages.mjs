@@ -9,7 +9,7 @@
  *   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY (baked in at build time)
  */
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const WORKER_NAME = 'cloudcast';
@@ -128,20 +128,10 @@ async function main() {
   // Also publish to the real Pages project (cloudcast.pages.dev). Without this
   // the Pages deployment goes stale and serves an old bundle.
   if (pagesProject) {
-    // Pages needs a `_redirects` SPA fallback; Workers assets rejects that same
-    // file (error 100324 — `/* -> /index.html` counts as an infinite loop), so
-    // it is written just for the Pages upload and removed afterwards. The
-    // Worker handles SPA routing via `not_found_handling` in wrangler.jsonc.
-    const redirectsPath = join(process.cwd(), 'dist', '_redirects');
-    writeFileSync(redirectsPath, '/* /index.html 200\n', 'utf8');
-    try {
-      run(
-        'npx wrangler pages deploy dist --project-name cloudcast --branch main --commit-dirty=true',
-        'Deploy to Cloudflare Pages',
-      );
-    } finally {
-      if (existsSync(redirectsPath)) unlinkSync(redirectsPath);
-    }
+    run(
+      'npx wrangler pages deploy dist --project-name cloudcast --branch main --commit-dirty=true',
+      'Deploy to Cloudflare Pages',
+    );
   } else {
     console.warn('⚠ Pages project unavailable — skipped cloudcast.pages.dev deployment.');
   }
