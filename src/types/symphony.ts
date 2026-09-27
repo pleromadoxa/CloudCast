@@ -214,6 +214,24 @@ export interface TimelineMarker {
   name: string;
 }
 
+/** A chord symbol governing part of the timeline (chord track). */
+export interface ChordEvent {
+  /** 0-based bar. */
+  bar: number;
+  lengthBars: number;
+  /** Chord symbol, e.g. "Am7", "C#dim", "Bb/F". */
+  chord: string;
+}
+
+/** Song-structure section (Logic arrangement markers). */
+export interface ArrangementSection {
+  id: string;
+  /** Intro | Verse | Pre-Chorus | Chorus | Bridge | Breakdown | Build | Drop | Solo | Outro */
+  name: string;
+  startBar: number;
+  lengthBars: number;
+}
+
 export interface Region {
   id: string;
   trackId: string;
@@ -272,6 +290,12 @@ export interface SymphonyProject {
   useCycleRegion?: boolean;
   /** Named timeline locators. */
   markers?: TimelineMarker[];
+  /** Chord track (one chord per bar span). */
+  chordTrack?: ChordEvent[];
+  /** Song arrangement sections (Intro/Verse/Chorus…). */
+  arrangement?: ArrangementSection[];
+  /** Global swing amount 0–100 applied by generation & quantize. */
+  swing?: number;
   /** Master output 0–100 (default 85). */
   masterVolume?: number;
   /** Limiter threshold in dB (default -18). */

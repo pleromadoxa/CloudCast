@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EditTool } from '../../hooks/useSymphonyProject';
-import type { AutomationPoint, NoteEvent, Region, TimelineMarker, Track, TrackColor } from '../../types/symphony';
+import type { ArrangementSection, AutomationPoint, ChordEvent, NoteEvent, Region, TimelineMarker, Track, TrackColor } from '../../types/symphony';
 import { volumeAtBeat } from '../../lib/symphony/automation';
+import { cycleDiatonicChord } from '../../lib/symphony/musicTheory';
 import {
   BAR_WIDTH,
   BEATS_PER_BAR,
@@ -19,6 +20,25 @@ import { TRACK_COLOR_MAP, symPianoKeyClass } from './symphonyTheme';
 import { StereoVuMeter } from './hardware/PeakVuMeter';
 import { SymphonyButton } from './SymphonyButton';
 import { PlayheadTicker } from './PlayheadTicker';
+
+/** Section fill colors for the arrangement strip. */
+const ARRANGEMENT_COLORS: Record<string, string> = {
+  intro: 'rgba(148,163,184,0.22)',
+  verse: 'rgba(56,189,248,0.22)',
+  'pre-chorus': 'rgba(45,212,191,0.22)',
+  chorus: 'rgba(167,139,250,0.3)',
+  hook: 'rgba(167,139,250,0.3)',
+  bridge: 'rgba(251,191,36,0.22)',
+  breakdown: 'rgba(244,114,182,0.2)',
+  build: 'rgba(251,113,133,0.22)',
+  drop: 'rgba(248,113,113,0.3)',
+  solo: 'rgba(52,211,153,0.25)',
+  theme: 'rgba(167,139,250,0.3)',
+  head: 'rgba(56,189,248,0.22)',
+  a: 'rgba(56,189,248,0.22)',
+  b: 'rgba(45,212,191,0.22)',
+  outro: 'rgba(148,163,184,0.18)',
+};
 
 function trackIcon(instrumentId: string): string {
   if (instrumentId.includes('bass')) return '🎸';
@@ -163,6 +183,13 @@ interface TimelineViewProps {
   cycleEndBar?: number;
   useCycleRegion?: boolean;
   markers?: TimelineMarker[];
+  /** Chord track events (chord track row). */
+  chordTrack?: ChordEvent[];
+  /** Song arrangement sections (Intro/Verse/Chorus strip). */
+  arrangement?: ArrangementSection[];
+  /** Project key for diatonic chord cycling. */
+  projectKey?: string;
+  onUpdateChordTrack?: (events: ChordEvent[]) => void;
   selectedTrackId: string | null;
   zoomLevel: number;
   onZoomIn: () => void;
@@ -279,7 +306,8 @@ function RegionBlock({
 
 export function TimelineView({
   tracks, regions, totalBars, barWidth = BAR_WIDTH, cycleStartBar = 0, cycleEndBar = 8, useCycleRegion,
-  markers = [], selectedTrackId,
+  markers = [], chordTrack = [], arrangement = [], projectKey = 'C maj', onUpdateChordTrack,
+  selectedTrackId,
   zoomLevel, onZoomIn, onZoomOut,
   playheadPosition, playing, selectedRegionId, editTool, snapEnabled,
   onSelectRegion, onMoveRegion, onResizeRegion, onDropLoop, onDropInstrument,
@@ -308,6 +336,7 @@ export function TimelineView({
   const dragAbortRef = useRef<AbortController | null>(null);
 
   const width = totalBars * barWidth;
+  const extraRowsHeight = (arrangement.length > 0 ? 20 : 0) + (chordTrack.length > 0 ? 24 : 0);
   const playheadPx = playheadToPx(playheadPosition.bar, playheadPosition.beat, playheadPosition.tick, barWidth);
 
   useEffect(() => {
@@ -408,7 +437,7 @@ export function TimelineView({
   return (
     <div className="sym-timeline flex min-h-0 min-w-0 flex-1 flex-col">
       <div ref={scrollRef} className="sym-timeline__scroll min-h-0 flex-1 overflow-auto">
-        <div className="relative" style={{ width, minHeight: 28 + tracks.length * 52 }}>
+        <div className="relative" style={{ width, minHeight: 28 + extraRowsHeight + tracks.length * 52 }}>
           {/* Bar ruler */}
           <div
             className="sym-ruler sticky top-0 z-20"
@@ -451,6 +480,65 @@ export function TimelineView({
               </button>
             ))}
           </div>
+
+          {/* Arrangement strip (Intro / Verse / Chorus …) */}
+          {arrangement.length > 0 && (
+            <div className="sym-arrangement-strip relative h-5 overflow-hidden">
+              {arrangement.map((sec) => (
+                <button
+                  key={sec.id}
+                  type="button"
+                  className="absolute top-0 h-full overflow-hidden border-r border-black/30 px-1.5 text-left text-[8px] font-bold uppercase tracking-[0.16em] text-white/70 transition hover:brightness-125"
+                  style={{
+                    left: sec.startBar * barWidth,
+                    width: sec.lengthBars * barWidth,
+                    background: ARRANGEMENT_COLORS[sec.name.toLowerCase()] ?? 'rgba(148,163,184,0.18)',
+                  }}
+                  title={`${sec.name} — bars ${sec.startBar + 1}–${sec.startBar + sec.lengthBars} (click to seek)`}
+                  onClick={() => onSeekEnd({ bar: sec.startBar + 1, beat: 1, tick: 0 })}
+                >
+                  <span className="block truncate leading-5">{sec.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Chord track */}
+          {chordTrack.length > 0 && (
+            <div
+              className="sym-chord-track relative h-6 overflow-hidden"
+              onDoubleClick={(e) => {
+                if (!onUpdateChordTrack) return;
+                const px = clientXToPx(e.clientX);
+                const bar = Math.floor(px / barWidth);
+                if (chordTrack.some((c) => bar >= c.bar && bar < c.bar + c.lengthBars)) return;
+                const tonic = cycleDiatonicChord('', projectKey);
+                onUpdateChordTrack([...chordTrack, { bar, lengthBars: 1, chord: tonic }].sort((a, b) => a.bar - b.bar));
+              }}
+              title="Click a chord: cycle diatonic · Shift-click: cycle back · Double-click empty bar: add chord"
+            >
+              {chordTrack.map((c) => (
+                <button
+                  key={`${c.bar}-${c.chord}`}
+                  type="button"
+                  className="sym-chord-box absolute top-0 h-full overflow-hidden border-r border-black/40 text-[10px] font-bold text-amber-100 transition hover:brightness-125"
+                  style={{ left: c.bar * barWidth, width: c.lengthBars * barWidth }}
+                  onClick={(e) => {
+                    if (!onUpdateChordTrack) return;
+                    const next = cycleDiatonicChord(c.chord, projectKey, e.shiftKey ? -1 : 1);
+                    onUpdateChordTrack(chordTrack.map((x) => (x === c ? { ...x, chord: next } : x)));
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (!onUpdateChordTrack) return;
+                    onUpdateChordTrack(chordTrack.filter((x) => x !== c));
+                  }}
+                >
+                  <span className="block truncate px-1.5 leading-6">{c.chord}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Cycle region overlay */}
           {useCycleRegion && (

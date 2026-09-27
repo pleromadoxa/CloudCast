@@ -35,12 +35,16 @@ import { FxRackPanel } from './FxRackPanel';
 import { AutomationPanel } from './AutomationPanel';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { ExportDialog } from './ExportDialog';
+import { AiStudioPanel } from './AiStudioPanel';
+import { StepSequencerPanel } from './StepSequencerPanel';
 import { BAR_WIDTH, ZOOM_LEVELS } from '../../lib/symphony/dragTypes';
 import { stretchPatternToTempo } from '../../lib/symphony/noteUtils';
 
-type BottomPanel = 'loops' | 'instruments' | 'effects' | 'cloud' | 'mixer' | 'fxrack' | 'automation' | 'settings';
+type BottomPanel = 'ai' | 'stepseq' | 'loops' | 'instruments' | 'effects' | 'cloud' | 'mixer' | 'fxrack' | 'automation' | 'settings';
 
 const DOCK_TAB_LABELS: Record<BottomPanel, string> = {
+  ai: '✦ AI Studio',
+  stepseq: '▦ Step Seq',
   mixer: '▤ Mixer',
   loops: '◆ Loops',
   instruments: '♫ Instruments',
@@ -315,6 +319,10 @@ export function SymphonyLayout() {
           cycleStartBar={sym.project.cycleStartBar ?? 0}
           cycleEndBar={sym.project.cycleEndBar ?? sym.totalBars}
           useCycleRegion={sym.project.useCycleRegion}
+          chordTrack={sym.project.chordTrack ?? []}
+          arrangement={sym.project.arrangement ?? []}
+          projectKey={sym.project.key}
+          onUpdateChordTrack={(events) => sym.updateProject({ chordTrack: events })}
           zoomLevel={zoomLevel}
           onZoomIn={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))}
           onZoomOut={() => setZoomIndex((i) => Math.max(0, i - 1))}
@@ -422,16 +430,35 @@ export function SymphonyLayout() {
           className={cn(
             'sym-bottom-panel shrink-0',
             bottomPanel === 'mixer' && 'h-[330px]',
-            (bottomPanel === 'settings' || bottomPanel === 'fxrack' || bottomPanel === 'automation') && 'h-[360px]',
+            (bottomPanel === 'settings' || bottomPanel === 'fxrack' || bottomPanel === 'automation' || bottomPanel === 'ai' || bottomPanel === 'stepseq') && 'h-[360px]',
             (bottomPanel === 'effects' || bottomPanel === 'instruments' || bottomPanel === 'cloud') && 'lg:h-44',
           )}
         >
+          {bottomPanel === 'ai' && (
+            <AiStudioPanel onApplyPatch={sym.applyAiPatch} />
+          )}
+          {bottomPanel === 'stepseq' && (
+            <StepSequencerPanel
+              track={selectedTrack}
+              region={sym.selectedRegion}
+              projectKey={sym.project.key}
+              onNotesChange={(notes) => {
+                if (sym.selectedRegionId) sym.updateRegionNotes(sym.selectedRegionId, notes);
+              }}
+              onCreateRegion={() => {
+                const trackId = sym.selectedTrackId ?? sym.project.tracks[0]?.id;
+                if (trackId) sym.addPatternRegion(trackId, 0, 4, 'Pattern');
+              }}
+            />
+          )}
           {bottomPanel === 'effects' && (
             <EffectsPanel
               selectedTrack={selectedTrack}
               selectedRegion={sym.selectedRegion}
               masterVolume={sym.project.masterVolume ?? 85}
               limiterThreshold={sym.project.limiterThreshold ?? -18}
+              projectKey={sym.project.key}
+              swing={sym.project.swing ?? 0}
               onTrackChange={sym.updateTrack}
               onRegionChange={sym.updateRegion}
               onProjectChange={sym.updateProject}
@@ -532,7 +559,7 @@ export function SymphonyLayout() {
 
       <footer className="sym-dock flex shrink-0 items-center justify-between px-3 py-2">
         <div className="flex flex-wrap gap-1">
-          {(['mixer', 'loops', 'instruments', 'fxrack', 'automation', 'effects', 'settings', 'cloud'] as BottomPanel[]).map((panel) => (
+          {(['ai', 'stepseq', 'mixer', 'loops', 'instruments', 'fxrack', 'automation', 'effects', 'settings', 'cloud'] as BottomPanel[]).map((panel) => (
             <SymphonyButton
               key={panel}
               variant="toggle"

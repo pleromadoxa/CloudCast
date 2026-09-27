@@ -1,5 +1,6 @@
 import { Sparkles, Wand2 } from 'lucide-react';
 import type { Region, SymphonyProject, Track } from '../../types/symphony';
+import { scaffoldSong } from '../../lib/symphony/aiComposer';
 import { SymphonyButton } from './SymphonyButton';
 import { TRACK_COLOR_MAP } from './symphonyTheme';
 import { cn } from '../../lib/utils';
@@ -9,6 +10,8 @@ interface EffectsPanelProps {
   selectedRegion: Region | null;
   masterVolume: number;
   limiterThreshold: number;
+  projectKey: string;
+  swing: number;
   onTrackChange: (id: string, patch: Partial<Track>) => void;
   onRegionChange: (id: string, patch: Partial<Region>) => void;
   onProjectChange: (patch: Partial<SymphonyProject>) => void;
@@ -19,7 +22,7 @@ interface EffectsPanelProps {
 }
 
 export function EffectsPanel({
-  selectedTrack, selectedRegion, masterVolume, limiterThreshold,
+  selectedTrack, selectedRegion, masterVolume, limiterThreshold, projectKey, swing,
   onTrackChange, onRegionChange, onProjectChange,
   onQuantize, onHumanize, onTranspose, onClearAutomation,
 }: EffectsPanelProps) {
@@ -58,6 +61,44 @@ export function EffectsPanel({
               />
               <span className="sym-fx-knob-val">{limiterThreshold} dB</span>
             </label>
+          </div>
+        </section>
+
+        <section>
+          <h3 className="sym-fx-section-title">Song Tools</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="sym-fx-knob">
+              <span>Swing / Groove</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={swing}
+                onChange={(e) => onProjectChange({ swing: Number(e.target.value) })}
+                className="sym-fader mt-1 w-full"
+              />
+              <span className="sym-fx-knob-val">{swing}%</span>
+            </label>
+            <div className="flex flex-col justify-end gap-1.5">
+              <SymphonyButton
+                variant="tool"
+                accent="green"
+                title="Generate Intro/Verse/Chorus arrangement, chord track and markers for the project key"
+                onClick={() => {
+                  const scaffold = scaffoldSong(projectKey);
+                  onProjectChange({
+                    arrangement: scaffold.arrangement,
+                    chordTrack: scaffold.chordTrack,
+                    markers: scaffold.markers,
+                  });
+                }}
+              >
+                <Wand2 className="h-3 w-3" /> SONG SCAFFOLD
+              </SymphonyButton>
+              <SymphonyButton variant="tool" accent="violet" onClick={onQuantize} title="Quantize selected region to 16ths with current swing">
+                QUANTIZE + SWING
+              </SymphonyButton>
+            </div>
           </div>
         </section>
 

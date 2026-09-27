@@ -7,6 +7,7 @@ import { humanizeNotes, quantizeNotes, stretchPatternToTempo } from '../lib/symp
 import { createDefaultProject, nextTrackColor } from '../lib/symphonyProjectService';
 import { snapBar } from '../lib/symphony/dragTypes';
 import { normalizeAutomationPoint } from '../lib/symphony/automation';
+import type { AiProjectPatch } from '../lib/symphony/aiComposer';
 
 const MAX_UNDO = 50;
 
@@ -260,7 +261,7 @@ export function useSymphonyProject(maxTracks: number) {
       ...prev,
       regions: prev.regions.map((r) =>
         r.id === selectedRegionId && r.notes
-          ? { ...r, notes: quantizeNotes(r.notes, grid) }
+          ? { ...r, notes: quantizeNotes(r.notes, grid, prev.swing ?? 0) }
           : r,
       ),
     }));
@@ -421,6 +422,53 @@ export function useSymphonyProject(maxTracks: number) {
   const totalBars = Math.max(8, ...project.regions.map((r) => r.startBar + r.lengthBars));
   const selectedRegion = project.regions.find((r) => r.id === selectedRegionId) ?? null;
 
+  /** Create an empty (or note-seeded) region — used by the step sequencer & AI tools. */
+  const addPatternRegion = useCallback((trackId: string, startBar: number, lengthBars: number, name = 'Pattern', notes?: NoteEvent[]) => {
+    const region: Region = {
+      id: crypto.randomUUID(),
+      trackId,
+      name,
+      startBar: snapBar(startBar, snapEnabled),
+      lengthBars: Math.max(1, lengthBars),
+      notes: notes ? notes.map((n) => ({ ...n })) : [],
+    };
+    commit((prev) => ({ ...prev, regions: [...prev.regions, region] }));
+    setSelectedRegionId(region.id);
+    return region.id;
+  }, [commit, snapEnabled]);
+
+  /**
+   * Apply an AI composition patch.
+   * 'replace' swaps in the generated song; 'append' layers generated tracks
+   * onto the current project without touching tempo/structure.
+   */
+  const applyAiPatch = useCallback((patch: AiProjectPatch, mode: 'replace' | 'append' = 'replace') => {
+    commit((prev) => {
+      if (mode === 'replace') {
+        return {
+          ...prev,
+          name: patch.name || prev.name,
+          tempo: patch.tempo,
+          key: patch.key,
+          swing: patch.swing,
+          tracks: patch.tracks,
+          regions: patch.regions,
+          chordTrack: patch.chordTrack,
+          arrangement: patch.arrangement,
+          markers: patch.markers,
+        };
+      }
+      const offset = prev.tracks.length;
+      return {
+        ...prev,
+        tracks: [...prev.tracks, ...patch.tracks.map((t, i) => ({ ...t, index: offset + i + 1 }))],
+        regions: [...prev.regions, ...patch.regions],
+      };
+    });
+    setSelectedTrackId(patch.tracks[0]?.id ?? null);
+    setSelectedRegionId(null);
+  }, [commit]);
+
   return {
     project,
     setProject: commit,
@@ -467,6 +515,8 @@ export function useSymphonyProject(maxTracks: number) {
     setLaneEnabled,
     clearLane,
     appendRecordedNotes,
+    addPatternRegion,
+    applyAiPatch,
     undo,
     redo,
   };

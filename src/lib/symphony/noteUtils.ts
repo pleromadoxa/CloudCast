@@ -1,4 +1,5 @@
 import type { NoteEvent, Region } from '../../types/symphony';
+import { swingBeat } from './musicTheory';
 
 /** Apply region transpose and gain to a note for playback. */
 export function applyRegionNoteTransform(note: NoteEvent, region: Region): NoteEvent {
@@ -23,12 +24,15 @@ export function stretchPatternToTempo(notes: NoteEvent[], fromBpm: number, toBpm
 }
 
 /** Snap notes to a rhythmic grid (in beats). */
-export function quantizeNotes(notes: NoteEvent[], grid = 0.25): NoteEvent[] {
-  return notes.map((n) => ({
-    ...n,
-    startBeat: Math.round(n.startBeat / grid) * grid,
-    durationBeats: Math.max(grid, Math.round(n.durationBeats / grid) * grid),
-  }));
+export function quantizeNotes(notes: NoteEvent[], grid = 0.25, swing = 0): NoteEvent[] {
+  return notes.map((n) => {
+    const startBeat = Math.round(n.startBeat / grid) * grid;
+    return {
+      ...n,
+      startBeat: swingBeat(startBeat, swing),
+      durationBeats: Math.max(grid, Math.round(n.durationBeats / grid) * grid),
+    };
+  });
 }
 
 export function transposeNotes(notes: NoteEvent[], semitones: number): NoteEvent[] {
