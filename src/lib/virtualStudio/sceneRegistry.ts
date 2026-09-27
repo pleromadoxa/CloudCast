@@ -718,7 +718,9 @@ const libraryStudy: StudioSceneDefinition = {
 
 /* ================================================================ */
 
-const PHOTOREAL_SCENES: StudioSceneDefinition[] = [
+/** The premium photorealistic block — exported so coverage tests can assert
+ *  every one of them has its own rendered environment. */
+export const PHOTOREAL_SCENES: StudioSceneDefinition[] = [
   newsPremium,
   churchSanctuary,
   musicMinistry,

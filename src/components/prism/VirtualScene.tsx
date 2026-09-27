@@ -202,6 +202,9 @@ const ENVIRONMENT_PROFILES: Record<
   xr_stage: { file: '/hdri/park_music_stage_1k.hdr', intensity: 0.2 },
 };
 
+/** Dev-only guard: an unknown environment warns once instead of every frame. */
+const warnedEnvironments = new Set<VirtualSetDefinition['environment']>();
+
 function hdriFor(environment: VirtualSetDefinition['environment']) {
   return ENVIRONMENT_PROFILES[environment] ?? ENVIRONMENT_PROFILES.news_studio;
 }
@@ -618,6 +621,93 @@ function StudioEnvironment({ environment }: { environment: VirtualSetDefinition[
             </mesh>
           </group>
         ))}
+      </>
+    );
+  }
+
+  if (environment === 'concert_hall') {
+    return (
+      <>
+        <PhotorealisticRoomShell environment="concert_hall" />
+        {/* Arena backdrop glow behind the LED stack. */}
+        <mesh position={[0, 1.8, -9.9]}>
+          <planeGeometry args={[17, 2.6]} />
+          <meshStandardMaterial color="#160a0d" emissive="#43161b" emissiveIntensity={0.55} roughness={0.7} />
+        </mesh>
+        {/* Main LED wall with its angled wing panels. */}
+        <mesh position={[0, 1.7, -9.4]}>
+          <planeGeometry args={[9, 2.4]} />
+          <meshStandardMaterial color="#05070a" emissive="#ef4444" emissiveIntensity={0.4} roughness={0.55} />
+        </mesh>
+        {[-1, 1].map((s) => (
+          <mesh key={s} position={[s * 6.8, 1.65, -9.1]} rotation={[0, -s * 0.5, 0]}>
+            <planeGeometry args={[4, 2.1]} />
+            <meshStandardMaterial color="#06080c" emissive="#f97316" emissiveIntensity={0.28} roughness={0.6} />
+          </mesh>
+        ))}
+        {/* Stage ribbon above the wall. */}
+        <mesh position={[0, 2.7, -9.6]}>
+          <boxGeometry args={[15, 0.26, 0.08]} />
+          <meshStandardMaterial color="#0a0a0f" emissive="#ef4444" emissiveIntensity={1.6} />
+        </mesh>
+        {/* Stage deck, fascia strip and two band risers. */}
+        <mesh position={[0, 0.25, -6.4]} castShadow receiveShadow>
+          <boxGeometry args={[16, 0.5, 6.4]} />
+          <meshStandardMaterial color="#101018" roughness={0.62} metalness={0.12} />
+        </mesh>
+        <mesh position={[0, 0.44, -3.22]}>
+          <boxGeometry args={[16, 0.1, 0.06]} />
+          <meshStandardMaterial color="#0a0a0f" emissive="#ef4444" emissiveIntensity={2} />
+        </mesh>
+        {[-0.55, -1.35].map((z, i) => (
+          <mesh key={z} position={[0, 0.5 + i * 0.22, -8.4 - i * 0.7]} castShadow>
+            <boxGeometry args={[12, 0.44, 1.3]} />
+            <meshStandardMaterial color="#15151f" roughness={0.7} />
+          </mesh>
+        ))}
+        {/* Twin truss rigs with fixtures hanging under the ceiling. */}
+        {[-1.1, -7.2].map((z) => (
+          <group key={z} position={[0, 2.5, z]}>
+            <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
+              <cylinderGeometry args={[0.07, 0.07, 17, 8]} />
+              <meshStandardMaterial color="#2c2f36" metalness={0.9} roughness={0.35} />
+            </mesh>
+            {[-6.6, -3.3, 0, 3.3, 6.6].map((x) => (
+              <group key={x} position={[x, -0.16, 0]}>
+                <mesh castShadow>
+                  <cylinderGeometry args={[0.1, 0.14, 0.24, 12, 1, true]} />
+                  <meshStandardMaterial color="#16181d" metalness={0.7} roughness={0.5} side={2} />
+                </mesh>
+                <mesh position={[0, -0.13, 0]}>
+                  <circleGeometry args={[0.11, 16]} />
+                  <meshStandardMaterial
+                    color={x === 0 ? '#fff7ed' : '#ef4444'}
+                    emissive={x === 0 ? '#fff7ed' : '#ef4444'}
+                    emissiveIntensity={2.4}
+                  />
+                </mesh>
+              </group>
+            ))}
+          </group>
+        ))}
+        {/* Audience blocks flanking the centre camera lane. */}
+        {[-8.5, 8.5].map((x) =>
+          [5.2, 8].map((z) => (
+            <group key={`${x}${z}`} position={[x, 0, z]}>
+              <mesh position={[0, 0.36, 0]} castShadow>
+                <boxGeometry args={[7.5, 0.28, 1.5]} />
+                <meshStandardMaterial color="#0d0f14" roughness={0.9} />
+              </mesh>
+              <mesh position={[0, 0.78, -0.3]} castShadow>
+                <boxGeometry args={[7.5, 0.56, 0.7]} />
+                <meshStandardMaterial color="#171a21" roughness={0.94} />
+              </mesh>
+            </group>
+          )),
+        )}
+        <spotLight position={[-5, 2.7, -5.6]} angle={0.4} penumbra={0.6} intensity={34} distance={16} decay={2} color="#ff6b6b" />
+        <spotLight position={[5, 2.7, -5.6]} angle={0.4} penumbra={0.6} intensity={34} distance={16} decay={2} color="#ff935a" />
+        <spotLight position={[0, 2.8, -1.6]} angle={0.55} penumbra={0.75} intensity={30} distance={18} decay={2} color="#fff1e8" />
       </>
     );
   }
@@ -1311,6 +1401,11 @@ function StudioEnvironment({ environment }: { environment: VirtualSetDefinition[
         </group>
       </>
     );
+  }
+
+  if (import.meta.env.DEV && !warnedEnvironments.has(environment)) {
+    warnedEnvironments.add(environment);
+    console.warn(`[VirtualScene] no set defined for environment "${environment}" — rendering the placeholder`);
   }
 
   return (

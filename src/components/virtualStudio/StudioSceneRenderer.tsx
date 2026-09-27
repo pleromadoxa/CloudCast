@@ -1,4 +1,4 @@
-import { memo, useMemo, type ComponentType } from 'react';
+import { memo, useMemo } from 'react';
 import type {
   StudioProductionMode,
   StudioScreenSource,
@@ -12,53 +12,11 @@ import { ArLivePlate, XrSetExtension } from './ModeStages';
 import { ImportedModelGroup, type ImportedModelEntry } from '../prism/ImportedModelGroup';
 import { ProceduralModelGroup } from '../prism/ProceduralModelGroup';
 import type { PrismSceneObject } from '../../types/prismFeed';
-import {
-  AmberTalkScene,
-  ClassicBlueNewsScene,
-  ConferenceRoomScene,
-  CrimsonRingScene,
-  CycloramaScene,
-  GlobalNewsArenaScene,
-  GreenRoomScene,
-  HouseExteriorScene,
-  KitchenScene,
-  LivingRoomScene,
-  NewsroomScene,
-  SportsArenaScene,
-  TalkShowScene,
-  VioletHudScene,
-  WeatherCenterScene,
-  WorshipStageScene,
-  BedroomScene,
-  XrConcertScene,
-  type StudioSceneProps,
-} from './scenes/StudioScenes';
+import { sceneComponentFor } from './scenes/sceneComponentMap';
+import { CycloramaScene } from './scenes/StudioScenes';
 
-/**
- * Maps a registry scene id to its rendered environment, resolving every screen
- * slot (operator binding → scene default → off) before handing sources down.
- */
-
-const SCENE_COMPONENTS: Record<string, ComponentType<StudioSceneProps>> = {
-  newsroom: NewsroomScene,
-  sports_arena: SportsArenaScene,
-  living_room: LivingRoomScene,
-  talk_show: TalkShowScene,
-  worship_stage: WorshipStageScene,
-  weather_center: WeatherCenterScene,
-  kitchen_set: KitchenScene,
-  bedroom_suite: BedroomScene,
-  conference_room: ConferenceRoomScene,
-  house_exterior: HouseExteriorScene,
-  green_room: GreenRoomScene,
-  xr_concert: XrConcertScene,
-  cyclorama: CycloramaScene,
-  global_news_arena: GlobalNewsArenaScene,
-  classic_blue_news: ClassicBlueNewsScene,
-  amber_talk_studio: AmberTalkScene,
-  crimson_ring_studio: CrimsonRingScene,
-  violet_hud_news: VioletHudScene,
-};
+/** Dev-only guard: each unmapped scene warns exactly once per session. */
+const warnedUnmapped = new Set<string>();
 
 export interface StudioSceneRendererProps {
   sceneId: string;
@@ -138,7 +96,13 @@ export const StudioSceneRenderer = memo(function StudioSceneRenderer({
     return { kind: 'off' } as StudioScreenSource;
   }, [backdrop, bindings]);
 
-  const SceneComponent = SCENE_COMPONENTS[sceneId] ?? CycloramaScene;
+  const mappedComponent = sceneComponentFor(sceneId);
+  if (!mappedComponent && import.meta.env.DEV && !warnedUnmapped.has(sceneId)) {
+    // Unmapped registry id — the set silently degrades to the blank cyclorama.
+    warnedUnmapped.add(sceneId);
+    console.warn(`[StudioSceneRenderer] scene "${sceneId}" has no mapped component`);
+  }
+  const SceneComponent = mappedComponent ?? CycloramaScene;
   const placement: StudioTalentPlacement | undefined = definition?.talent
     ? {
         ...definition.talent,
