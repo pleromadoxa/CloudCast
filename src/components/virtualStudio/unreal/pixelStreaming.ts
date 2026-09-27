@@ -1,30 +1,54 @@
 /**
- * Unreal Engine Pixel Streaming — WebRTC client.
+ * CloudCast Unreal Engine Pixel Streaming — WebRTC client.
  *
  * Epic does not ship an in-browser Unreal scene renderer; the supported way to
  * put an Unreal render on a web page is *Pixel Streaming*: a GPU instance
  * renders the scene and streams it to the browser over WebRTC, with the browser
  * forwarding input back over the data channel.
  *
- * This module implements the player side of that protocol against the
- * Pixel Streaming infrastructure's signalling server (the WebSocket endpoint
- * exposed by `SignallingWebServer` / the C++ `Streamer` stack):
+ * This module speaks **signalling protocol 1.3.0** — the wire protocol of
+ * Epic's `PixelStreamingInfrastructure` `UE5.8` branch, which is what
+ * `tools/deploy-pixelstreaming-vps.sh` installs on the CloudCast relay. The
+ * session is split across two transports that cannot be mixed up:
  *
- *   player  →  {"type":"connect"}
- *   streamer →  {"type":"offer","sdp":…}
- *   player  →  {"type":"answer","sdp":…}
+ * **Signalling WebSocket** (player ↔ relay ↔ streamer) carries only session
+ * setup, and the relay forwards *only* the message types in protocol 1.3.0:
+ *
+ *   player  →  {"type":"listStreamers"}
+ *   relay   →  {"type":"streamerList","ids":["Streamer0"]}
+ *   player  →  {"type":"subscribe","streamerId":"Streamer0"}
+ *   streamer→  {"type":"offer","sdp":…}     player → {"type":"answer","sdp":…}
  *   both    →  {"type":"iceCandidate","candidate":{…}}
- *   streamer →  {"type":"ping"}     player → {"type":"pong"}
+ *   relay   ↔  {"type":"ping"} / {"type":"pong"}   keepalive + round-trip
  *
- * and the input messages (`mouseMove`, `mouseDown`, `mouseUp`, `mouseWheel`,
- * `keyDown`, `keyUp`) that make the remote render interactive — which is what
- * lets CloudCast drive an Aximmetry-grade Unreal set from the browser.
+ * The classic-era vocabulary (`connect`, `command`, `latencyTest`, `mouseMove`,
+ * `keyDown`, …) does not exist in protocol 1.3.0: the relay logs those as
+ * "Unhandled player protocol message" and drops them on the floor. Everything
+ * that actually drives the engine therefore travels over the **WebRTC data
+ * channel** as Epic's default *binary* framing — a one-byte message id followed
+ * by a payload laid out per `TO_STREAMER` (mirroring Epic's
+ * `StreamMessageController.populateDefaultProtocol()`):
  *
- * The data channel also carries **console commands**, which is how CloudCast
- * enforces the same physical-fidelity spec the R3F and Babylon stages implement
- * in-engine: Lumen global illumination and reflections, virtual shadow maps,
- * volumetric fog and TSR are all pushed from `fidelity.ts` so every virtual set
- * renders to the identical standard on all three engines.
+ *   Command(51)         string  {"ConsoleCommand":"r.Lumen.GlobalIllumination 1"}
+ *   RequestInitialSettings(7)   —— engine replies with InitialSettings(7)
+ *   MouseMove(74)       u16,u16,i16,i16   position normalised to 0…65535
+ *   MouseDown/Up(72/73) u8,u16,u16        button, position
+ *   MouseWheel(75)      i16,u16,u16       wheelDelta (positive = up), position
+ *   KeyDown(60)         u8,u8             keyCode, isRepeat
+ *   KeyUp(61)           u8                keyCode
+ *   KeyPress(62)        u16               charCode
+ *
+ * Console commands additionally require the Unreal instance to be launched
+ * with `-AllowPixelStreamingCommands`; the engine reports that flag back in
+ * its `InitialSettings` message, which surfaces as
+ * `PixelStreamStats.consoleCommandsAllowed` so an operator can see *why*
+ * fidelity tuning is being rejected instead of guessing.
+ *
+ * The fidelity spec (`fidelity.ts`) is pushed through this path — Lumen global
+ * illumination and reflections, virtual shadow maps, volumetric fog, TSR — so
+ * every Unreal set renders to the identical standard as the R3F and Babylon
+ * stages. Commands queue until a data channel is open, so tuning applied
+ * before (or during) connection is never lost.
  */
 import {
   unrealFidelityCommands,
@@ -44,13 +68,19 @@ export type PixelStreamState =
 export interface PixelStreamStats {
   state: PixelStreamState;
   message: string | null;
-  /** Round-trip latency reported by the streamer, in ms (null when unknown). */
+  /** Round-trip latency reported by the relay, in ms (null when unknown). */
   latencyMs: number | null;
   /** Decoded frames per second measured locally. */
   fps: number;
   resolution: { width: number; height: number } | null;
   bytesReceived: number;
   iceConnectionState: string | null;
+  /**
+   * Whether the Unreal instance accepted `-AllowPixelStreamingCommands`.
+   * `null` until the engine reports its InitialSettings — a `false` here means
+   * every fidelity console command we send is being silently rejected.
+   */
+  consoleCommandsAllowed: boolean | null;
 }
 
 export interface PixelStreamOptions {
@@ -68,13 +98,195 @@ export interface PixelStreamOptions {
 }
 
 const RECONNECT_DELAY_MS = 2400;
+/** How often to ask the relay for a streamer while none is subscribed. */
+const STREAMER_POLL_MS = 2000;
+/** Give up waiting for the streamer's offer and re-subscribe after this. */
+const OFFER_WATCHDOG_MS = 12000;
+/** Cap on tuning commands buffered while no data channel is open. */
+const MAX_QUEUED_COMMANDS = 256;
+
+/* --------------------------------------- to-streamer binary protocol --- */
+
+export type StreamerField = 'uint8' | 'uint16' | 'int16' | 'string';
+
+interface StreamerMessageSpec {
+  id: number;
+  structure: readonly StreamerField[];
+}
+
+/**
+ * Epic's default to-streamer message table (from-streamer ids run 0…255 with
+ * `InitialSettings = 7`). Kept as data so the encoder is unit-testable
+ * without a GPU or a streamer.
+ */
+export const TO_STREAMER_MESSAGES: Readonly<Record<string, StreamerMessageSpec>> = {
+  RequestInitialSettings: { id: 7, structure: [] },
+  Command: { id: 51, structure: ['string'] },
+  KeyDown: { id: 60, structure: ['uint8', 'uint8'] },
+  KeyUp: { id: 61, structure: ['uint8'] },
+  KeyPress: { id: 62, structure: ['uint16'] },
+  MouseEnter: { id: 70, structure: [] },
+  MouseLeave: { id: 71, structure: [] },
+  MouseDown: { id: 72, structure: ['uint8', 'uint16', 'uint16'] },
+  MouseUp: { id: 73, structure: ['uint8', 'uint16', 'uint16'] },
+  MouseMove: { id: 74, structure: ['uint16', 'uint16', 'int16', 'int16'] },
+  MouseWheel: { id: 75, structure: ['int16', 'uint16', 'uint16'] },
+};
+
+/** From-streamer message id for the engine's InitialSettings reply. */
+const FROM_STREAMER_INITIAL_SETTINGS = 7;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+/**
+ * Encode one to-streamer binary frame: a one-byte message id followed by the
+ * payload fields in wire order (strings are a uint16 code-unit length then
+ * UTF-16 code units — the same convention Epic's frontend writes).
+ */
+export function encodeToStreamerMessage(
+  type: string,
+  values: readonly (number | string)[] = [],
+): ArrayBuffer | null {
+  const spec = TO_STREAMER_MESSAGES[type];
+  if (!spec) return null;
+
+  let byteLength = 1;
+  spec.structure.forEach((field, index) => {
+    if (field === 'uint8') byteLength += 1;
+    else if (field === 'uint16' || field === 'int16') byteLength += 2;
+    else byteLength += 2 + 2 * String(values[index] ?? '').length;
+  });
+
+  const buffer = new ArrayBuffer(byteLength);
+  const view = new DataView(buffer);
+  view.setUint8(0, spec.id);
+  let offset = 1;
+  spec.structure.forEach((field, index) => {
+    const value = values[index];
+    switch (field) {
+      case 'uint8':
+        view.setUint8(offset, clamp(typeof value === 'number' ? value : 0, 0, 255));
+        offset += 1;
+        break;
+      case 'uint16':
+        view.setUint16(offset, clamp(typeof value === 'number' ? value : 0, 0, 65535), true);
+        offset += 2;
+        break;
+      case 'int16':
+        view.setInt16(offset, clamp(typeof value === 'number' ? value : 0, -32768, 32767), true);
+        offset += 2;
+        break;
+      case 'string': {
+        const text = String(value ?? '');
+        view.setUint16(offset, text.length, true);
+        offset += 2;
+        for (let i = 0; i < text.length; i += 1) {
+          view.setUint16(offset, text.charCodeAt(i), true);
+          offset += 2;
+        }
+        break;
+      }
+    }
+  });
+  return buffer;
+}
+
+/* ------------------------------------------------ pointer mapping --- */
+
+export interface VideoDisplayMetrics {
+  elementWidth: number;
+  elementHeight: number;
+  /** Letterbox offset of the contained video inside the element. */
+  offsetX: number;
+  offsetY: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The on-screen rectangle the video actually paints when the element uses
+ * `object-fit: contain` — pointer positions must be mapped through it or
+ * clicks drift in the letterbox bars.
+ */
+export function videoDisplayMetrics(
+  elementWidth: number,
+  elementHeight: number,
+  videoWidth: number,
+  videoHeight: number,
+): VideoDisplayMetrics {
+  const scale = Math.min(elementWidth / videoWidth, elementHeight / videoHeight);
+  const width = videoWidth * scale;
+  const height = videoHeight * scale;
+  return {
+    elementWidth,
+    elementHeight,
+    offsetX: (elementWidth - width) / 2,
+    offsetY: (elementHeight - height) / 2,
+    width,
+    height,
+  };
+}
+
+export interface TranslatedPointer {
+  x: number;
+  y: number;
+  inRange: boolean;
+}
+
+/**
+ * Normalised element position → Epic's fixed-point stream coordinates.
+ * Out-of-video positions collapse to the 65535 sentinel, exactly like the
+ * official frontend's `InputCoordTranslator`.
+ */
+export function translatePointer(
+  normalisedX: number,
+  normalisedY: number,
+  metrics: VideoDisplayMetrics,
+): TranslatedPointer {
+  const x = (normalisedX * metrics.elementWidth - metrics.offsetX) / metrics.width;
+  const y = (normalisedY * metrics.elementHeight - metrics.offsetY) / metrics.height;
+  if (x < 0 || x > 1 || y < 0 || y > 1) {
+    return { x: 65535, y: 65535, inRange: false };
+  }
+  return {
+    x: clamp(x * 65536, 0, 65535),
+    y: clamp(y * 65536, 0, 65535),
+    inRange: true,
+  };
+}
+
+/** Pixel deltas → Epic's signed 0…32767 half-size normalisation. */
+export function translateDelta(
+  deltaX: number,
+  deltaY: number,
+  metrics: VideoDisplayMetrics,
+): { x: number; y: number } {
+  return {
+    x: clamp((deltaX / (metrics.width / 2)) * 32767, -32768, 32767),
+    y: clamp((deltaY / (metrics.height / 2)) * 32767, -32768, 32767),
+  };
+}
+
+/** Decode a uint16-length + UTF-16 string payload out of a data channel frame. */
+function readUint16String(view: DataView, offset: number): string | null {
+  if (offset + 2 > view.byteLength) return null;
+  const length = view.getUint16(offset, true);
+  if (offset + 2 + length * 2 > view.byteLength) return null;
+  let text = '';
+  for (let i = 0; i < length; i += 1) {
+    text += String.fromCharCode(view.getUint16(offset + 2 + i * 2, true));
+  }
+  return text;
+}
 
 interface SignallingMessage {
   type: string;
   [key: string]: unknown;
 }
 
-function iceServers(options: PixelStreamOptions): RTCIceServer[] {
+function iceServers(options: PixelStreamOptions, peerOptions?: RTCConfiguration): RTCIceServer[] {
   const servers: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302'] }];
   if (options.turnUrl) {
     servers.push({
@@ -83,6 +295,9 @@ function iceServers(options: PixelStreamOptions): RTCIceServer[] {
       credential: options.turnCredential || undefined,
     });
   }
+  // The relay's config message can carry peer connection options (e.g. a
+  // managed TURN); those ride alongside our own entries.
+  if (peerOptions?.iceServers?.length) servers.push(...peerOptions.iceServers);
   return servers;
 }
 
@@ -90,7 +305,11 @@ export class PixelStreamClient {
   private readonly options: PixelStreamOptions;
   private socket: WebSocket | null = null;
   private peer: RTCPeerConnection | null = null;
+  private remoteChannel: RTCDataChannel | null = null;
+  private localChannel: RTCDataChannel | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private streamerPollTimer: ReturnType<typeof setInterval> | null = null;
+  private offerWatchdog: ReturnType<typeof setTimeout> | null = null;
   private statsTimer: ReturnType<typeof setInterval> | null = null;
   private frameCounter = 0;
   private lastFpsAt = 0;
@@ -101,6 +320,15 @@ export class PixelStreamClient {
   private bytesReceived = 0;
   private resolution: { width: number; height: number } | null = null;
   private fidelity: FidelityTier | null;
+  private qualityLevel: 'low' | 'medium' | 'high' | 'epic' | 'cinematic' | null = null;
+  private resolutionRequest: string | null = null;
+  private consoleCommandsAllowed: boolean | null = null;
+  private subscribedStreamerId: string | null = null;
+  private peerConnectionOptions: RTCConfiguration | null = null;
+  /** Tuning commands already flushed through the locally-created channel. */
+  private tuningSentOnLocal = false;
+  /** Commands held until a data channel is open (the only reliable transport). */
+  private pendingCommands: string[] = [];
   private readonly video: HTMLVideoElement;
 
   constructor(options: PixelStreamOptions, video: HTMLVideoElement) {
@@ -118,7 +346,7 @@ export class PixelStreamClient {
   connect(): void {
     if (this.disposed) return;
     if (this.socket && this.socket.readyState <= WebSocket.OPEN) return;
-    this.setState('connecting', 'Contacting the Pixel Streaming host…');
+    this.setState('connecting', 'Connecting to CloudCast Relay…');
 
     let socket: WebSocket;
     try {
@@ -130,15 +358,20 @@ export class PixelStreamClient {
     this.socket = socket;
 
     socket.onopen = () => {
-      this.send({ type: 'connect' });
-      this.setState('negotiating', 'Waiting for the streamer offer…');
+      this.setState('negotiating', 'Relay connected — looking for the UE5 instance…');
+      this.send({ type: 'listStreamers' });
+      this.startStreamerPoll();
     };
     socket.onmessage = (event) => void this.handleMessage(event);
     socket.onerror = () => {
-      if (!this.disposed) this.setState('failed', 'Signalling socket error');
+      if (!this.disposed) this.setState('failed', 'Relay connection error');
     };
     socket.onclose = () => {
       if (this.disposed) return;
+      // Superseded by an intentional teardown (disconnect / reconnect hop).
+      if (this.socket !== socket) return;
+      this.socket = null;
+      this.resetSubscription();
       this.teardownPeer();
       this.scheduleReconnect();
     };
@@ -149,14 +382,16 @@ export class PixelStreamClient {
   disconnect(): void {
     this.clearReconnect();
     this.stopStats();
+    this.resetSubscription();
     this.teardownPeer();
     if (this.socket) {
+      const socket = this.socket;
+      this.socket = null;
       try {
-        this.socket.close();
+        socket.close();
       } catch {
         /* already closed */
       }
-      this.socket = null;
     }
     this.setState('disconnected', 'Disconnected');
   }
@@ -177,48 +412,88 @@ export class PixelStreamClient {
       resolution: this.resolution,
       bytesReceived: this.bytesReceived,
       iceConnectionState: this.peer?.iceConnectionState ?? null,
+      consoleCommandsAllowed: this.consoleCommandsAllowed,
     };
   }
 
   /* ---------------------------------------------------------------- input --- */
 
-  /** Normalised pointer position (0…1) over the video element. */
+  /**
+   * Normalised pointer position (0…1) over the video element. Positions map
+   * through the letterboxed video rect before quantising, so a click on the
+   * rendered set lands where the operator aimed.
+   */
   mouseMove(x: number, y: number, deltaX: number, deltaY: number): void {
-    this.send({ type: 'mouseMove', x, y, deltaX, deltaY });
+    const metrics = this.displayMetrics();
+    if (!metrics) return;
+    const position = translatePointer(x, y, metrics);
+    const delta = translateDelta(deltaX, deltaY, metrics);
+    this.sendInput('MouseMove', [position.x, position.y, delta.x, delta.y]);
   }
 
   mouseDown(button: number, x: number, y: number): void {
-    this.send({ type: 'mouseDown', button, x, y });
+    const metrics = this.displayMetrics();
+    if (!metrics) return;
+    const position = translatePointer(x, y, metrics);
+    this.sendInput('MouseDown', [button, position.x, position.y]);
   }
 
   mouseUp(button: number, x: number, y: number): void {
-    this.send({ type: 'mouseUp', button, x, y });
+    const metrics = this.displayMetrics();
+    if (!metrics) return;
+    const position = translatePointer(x, y, metrics);
+    this.sendInput('MouseUp', [button, position.x, position.y]);
   }
 
+  /** `delta` is a scroll amount in pixels, positive = scroll down. */
   mouseWheel(delta: number, x: number, y: number): void {
-    this.send({ type: 'mouseWheel', delta, x, y });
+    const metrics = this.displayMetrics();
+    if (!metrics) return;
+    const position = translatePointer(x, y, metrics);
+    // The engine consumes Epic's wheelDelta convention: positive = scroll up.
+    this.sendInput('MouseWheel', [-delta, position.x, position.y]);
   }
 
   keyDown(key: string, keyCode: number): void {
-    this.send({ type: 'keyDown', key, keyCode });
+    const code = clamp(keyCode, 0, 255);
+    if (!code || code === 229) return;
+    this.sendInput('KeyDown', [code, 0]);
+    // UE text fields consume characters through KeyPress (including
+    // Backspace), mirroring Epic's keyboard controller.
+    const charCode = key === 'Backspace' ? 8 : key.length === 1 ? key.charCodeAt(0) : 0;
+    if (charCode > 0 && charCode <= 0xffff) {
+      this.sendInput('KeyPress', [charCode]);
+    }
   }
 
-  keyUp(key: string, keyCode: number): void {
-    this.send({ type: 'keyUp', key, keyCode });
+  keyUp(_key: string, keyCode: number): void {
+    const code = clamp(keyCode, 0, 255);
+    if (!code) return;
+    this.sendInput('KeyUp', [code]);
   }
 
-  /** Send an Unreal console command through the streamer. */
+  /**
+   * Send an Unreal console command over the data channel. Queued while no
+   * channel is open, so tuning pushed before the session is live is applied
+   * the moment the streamer is reachable.
+   */
   sendCommand(command: string): void {
-    this.send({ type: 'command', command });
+    if (this.writeCommand(command)) return;
+    // Tuning is pushed as whole sets (scalability + fidelity + resolution);
+    // identical commands queued twice would flush as duplicates.
+    if (this.pendingCommands.includes(command)) return;
+    this.pendingCommands.push(command);
+    if (this.pendingCommands.length > MAX_QUEUED_COMMANDS) this.pendingCommands.shift();
   }
 
-  /** Ask the streamer for a latency probe. */
+  /** Ask the relay for a latency probe round-trip. */
   requestLatencyTest(): void {
-    this.send({ type: 'latencyTest' });
+    this.send({ type: 'ping', time: Date.now() });
   }
 
   /** Request a quality preset by pushing Unreal scalability console commands. */
   applyQuality(level: 'low' | 'medium' | 'high' | 'epic' | 'cinematic'): void {
+    this.qualityLevel = level;
     const sg = { low: 1, medium: 2, high: 3, epic: 4, cinematic: 4 }[level];
     this.sendCommand(`sg.ShadowQuality ${sg}`);
     this.sendCommand(`sg.PostProcessQuality ${sg}`);
@@ -236,7 +511,7 @@ export class PixelStreamClient {
    * Push the shared fidelity spec to the Unreal instance: scalability groups,
    * then the physical rendering features (Lumen GI + reflections, virtual
    * shadow maps, volumetric fog, TSR, anisotropy, streaming pool). Commands
-   * queue until the session is streaming.
+   * queue until a data channel is open.
    */
   applyFidelity(tier: FidelityTier): void {
     this.fidelity = tier;
@@ -245,16 +520,21 @@ export class PixelStreamClient {
 
   /** Apply a render resolution request (Unreal console). */
   applyResolution(resolution: string): void {
+    this.resolutionRequest = resolution;
     const [width, height] = resolution.split('x').map((v) => Number.parseInt(v, 10));
     if (!width || !height) return;
     this.sendCommand(`r.SetRes ${width}x${height}w`);
   }
 
   private pushFidelity(): void {
+    // Scalability groups first (operator preset when set, otherwise the tier's
+    // own mapping), then the physical rendering features, then resolution.
     const tier = this.fidelity;
-    if (!tier || this.state !== 'streaming') return;
-    for (const command of unrealScalabilityLevel(tier)) this.sendCommand(command);
-    for (const command of unrealFidelityCommands(tier)) this.sendCommand(command);
+    this.applyQuality(this.qualityLevel ?? (tier ? unrealScalabilityLevel(tier) : 'epic'));
+    if (tier) {
+      for (const command of unrealFidelityCommands(tier)) this.sendCommand(command);
+    }
+    if (this.resolutionRequest) this.applyResolution(this.resolutionRequest);
   }
 
   /* ------------------------------------------------------------- private --- */
@@ -265,9 +545,75 @@ export class PixelStreamClient {
     }
   }
 
+  /** Ask the relay which streamers exist; drives the subscribe handshake. */
+  private startStreamerPoll(): void {
+    this.clearStreamerPoll();
+    this.streamerPollTimer = setInterval(() => {
+      if (this.subscribedStreamerId || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      this.send({ type: 'listStreamers' });
+    }, STREAMER_POLL_MS);
+  }
+
+  private clearStreamerPoll(): void {
+    if (this.streamerPollTimer) {
+      clearInterval(this.streamerPollTimer);
+      this.streamerPollTimer = null;
+    }
+  }
+
+  private clearOfferWatchdog(): void {
+    if (this.offerWatchdog) {
+      clearTimeout(this.offerWatchdog);
+      this.offerWatchdog = null;
+    }
+  }
+
+  private resetSubscription(): void {
+    this.subscribedStreamerId = null;
+    this.clearStreamerPoll();
+    this.clearOfferWatchdog();
+  }
+
+  private onStreamerList(ids: unknown): void {
+    if (this.subscribedStreamerId) return;
+    const streamerId = Array.isArray(ids) ? ids.find((id) => typeof id === 'string') : undefined;
+    if (!streamerId) return; // no UE instance yet — the poll keeps asking
+    this.subscribedStreamerId = streamerId;
+    this.send({ type: 'subscribe', streamerId });
+    this.setState('negotiating', `UE5 instance “${streamerId}” found — waiting for its offer…`);
+    // If the instance never offers (busy, paused, mid-restart), re-subscribe
+    // instead of hanging on the negotiating screen forever.
+    this.clearOfferWatchdog();
+    this.offerWatchdog = setTimeout(() => {
+      this.offerWatchdog = null;
+      if (this.state === 'negotiating') {
+        this.subscribedStreamerId = null;
+        this.send({ type: 'listStreamers' });
+        this.setState('negotiating', 'Relay: instance did not offer — retrying…');
+      }
+    }, OFFER_WATCHDOG_MS);
+  }
+
   private scheduleReconnect(): void {
+    if (this.disposed) return;
     this.clearReconnect();
-    this.setState('reconnecting', 'Reconnecting to the Pixel Streaming host…');
+    this.setState('reconnecting', 'Connection lost — reconnecting…');
+    // The subscription and peer connection both die with the socket — close it
+    // so connect() starts a genuinely fresh session rather than early-returning
+    // on the still-open signalling connection.
+    if (this.socket) {
+      const socket = this.socket;
+      this.socket = null;
+      try {
+        socket.close();
+      } catch {
+        /* already closed */
+      }
+      this.teardownPeer();
+      this.resetSubscription();
+    }
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
@@ -282,6 +628,9 @@ export class PixelStreamClient {
   }
 
   private teardownPeer(): void {
+    this.remoteChannel = null;
+    this.localChannel = null;
+    this.tuningSentOnLocal = false;
     if (this.peer) {
       try {
         this.peer.close();
@@ -305,17 +654,38 @@ export class PixelStreamClient {
     }
 
     switch (message.type) {
-      case 'connect':
-        // The streamer acknowledged; wait for its offer.
-        this.setState('negotiating', 'Streamer acknowledged — negotiating video…');
+      case 'config': {
+        // Peer options from the relay (managed TURN, ICE servers).
+        const options = message.peerConnectionOptions;
+        if (options && typeof options === 'object') {
+          this.peerConnectionOptions = options as RTCConfiguration;
+        }
+        break;
+      }
+
+      case 'streamerList':
+        this.onStreamerList(message.ids);
+        break;
+
+      case 'subscribeFailed': {
+        const reason = typeof message.message === 'string' ? message.message : 'subscribe failed';
+        this.subscribedStreamerId = null;
+        this.clearOfferWatchdog();
+        this.setState('negotiating', `Relay: ${reason}`);
+        break;
+      }
+
+      case 'streamerIdChanged':
+        if (typeof message.newID === 'string') this.subscribedStreamerId = message.newID;
         break;
 
       case 'offer':
+        this.clearOfferWatchdog();
         await this.acceptOffer(String(message.sdp ?? ''));
         break;
 
       case 'answer':
-        // A player does not normally receive answers, but tolerate it.
+        // A player does not normally receive answers; tolerate them.
         if (this.peer && typeof message.sdp === 'string') {
           await this.peer.setRemoteDescription({ type: 'answer', sdp: message.sdp });
         }
@@ -334,25 +704,26 @@ export class PixelStreamClient {
       }
 
       case 'ping':
-        this.send({ type: 'pong', time: Date.now() });
+        this.send({ type: 'pong', time: message.time ?? Date.now() });
+        break;
+
+      case 'pong':
         if (typeof message.time === 'number') {
           this.latencyMs = Math.max(0, Date.now() - message.time);
         }
         break;
 
-      case 'latencyTest':
-        this.send({ type: 'latencyResponse', time: Date.now() });
-        break;
-
-      case 'streamerReady':
-        this.setState('negotiating', 'Streamer ready — requesting the session…');
-        this.send({ type: 'connect' });
+      case 'streamerDisconnected':
+        // Our instance went away — fall back to polling for a new one.
+        this.subscribedStreamerId = null;
+        this.clearOfferWatchdog();
+        this.send({ type: 'listStreamers' });
         break;
 
       case 'playerConnected':
+      case 'playerDisconnected':
       case 'playerCount':
-      case 'config':
-      case 'kick':
+      case 'layerPreference':
         break;
 
       default:
@@ -364,7 +735,7 @@ export class PixelStreamClient {
   private async acceptOffer(sdp: string): Promise<void> {
     this.teardownPeer();
     const peer = new RTCPeerConnection({
-      iceServers: iceServers(this.options),
+      iceServers: iceServers(this.options, this.peerConnectionOptions ?? undefined),
       iceTransportPolicy: this.options.forceTURN ? 'relay' : 'all',
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require',
@@ -373,6 +744,13 @@ export class PixelStreamClient {
 
     peer.addTransceiver('video', { direction: 'recvonly' });
     peer.addTransceiver('audio', { direction: 'recvonly' });
+
+    // Epic's streamer opens a data channel of its own (received below); create
+    // a fallback channel too so there is a send path even if the instance is
+    // configured not to open one. Both multiplex over the same SCTP
+    // association, and tuning commands are idempotent, so overlap is safe.
+    this.attachChannel(peer.createDataChannel('cloudcast'), true);
+    peer.ondatachannel = (event) => this.attachChannel(event.channel, false);
 
     const activateStream = () => {
       if (this.state === 'streaming') return;
@@ -388,7 +766,8 @@ export class PixelStreamClient {
           : { width: settings?.width ?? 0, height: settings?.height ?? 0 };
       this.options.onFrame?.(this.resolution);
       this.setState('streaming', null);
-      // The data channel is live — enforce the fidelity spec now.
+      // Re-push the fidelity spec for this session — commands queue until a
+      // data channel is open, so this lands the moment the streamer is ready.
       this.pushFidelity();
       this.emit();
     };
@@ -452,7 +831,7 @@ export class PixelStreamClient {
     peer.oniceconnectionstatechange = () => {
       const state = peer.iceConnectionState;
       if (state === 'failed' || state === 'disconnected') {
-        this.setState('reconnecting', `ICE ${state} — retrying…`);
+        this.setState('reconnecting', `Connection unstable — retrying…`);
         this.scheduleReconnect();
       }
       this.emit();
@@ -463,12 +842,137 @@ export class PixelStreamClient {
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       this.send({ type: 'answer', sdp: answer.sdp ?? '' });
-      this.setState('negotiating', 'Answer sent — waiting for media…');
+      this.setState('negotiating', 'Negotiating video stream…');
     } catch (error) {
-      this.setState('failed', describe(error, 'WebRTC negotiation failed'));
+      this.setState('failed', describe(error, 'Connection failed'));
     }
     this.emit();
   }
+
+  /* -------------------------------------------------------- data channel --- */
+
+  private attachChannel(channel: RTCDataChannel, isLocal: boolean): void {
+    channel.binaryType = 'arraybuffer';
+    if (isLocal) this.localChannel = channel;
+    else this.remoteChannel = channel;
+
+    channel.onopen = () => this.handleChannelOpen(channel);
+    channel.onclose = () => {
+      if (this.localChannel === channel) this.localChannel = null;
+      if (this.remoteChannel === channel) this.remoteChannel = null;
+      this.emit();
+    };
+    channel.onmessage = (event: MessageEvent<ArrayBuffer | string>) => {
+      if (typeof event.data !== 'string') this.handleStreamMessage(event.data);
+    };
+
+    // ondatachannel can arrive with the channel already open.
+    if (channel.readyState === 'open') this.handleChannelOpen(channel);
+  }
+
+  private handleChannelOpen(channel: RTCDataChannel): void {
+    const isRemote = channel !== this.localChannel;
+    if (isRemote) this.remoteChannel = channel;
+    this.flushCommands();
+    if (isRemote && this.tuningSentOnLocal) {
+      // Tuning was flushed through the fallback channel first; re-send it
+      // through the streamer's own channel (which the engine is guaranteed to
+      // read). Console commands are idempotent, so overlap is harmless.
+      this.tuningSentOnLocal = false;
+      this.pushFidelity();
+    }
+    // Ask the engine for its settings so we learn whether console commands
+    // (and therefore the whole fidelity spec) are permitted.
+    this.writeRaw('RequestInitialSettings', []);
+    this.emit();
+  }
+
+  /** The channel the streamer is known to read; the local one is a fallback. */
+  private preferredChannel(): RTCDataChannel | null {
+    if (this.remoteChannel && this.remoteChannel.readyState === 'open') return this.remoteChannel;
+    if (this.localChannel && this.localChannel.readyState === 'open') return this.localChannel;
+    return null;
+  }
+
+  private writeRaw(type: string, values?: readonly (number | string)[]): boolean {
+    const channel = this.preferredChannel();
+    if (!channel) return false;
+    const bytes = encodeToStreamerMessage(type, values);
+    if (!bytes) return false;
+    try {
+      channel.send(bytes);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private writeCommand(command: string): boolean {
+    const channel = this.preferredChannel();
+    const written = this.writeRaw('Command', [command]);
+    if (written && channel === this.localChannel) this.tuningSentOnLocal = true;
+    return written;
+  }
+
+  private flushCommands(): void {
+    while (this.pendingCommands.length > 0) {
+      if (!this.writeCommand(this.pendingCommands[0])) return;
+      this.pendingCommands.shift();
+    }
+  }
+
+  /** Input is live-only: events raised before the channel exists are dropped. */
+  private sendInput(type: string, values: readonly (number | string)[]): void {
+    const channel = this.preferredChannel();
+    if (!channel) return;
+    const bytes = encodeToStreamerMessage(type, values);
+    if (!bytes) return;
+    try {
+      channel.send(bytes);
+    } catch {
+      /* channel raced closed */
+    }
+  }
+
+  private handleStreamMessage(data: ArrayBuffer): void {
+    if (data.byteLength < 1) return;
+    const view = new DataView(data);
+    if (view.getUint8(0) !== FROM_STREAMER_INITIAL_SETTINGS) return;
+
+    let text = readUint16String(view, 1);
+    if (text === null) {
+      // Fallback: some builds frame JSON payloads as plain UTF-8.
+      const bytes = new Uint8Array(data, 1);
+      const decoded = new TextDecoder().decode(bytes);
+      const start = decoded.indexOf('{');
+      const end = decoded.lastIndexOf('}');
+      text = start >= 0 && end > start ? decoded.slice(start, end + 1) : null;
+    }
+    if (!text) return;
+
+    try {
+      const parsed = JSON.parse(text) as {
+        PixelStreamingSettings?: { AllowPixelStreamingCommands?: boolean };
+      };
+      const allowed = parsed?.PixelStreamingSettings?.AllowPixelStreamingCommands;
+      if (typeof allowed === 'boolean') {
+        this.consoleCommandsAllowed = allowed;
+        this.emit();
+      }
+    } catch {
+      /* not a JSON payload we understand — ignore */
+    }
+  }
+
+  private displayMetrics(): VideoDisplayMetrics | null {
+    const rect = this.video.getBoundingClientRect();
+    const width = this.video.videoWidth;
+    const height = this.video.videoHeight;
+    if (rect.width <= 0 || rect.height <= 0 || width <= 0 || height <= 0) return null;
+    return videoDisplayMetrics(rect.width, rect.height, width, height);
+  }
+
+  /* --------------------------------------------------------------- stats --- */
 
   private startStats(): void {
     this.stopStats();

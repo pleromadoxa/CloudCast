@@ -56,6 +56,7 @@ export function UnrealPixelStreamStage({
     resolution: null,
     bytesReceived: 0,
     iceConnectionState: null,
+    consoleCommandsAllowed: null,
   });
 
   /* --- lifecycle -------------------------------------------------------- */
@@ -158,8 +159,11 @@ export function UnrealPixelStreamStage({
     const client = clientRef.current;
     if (!client) return;
     const rect = event.currentTarget.getBoundingClientRect();
+    // Normalise wheel units to pixels — the stream protocol expects Epic's
+    // wheelDelta, which browsers report per-line in deltaMode 1.
+    const unit = event.deltaMode === 1 ? 120 : event.deltaMode === 2 ? 120 * 16 : 1;
     client.mouseWheel(
-      event.deltaY,
+      event.deltaY * unit,
       (event.clientX - rect.left) / rect.width,
       (event.clientY - rect.top) / rect.height,
     );
@@ -321,6 +325,14 @@ export function UnrealPixelStreamStage({
           ) : null}
           {stats.fps > 0 ? (
             <span className="text-white/40">{stats.fps} fps</span>
+          ) : null}
+          {stats.consoleCommandsAllowed === false ? (
+            <span
+              className="text-amber-400"
+              title="The Unreal instance is rejecting console commands, so fidelity tuning (Lumen, virtual shadows, texture pool) is not being applied. Relaunch it with -AllowPixelStreamingCommands."
+            >
+              ⚠ fidelity commands off
+            </span>
           ) : null}
         </div>
       )}
